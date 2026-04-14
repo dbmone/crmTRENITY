@@ -10,24 +10,39 @@ datasource db {
 // ==================== ПОЛЬЗОВАТЕЛИ ====================
 
 enum UserRole {
-  MARKETER
-  CREATOR
-  LEAD_CREATOR
-  ADMIN
+  ADMIN           // Полный доступ, может всё
+  HEAD_MARKETER   // Главный маркетолог — может назначать маркетологов
+  MARKETER        // Маркетолог — создаёт заказы
+  HEAD_CREATOR    // Главный креатор — выше тимлида
+  LEAD_CREATOR    // Тимлид креаторов — управляет своей командой
+  CREATOR         // Креатор — выполняет заказы
+}
+
+enum UserStatus {
+  PENDING         // Заявка на рассмотрении
+  APPROVED        // Одобрен
+  REJECTED        // Отклонён
+  BLOCKED         // Заблокирован
 }
 
 model User {
-  id               String    @id @default(uuid())
-  telegramId       BigInt    @unique @map("telegram_id")
-  telegramUsername  String?   @map("telegram_username")
-  displayName      String    @map("display_name")
-  avatarUrl        String?   @map("avatar_url")
-  role             UserRole  @default(CREATOR)
-  pinCode          String    @unique @map("pin_code") @db.VarChar(4)
-  chatId           BigInt?   @map("chat_id")
-  isActive         Boolean   @default(true) @map("is_active")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+  id               String     @id @default(uuid())
+  telegramId       BigInt     @unique @map("telegram_id")
+  telegramUsername  String?    @map("telegram_username")
+  displayName      String     @map("display_name")
+  avatarUrl        String?    @map("avatar_url")
+  role             UserRole   @default(CREATOR)
+  status           UserStatus @default(PENDING)
+  pinCode          String?    @unique @map("pin_code") @db.VarChar(4)
+  chatId           BigInt?    @map("chat_id")
+  teamLeadId       String?    @map("team_lead_id")
+  isActive         Boolean    @default(true) @map("is_active")
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
+
+  // Иерархия: тимлид → подчинённые
+  teamLead         User?            @relation("TeamHierarchy", fields: [teamLeadId], references: [id])
+  subordinates     User[]           @relation("TeamHierarchy")
 
   createdOrders    Order[]          @relation("OrderMarketer")
   assignments      OrderCreator[]   @relation("CreatorAssignments")
@@ -35,6 +50,8 @@ model User {
   uploadedFiles    OrderFile[]
   dailyReports     DailyReport[]
   notifications    Notification[]
+  comments         OrderComment[]
+  approvedById     String?          @map("approved_by_id")
 
   @@map("users")
 }
@@ -66,6 +83,7 @@ model Order {
   stages        OrderStage[]
   reports       DailyReport[]
   notifications Notification[]
+  comments      OrderComment[]
 
   @@map("orders")
 }
@@ -164,6 +182,21 @@ model DailyReport {
   @@map("daily_reports")
 }
 
+// ==================== КОММЕНТАРИИ ====================
+
+model OrderComment {
+  id        String   @id @default(uuid())
+  orderId   String   @map("order_id")
+  authorId  String   @map("author_id")
+  text      String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  order  Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  author User  @relation(fields: [authorId], references: [id])
+
+  @@map("order_comments")
+}
+
 // ==================== УВЕДОМЛЕНИЯ ====================
 
 enum NotificationType {
@@ -174,6 +207,10 @@ enum NotificationType {
   REPORT_REMINDER
   REVIEW_REQUEST
   ORDER_APPROVED
+  COMMENT_ADDED
+  REGISTRATION_REQUEST
+  REGISTRATION_APPROVED
+  REGISTRATION_REJECTED
 }
 
 model Notification {
@@ -183,6 +220,7 @@ model Notification {
   type      NotificationType
   message   String           @db.Text
   isSent    Boolean          @default(false) @map("is_sent")
+  isRead    Boolean          @default(false) @map("is_read")
   sentAt    DateTime?        @map("sent_at")
   createdAt DateTime         @default(now()) @map("created_at")
 

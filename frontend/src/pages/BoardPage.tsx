@@ -6,135 +6,147 @@ import KanbanBoard from "../components/kanban/KanbanBoard";
 import CreateOrderModal from "../components/kanban/CreateOrderModal";
 import OrderDetailModal from "../components/kanban/OrderDetailModal";
 import Header from "../components/layout/Header";
-import { Plus, Filter, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw, Search, X, SlidersHorizontal } from "lucide-react";
 
 export default function BoardPage() {
   const user = useAuthStore((s) => s.user);
   const { orders, isLoading, fetchOrders, filter, setFilter } = useOrdersStore();
-  const [showCreate, setShowCreate] = useState(false);
+
+  const [showCreate,    setShowCreate]    = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
+  const [search,        setSearch]        = useState("");
+  const [searchTimer,   setSearchTimer]   = useState<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
+  const isMarketer = ["MARKETER", "HEAD_MARKETER", "ADMIN"].includes(user?.role ?? "");
+
+  useEffect(() => { fetchOrders(); }, []);
+
+  const handleSearch = (val: string) => {
+    setSearch(val);
+    if (searchTimer) clearTimeout(searchTimer);
+    const t = setTimeout(() => {
+      useOrdersStore.setState((s: any) => ({
+        ...s,
+        filter: { ...(s.filter ?? {}), search: val || undefined },
+      }));
+      fetchOrders();
+    }, 400);
+    setSearchTimer(t);
+  };
+
+  const clearSearch = () => {
+    setSearch("");
+    useOrdersStore.setState((s: any) => {
+      const f = { ...(s.filter ?? {}) };
+      delete f.search;
+      return { ...s, filter: Object.keys(f).length ? f : null };
+    });
     fetchOrders();
-  }, []);
+  };
 
-  const isMarketer = user?.role === "MARKETER" || user?.role === "ADMIN";
+  const activeFilter = filter?.marketerId === user?.id || filter?.creatorId === user?.id;
 
   return (
-    <div className="min-h-screen bg-surface-secondary">
+    <div className="h-full flex flex-col overflow-hidden bg-bg-base">
       <Header />
 
-      <div className="px-6 py-5">
-        {/* Toolbar */}
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold text-ink-primary">Доска заказов</h2>
-            <button
-              onClick={() => fetchOrders()}
-              className="p-1.5 rounded-lg hover:bg-white text-ink-tertiary hover:text-ink-primary transition-colors"
-              title="Обновить"
-            >
-              <RefreshCw size={15} className={isLoading ? "animate-spin" : ""} />
+      {/* Compact toolbar */}
+      <div className="flex items-center gap-2 px-6 py-2.5 border-b border-bg-border bg-bg-surface flex-shrink-0">
+        {/* Search */}
+        <div className="relative w-56">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-tertiary pointer-events-none" />
+          <input
+            value={search}
+            onChange={(e) => handleSearch(e.target.value)}
+            placeholder="Поиск заказов..."
+            className="w-full pl-8 pr-7 py-1.5 text-sm bg-bg-raised border border-bg-border rounded-lg text-ink-primary placeholder-ink-tertiary outline-none focus:border-green-500/40 transition-colors"
+          />
+          {search && (
+            <button onClick={clearSearch} className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-tertiary hover:text-ink-primary">
+              <X size={13} />
             </button>
-          </div>
-
-          <div className="flex items-center gap-2.5">
-            {/* Filter toggle */}
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
-                filter
-                  ? "bg-brand-50 text-brand-600 border border-brand-200"
-                  : "bg-white border border-gray-200 text-ink-secondary hover:bg-surface-tertiary"
-              }`}
-            >
-              <Filter size={14} />
-              Фильтр
-            </button>
-
-            {/* Create order */}
-            {isMarketer && (
-              <button
-                onClick={() => setShowCreate(true)}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-600 text-white text-sm font-medium hover:bg-brand-800 transition-colors"
-              >
-                <Plus size={15} />
-                Новый заказ
-              </button>
-            )}
-          </div>
+          )}
         </div>
 
-        {/* Filter panel */}
-        {showFilters && (
-          <div className="mb-4 p-4 bg-white rounded-xl border border-gray-100 flex items-center gap-4">
-            <button
-              onClick={() => setFilter(null)}
-              className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                !filter ? "bg-brand-50 text-brand-600" : "text-ink-secondary hover:bg-surface-secondary"
-              }`}
-            >
-              Все заказы
-            </button>
-            {isMarketer && (
-              <button
-                onClick={() => setFilter({ marketerId: user!.id })}
-                className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                  filter?.marketerId === user?.id ? "bg-brand-50 text-brand-600" : "text-ink-secondary hover:bg-surface-secondary"
-                }`}
-              >
-                Мои заказы
-              </button>
-            )}
-            {!isMarketer && (
-              <button
-                onClick={() => setFilter({ creatorId: user!.id })}
-                className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                  filter?.creatorId === user?.id ? "bg-brand-50 text-brand-600" : "text-ink-secondary hover:bg-surface-secondary"
-                }`}
-              >
-                Назначенные мне
-              </button>
-            )}
-          </div>
-        )}
+        {/* Filter toggle */}
+        <button
+          onClick={() => {
+            if (activeFilter) {
+              setFilter(null);
+            } else if (isMarketer) {
+              setFilter({ marketerId: user!.id });
+            } else {
+              setFilter({ creatorId: user!.id });
+            }
+          }}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+            activeFilter
+              ? "bg-green-500/10 text-green-400 border-green-500/30"
+              : "border-bg-border text-ink-tertiary hover:text-ink-primary hover:border-bg-hover"
+          }`}
+        >
+          <SlidersHorizontal size={12} />
+          {activeFilter ? "Мои заказы" : "Все заказы"}
+        </button>
 
-        {/* Loading state */}
+        <div className="ml-auto flex items-center gap-2">
+          {/* Stats */}
+          <span className="text-xs text-ink-tertiary hidden sm:block">
+            {orders.length} заказов
+          </span>
+
+          {/* Refresh */}
+          <button
+            onClick={() => fetchOrders()}
+            title="Обновить"
+            className="p-1.5 rounded-lg hover:bg-bg-raised border border-bg-border text-ink-tertiary hover:text-ink-primary transition-colors"
+          >
+            <RefreshCw size={13} className={isLoading ? "animate-spin" : ""} />
+          </button>
+
+          {/* Create */}
+          {isMarketer && (
+            <button
+              onClick={() => setShowCreate(true)}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-green-500 text-black text-xs font-bold hover:bg-green-400 transition-colors"
+            >
+              <Plus size={13} />
+              Новый заказ
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Board area — takes remaining height */}
+      <div className="flex-1 overflow-hidden relative pt-3">
+        {/* Full-height loading */}
         {isLoading && orders.length === 0 && (
-          <div className="flex items-center justify-center h-64">
+          <div className="absolute inset-0 flex items-center justify-center">
             <div className="flex flex-col items-center gap-3">
-              <div className="w-8 h-8 border-2 border-brand-400 border-t-transparent rounded-full animate-spin" />
-              <span className="text-sm text-ink-tertiary">Загружаю заказы...</span>
+              <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm text-ink-tertiary">Загрузка...</p>
             </div>
           </div>
-        )}
-
-        {/* Kanban */}
-        {(!isLoading || orders.length > 0) && (
-          <KanbanBoard orders={orders} onCardClick={setSelectedOrder} />
         )}
 
         {/* Empty state */}
         {!isLoading && orders.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-64 text-center">
-            <div className="w-16 h-16 bg-surface-tertiary rounded-2xl flex items-center justify-center mb-4">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#9B9B9B" strokeWidth="1.5">
-                <rect x="3" y="3" width="7" height="7" rx="1" />
-                <rect x="14" y="3" width="7" height="7" rx="1" />
-                <rect x="3" y="14" width="7" height="7" rx="1" />
-                <rect x="14" y="14" width="7" height="7" rx="1" />
-              </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <div className="w-16 h-16 rounded-2xl bg-bg-surface border border-bg-border flex items-center justify-center mb-4">
+              <div className="w-7 h-7 border-2 border-dashed border-bg-hover rounded-lg" />
             </div>
-            <p className="text-sm text-ink-secondary mb-1">Пока нет заказов</p>
+            <p className="text-sm text-ink-secondary mb-1 font-medium">Нет заказов</p>
             <p className="text-xs text-ink-tertiary">
-              {isMarketer ? 'Нажмите "Новый заказ" чтобы создать первый' : "Ожидайте назначения от маркетолога"}
+              {isMarketer ? 'Создай первый заказ' : "Ожидай назначения"}
             </p>
           </div>
         )}
+
+        {(!isLoading || orders.length > 0) && orders.length > 0 && (
+          <KanbanBoard orders={orders} onCardClick={setSelectedOrder} />
+        )}
       </div>
 
-      {/* Modals */}
       <CreateOrderModal isOpen={showCreate} onClose={() => setShowCreate(false)} />
       <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} />
     </div>

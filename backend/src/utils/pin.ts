@@ -2,7 +2,6 @@ import { PrismaClient } from "@prisma/client";
 import crypto from "crypto";
 
 const CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-// Исключены: I, l, 1, O, 0 — чтобы не путать при вводе
 
 export function generatePin(): string {
   let pin = "";

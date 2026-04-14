@@ -32,7 +32,9 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
       const filter = get().filter;
       if (filter?.creatorId) params.creatorId = filter.creatorId;
       if (filter?.marketerId) params.marketerId = filter.marketerId;
-      const orders = await api.getOrders(params);
+      const data = await api.getOrders(params);
+      // Бэкенд возвращает { orders: [...], total, page } или массив
+      const orders = Array.isArray(data) ? data : (data.orders ?? []);
       set({ orders, isLoading: false, error: null });
     } catch (err: any) {
       set({ error: err.message, isLoading: false });

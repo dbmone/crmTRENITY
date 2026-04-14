@@ -2,83 +2,87 @@ import { PrismaClient, OrderStatus, UserRole, StageName } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-// ===================== ПОЛУЧЕНИЕ =====================
+// ===================== Общий include для заказов =====================
+
+const orderInclude = {
+  marketer: {
+    select: {
+      id: true, displayName: true, telegramUsername: true,
+      avatarUrl: true, role: true, teamLeadId: true,
+    },
+  },
+  creators: {
+    include: {
+      creator: {
+        select: {
+          id: true, displayName: true, telegramUsername: true,
+          avatarUrl: true, role: true, teamLeadId: true,
+        },
+      },
+    },
+  },
+  stages: { orderBy: { sortOrder: "asc" as const } },
+  files: { select: { id: true, fileType: true, fileName: true, fileSize: true, uploadedAt: true } },
+  _count: { select: { reports: true, comments: true } },
+};
+
+// ===================== ПОЛУЧЕНИЕ С ПОИСКОМ И ПАГИНАЦИЕЙ =====================
 
 interface OrderFilters {
   status?: OrderStatus;
   marketerId?: string;
   creatorId?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+  includeArchived?: boolean;
 }
 
 export async function getOrders(filters: OrderFilters) {
+  const page = filters.page || 1;
+  const limit = filters.limit || 50;
+  const skip = (page - 1) * limit;
+
   const where: any = {};
 
-  if (filters.status) where.status = filters.status;
+  // По умолчанию не показываем архив
+  if (!filters.includeArchived) {
+    if (filters.status) {
+      where.status = filters.status;
+    } else {
+      where.status = { not: OrderStatus.ARCHIVED };
+    }
+  } else if (filters.status) {
+    where.status = filters.status;
+  }
+
   if (filters.marketerId) where.marketerId = filters.marketerId;
   if (filters.creatorId) {
     where.creators = { some: { creatorId: filters.creatorId } };
   }
+  if (filters.search) {
+    where.title = { contains: filters.search, mode: "insensitive" };
+  }
 
-  return prisma.order.findMany({
-    where,
-    include: {
-      marketer: {
-        select: {
-          id: true,
-          displayName: true,
-          telegramUsername: true,
-          avatarUrl: true,
-          role: true,
-        },
-      },
-      creators: {
-        include: {
-          creator: {
-            select: {
-              id: true,
-              displayName: true,
-              telegramUsername: true,
-              avatarUrl: true,
-              role: true,
-            },
-          },
-        },
-      },
-      stages: { orderBy: { sortOrder: "asc" } },
-      files: { select: { id: true, fileType: true, fileName: true } },
-      _count: { select: { reports: true } },
-    },
-    orderBy: { updatedAt: "desc" },
-  });
+  const [orders, total] = await Promise.all([
+    prisma.order.findMany({
+      where,
+      include: orderInclude,
+      orderBy: { updatedAt: "desc" },
+      skip,
+      take: limit,
+    }),
+    prisma.order.count({ where }),
+  ]);
+
+  return { orders, total, page, limit, pages: Math.ceil(total / limit) };
 }
 
 export async function getOrderById(id: string) {
   const order = await prisma.order.findUnique({
     where: { id },
     include: {
-      marketer: {
-        select: {
-          id: true,
-          displayName: true,
-          telegramUsername: true,
-          avatarUrl: true,
-          role: true,
-        },
-      },
-      creators: {
-        include: {
-          creator: {
-            select: {
-              id: true,
-              displayName: true,
-              telegramUsername: true,
-              avatarUrl: true,
-              role: true,
-            },
-          },
-        },
-      },
-      stages: { orderBy: { sortOrder: "asc" } },
+      ...orderInclude,
       files: {
         include: {
           uploadedBy: {
@@ -89,10 +93,19 @@ export async function getOrderById(id: string) {
       reports: {
         include: {
           creator: {
-            select: { id: true, displayName: true, telegramUsername: true },
+            select: { id: true, displayName: true, telegramUsername: true, avatarUrl: true },
           },
         },
         orderBy: { reportDate: "desc" },
+        take: 20,
+      },
+      comments: {
+        include: {
+          author: {
+            select: { id: true, displayName: true, telegramUsername: true, avatarUrl: true, role: true },
+          },
+        },
+        orderBy: { createdAt: "asc" },
       },
     },
   });
@@ -111,7 +124,6 @@ interface CreateOrderInput {
 }
 
 export async function createOrder(input: CreateOrderInput, marketerId: string) {
-  // Создаём заказ с 5 этапами
   const defaultStages = [
     { name: StageName.STORYBOARD, sortOrder: 1 },
     { name: StageName.ANIMATION, sortOrder: 2 },
@@ -127,22 +139,9 @@ export async function createOrder(input: CreateOrderInput, marketerId: string) {
       deadline: input.deadline ? new Date(input.deadline) : null,
       reminderDays: input.reminderDays || 2,
       marketerId,
-      stages: {
-        create: defaultStages,
-      },
+      stages: { create: defaultStages },
     },
-    include: {
-      marketer: {
-        select: {
-          id: true,
-          displayName: true,
-          telegramUsername: true,
-          avatarUrl: true,
-          role: true,
-        },
-      },
-      stages: { orderBy: { sortOrder: "asc" } },
-    },
+    include: orderInclude,
   });
 }
 
@@ -164,9 +163,12 @@ export async function updateOrder(
   const order = await prisma.order.findUnique({ where: { id } });
   if (!order) throw { statusCode: 404, message: "Заказ не найден" };
 
-  // Только маркетолог-создатель или админ
-  if (userRole !== UserRole.ADMIN && order.marketerId !== userId) {
-    throw { statusCode: 403, message: "Только создатель заказа может его редактировать" };
+  if (
+    userRole !== UserRole.ADMIN &&
+    userRole !== UserRole.HEAD_MARKETER &&
+    order.marketerId !== userId
+  ) {
+    throw { statusCode: 403, message: "Нет доступа к редактированию" };
   }
 
   return prisma.order.update({
@@ -177,27 +179,28 @@ export async function updateOrder(
       deadline: input.deadline ? new Date(input.deadline) : undefined,
       reminderDays: input.reminderDays,
     },
+    include: orderInclude,
   });
 }
 
 // ===================== УДАЛЕНИЕ =====================
 
-export async function deleteOrder(
-  id: string,
-  userId: string,
-  userRole: UserRole
-) {
+export async function deleteOrder(id: string, userId: string, userRole: UserRole) {
   const order = await prisma.order.findUnique({ where: { id } });
   if (!order) throw { statusCode: 404, message: "Заказ не найден" };
 
-  if (userRole !== UserRole.ADMIN && order.marketerId !== userId) {
-    throw { statusCode: 403, message: "Только создатель заказа может его удалить" };
+  if (
+    userRole !== UserRole.ADMIN &&
+    userRole !== UserRole.HEAD_MARKETER &&
+    order.marketerId !== userId
+  ) {
+    throw { statusCode: 403, message: "Нет доступа к удалению" };
   }
 
   return prisma.order.delete({ where: { id } });
 }
 
-// ===================== СМЕНА СТАТУСА (КАНБАН) =====================
+// ===================== СМЕНА СТАТУСА =====================
 
 export async function updateOrderStatus(
   id: string,
@@ -208,24 +211,32 @@ export async function updateOrderStatus(
   const order = await prisma.order.findUnique({ where: { id } });
   if (!order) throw { statusCode: 404, message: "Заказ не найден" };
 
-  // DONE может поставить только маркетолог / лид-креатор / админ
+  // DONE может ставить только маркетолог+ или лид-креатор
   if (
     newStatus === OrderStatus.DONE &&
-    ![UserRole.MARKETER, UserRole.LEAD_CREATOR, UserRole.ADMIN].includes(userRole)
+    ![UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.MARKETER, UserRole.LEAD_CREATOR].includes(userRole)
   ) {
-    throw {
-      statusCode: 403,
-      message: "Только маркетолог или главный креатор может утвердить заказ",
-    };
+    throw { statusCode: 403, message: "Только маркетолог или главный креатор может утвердить заказ" };
   }
 
   return prisma.order.update({
     where: { id },
     data: { status: newStatus },
+    include: orderInclude,
   });
 }
 
-// ===================== КРЕАТОРЫ НА ЗАКАЗЕ =====================
+// ===================== АРХИВАЦИЯ =====================
+
+export async function archiveOrder(id: string, userId: string, userRole: UserRole) {
+  return updateOrderStatus(id, OrderStatus.ARCHIVED, userId, userRole);
+}
+
+export async function unarchiveOrder(id: string, userId: string, userRole: UserRole) {
+  return updateOrderStatus(id, OrderStatus.DONE, userId, userRole);
+}
+
+// ===================== КРЕАТОРЫ =====================
 
 export async function addCreator(
   orderId: string,
@@ -234,15 +245,10 @@ export async function addCreator(
   userRole: UserRole,
   isLead: boolean = false
 ) {
-  // Креатор может добавить только себя
-  if (
-    userRole === UserRole.CREATOR &&
-    creatorId !== addedById
-  ) {
+  if (userRole === UserRole.CREATOR && creatorId !== addedById) {
     throw { statusCode: 403, message: "Креатор может добавить только себя" };
   }
 
-  // Проверяем что пользователь — креатор или лид-креатор
   const creator = await prisma.user.findUnique({ where: { id: creatorId } });
   if (
     !creator ||
@@ -251,7 +257,6 @@ export async function addCreator(
     throw { statusCode: 400, message: "Пользователь не является креатором" };
   }
 
-  // Если заказ был NEW — переводим в IN_PROGRESS
   const order = await prisma.order.findUnique({ where: { id: orderId } });
   if (!order) throw { statusCode: 404, message: "Заказ не найден" };
 
@@ -261,16 +266,12 @@ export async function addCreator(
       include: {
         creator: {
           select: {
-            id: true,
-            displayName: true,
-            telegramUsername: true,
-            avatarUrl: true,
-            role: true,
+            id: true, displayName: true, telegramUsername: true,
+            avatarUrl: true, role: true, teamLeadId: true,
           },
         },
       },
     }),
-    // Автоматически переводим в IN_PROGRESS при назначении первого креатора
     ...(order.status === OrderStatus.NEW
       ? [prisma.order.update({ where: { id: orderId }, data: { status: OrderStatus.IN_PROGRESS } })]
       : []),
@@ -289,20 +290,13 @@ export async function removeCreator(
     where: { orderId_creatorId: { orderId, creatorId } },
   });
 
-  if (!assignment) {
-    throw { statusCode: 404, message: "Креатор не назначен на этот заказ" };
-  }
+  if (!assignment) throw { statusCode: 404, message: "Креатор не назначен" };
 
-  // Маркетолог / админ — удаляет любого
-  // Креатор — только тех, кого сам добавил
   if (
     userRole === UserRole.CREATOR &&
     assignment.addedById !== removedById
   ) {
-    throw {
-      statusCode: 403,
-      message: "Вы можете удалить только тех креаторов, которых сами добавили",
-    };
+    throw { statusCode: 403, message: "Вы можете удалить только тех, кого сами добавили" };
   }
 
   return prisma.orderCreator.delete({

@@ -128,13 +128,72 @@ export async function getReports(orderId: string) {
 
 // ==================== USERS ====================
 
-export async function getUsers() {
-  const { data } = await api.get("/users");
+export async function getUsers(params?: { includeAll?: boolean }) {
+  const { data } = await api.get("/users", { params });
   return data;
 }
 
 export async function getUser(id: string) {
   const { data } = await api.get(`/users/${id}`);
+  return data;
+}
+
+export async function updateProfile(id: string, body: { displayName?: string; avatarUrl?: string }) {
+  const { data } = await api.put(`/users/${id}`, body);
+  return data;
+}
+
+export async function approveUser(id: string, role?: string) {
+  const { data } = await api.post(`/users/${id}/approve`, { role });
+  return data;
+}
+
+export async function rejectUser(id: string) {
+  const { data } = await api.post(`/users/${id}/reject`);
+  return data;
+}
+
+export async function changeRole(id: string, role: string) {
+  const { data } = await api.put(`/users/${id}/role`, { role });
+  return data;
+}
+
+export async function deactivateUser(id: string) {
+  const { data } = await api.post(`/users/${id}/block`);
+  return data;
+}
+
+export async function getDashboard() {
+  const { data } = await api.get("/dashboard/stats");
+  return data;
+}
+
+// ==================== COMMENTS ====================
+
+export async function getComments(orderId: string) {
+  const { data } = await api.get(`/orders/${orderId}/comments`);
+  return data;
+}
+
+export async function postComment(orderId: string, text: string) {
+  const { data } = await api.post(`/orders/${orderId}/comments`, { text });
+  return data;
+}
+
+// ==================== NOTIFICATIONS ====================
+
+export async function getNotifications(page = 1, limit = 20) {
+  const { data } = await api.get("/notifications", { params: { page, limit } });
+  return data;
+}
+
+export async function markNotificationRead(id: string) {
+  const { data } = await api.put(`/notifications/${id}/read`);
+  return data;
+}
+
+export async function markAllNotificationsRead() {
+  const { data } = await api.put("/notifications/read-all");
   return data;
 }
 

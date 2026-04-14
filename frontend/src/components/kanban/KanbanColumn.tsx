@@ -10,41 +10,71 @@ interface Props {
   onCardClick: (order: Order) => void;
 }
 
-const COLUMN_STYLES: Record<OrderStatus, { dot: string; bg: string; border: string }> = {
-  NEW: { dot: "bg-brand-400", bg: "bg-brand-50/30", border: "border-brand-100" },
-  IN_PROGRESS: { dot: "bg-blue-400", bg: "bg-blue-50/30", border: "border-blue-100" },
-  ON_REVIEW: { dot: "bg-amber-400", bg: "bg-amber-50/30", border: "border-amber-100" },
-  DONE: { dot: "bg-emerald-400", bg: "bg-emerald-50/30", border: "border-emerald-100" },
-  ARCHIVED: { dot: "bg-gray-400", bg: "bg-gray-50/30", border: "border-gray-200" },
+const COL_CONFIG: Record<OrderStatus, {
+  accent: string;       // colored top bar
+  headerText: string;   // column title color
+  badge: string;        // count badge
+  dropBg: string;       // drag-over background
+}> = {
+  NEW: {
+    accent:     "bg-blue-500",
+    headerText: "text-blue-300",
+    badge:      "bg-blue-500/20 text-blue-300 border-blue-500/20",
+    dropBg:     "bg-blue-500/5",
+  },
+  IN_PROGRESS: {
+    accent:     "bg-amber-500",
+    headerText: "text-amber-300",
+    badge:      "bg-amber-500/20 text-amber-300 border-amber-500/20",
+    dropBg:     "bg-amber-500/5",
+  },
+  ON_REVIEW: {
+    accent:     "bg-purple-500",
+    headerText: "text-purple-300",
+    badge:      "bg-purple-500/20 text-purple-300 border-purple-500/20",
+    dropBg:     "bg-purple-500/5",
+  },
+  DONE: {
+    accent:     "bg-green-500",
+    headerText: "text-green-400",
+    badge:      "bg-green-500/20 text-green-300 border-green-500/20",
+    dropBg:     "bg-green-500/5",
+  },
+  ARCHIVED: {
+    accent:     "bg-ink-muted",
+    headerText: "text-ink-secondary",
+    badge:      "bg-bg-raised text-ink-tertiary border-bg-border",
+    dropBg:     "bg-bg-hover",
+  },
 };
 
 export default function KanbanColumn({ status, label, orders, onCardClick }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
-  const styles = COLUMN_STYLES[status];
-  const ids = orders.map((o) => o.id);
+  const cfg = COL_CONFIG[status];
+  const ids  = orders.map((o) => o.id);
 
   return (
-    <div className="flex-shrink-0 w-[300px]">
+    <div className="flex-shrink-0 w-[280px] flex flex-col rounded-xl bg-bg-surface border border-bg-border overflow-hidden"
+      style={{ height: "100%" }}>
+
+      {/* Accent bar */}
+      <div className={`h-0.5 w-full flex-shrink-0 ${cfg.accent}`} />
+
       {/* Column header */}
-      <div className="flex items-center gap-2.5 px-2 mb-3">
-        <div className={`w-2.5 h-2.5 rounded-full ${styles.dot}`} />
-        <span className="text-sm font-medium text-ink-primary">{label}</span>
-        <span className="text-xs text-ink-tertiary bg-surface-tertiary rounded-full px-2 py-0.5">
+      <div className="flex items-center gap-2 px-3.5 py-3 border-b border-bg-border flex-shrink-0">
+        <h3 className={`font-semibold text-sm flex-1 ${cfg.headerText}`}>{label}</h3>
+        <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${cfg.badge}`}>
           {orders.length}
         </span>
       </div>
 
-      {/* Droppable area */}
+      {/* Card list — independently scrollable */}
       <div
         ref={setNodeRef}
-        className={`rounded-xl p-2 min-h-[200px] transition-colors border ${
-          isOver
-            ? `${styles.bg} ${styles.border} border-dashed`
-            : "bg-surface-secondary/50 border-transparent"
-        }`}
+        className={`col-scroll p-2.5 transition-colors ${isOver ? cfg.dropBg : ""}`}
       >
         <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-          <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col gap-2">
             {orders.map((order) => (
               <OrderCard key={order.id} order={order} onClick={onCardClick} />
             ))}
@@ -52,8 +82,8 @@ export default function KanbanColumn({ status, label, orders, onCardClick }: Pro
         </SortableContext>
 
         {orders.length === 0 && (
-          <div className="flex items-center justify-center h-24 text-sm text-ink-tertiary">
-            Перетащите сюда
+          <div className="flex items-center justify-center h-20 text-xs text-ink-muted select-none">
+            Нет задач
           </div>
         )}
       </div>

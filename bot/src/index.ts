@@ -1,336 +1,357 @@
-import { Bot, Context, session, InlineKeyboard } from "grammy";
-import { PrismaClient, UserRole } from "@prisma/client";
+import { Bot, InlineKeyboard } from "grammy";
+import { PrismaClient, UserRole, UserStatus, NotificationType } from "@prisma/client";
 import dotenv from "dotenv";
-import { generateUniquePin } from "./utils";
+import crypto from "crypto";
 
 dotenv.config({ path: "../.env" });
+dotenv.config();
 
 const bot = new Bot(process.env.BOT_TOKEN || "");
 const prisma = new PrismaClient();
 
-// ==================== /start — РЕГИСТРАЦИЯ ====================
+// ==================== АНТИСПАМ ====================
+
+const rateLimits = new Map<number, { count: number; resetAt: number }>();
+const RATE_LIMIT = 20;       // макс сообщений
+const RATE_WINDOW = 60_000;  // за 60 секунд
+const blocked = new Set<number>();
+
+function checkRateLimit(userId: number): boolean {
+  if (blocked.has(userId)) return false;
+
+  const now = Date.now();
+  let entry = rateLimits.get(userId);
+
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + RATE_WINDOW };
+    rateLimits.set(userId, entry);
+  }
+
+  entry.count++;
+
+  if (entry.count > RATE_LIMIT * 2) {
+    // Серьёзный спам — блокируем на 10 минут
+    blocked.add(userId);
+    setTimeout(() => blocked.delete(userId), 10 * 60 * 1000);
+    return false;
+  }
+
+  return entry.count <= RATE_LIMIT;
+}
+
+// Middleware антиспама
+bot.use(async (ctx, next) => {
+  if (!ctx.from) return;
+  if (!checkRateLimit(ctx.from.id)) {
+    // Молча игнорируем спамера
+    return;
+  }
+  await next();
+});
+
+// ==================== ХЕЛПЕРЫ ====================
+
+const CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+
+function generatePin(): string {
+  let pin = "";
+  for (let i = 0; i < 4; i++) pin += CHARS[crypto.randomInt(0, CHARS.length)];
+  return pin;
+}
+
+async function generateUniquePin(): Promise<string> {
+  for (let i = 0; i < 100; i++) {
+    const pin = generatePin();
+    const exists = await prisma.user.findUnique({ where: { pinCode: pin } });
+    if (!exists) return pin;
+  }
+  throw new Error("PIN generation failed");
+}
+
+function formatRole(role: UserRole): string {
+  const map: Record<string, string> = {
+    ADMIN: "👑 Администратор",
+    HEAD_MARKETER: "📊 Главный маркетолог",
+    MARKETER: "📋 Маркетолог",
+    HEAD_CREATOR: "🎯 Главный креатор",
+    LEAD_CREATOR: "⭐ Тимлид креаторов",
+    CREATOR: "🎬 Креатор",
+  };
+  return map[role] || role;
+}
+
+function mainMenuKeyboard(status: UserStatus): InlineKeyboard {
+  const kb = new InlineKeyboard();
+
+  if (status === "APPROVED") {
+    kb.text("🔑 Мой PIN", "show_pin").text("🔄 Сменить PIN", "change_pin").row();
+    kb.text("📋 Мои заказы", "my_orders").text("👤 Профиль", "my_profile").row();
+    kb.text("📝 Отправить отчёт", "send_report");
+  } else if (status === "PENDING") {
+    kb.text("⏳ Статус заявки", "check_status");
+  }
+
+  return kb;
+}
+
+// ==================== /start — РЕГИСТРАЦИЯ / ВХОД ====================
 
 bot.command("start", async (ctx) => {
   const telegramId = BigInt(ctx.from!.id);
-  const username = ctx.from?.username || null;
+  const username   = ctx.from?.username || null;
 
-  // Проверяем, есть ли уже пользователь
-  const existing = await prisma.user.findUnique({
-    where: { telegramId },
-  });
+  let existing = await prisma.user.findUnique({ where: { telegramId } });
+
+  // Если не нашли по telegramId — ищем по username (для случая пересозданного аккаунта или старых записей)
+  if (!existing && username) {
+    const byUsername = await prisma.user.findFirst({
+      where: { telegramUsername: username },
+    });
+    if (byUsername) {
+      // Обновляем telegramId и chatId чтобы совпадало с реальным аккаунтом
+      existing = await prisma.user.update({
+        where: { id: byUsername.id },
+        data: { telegramId, chatId: BigInt(ctx.chat!.id) },
+      });
+    }
+  } else if (existing && existing.chatId?.toString() !== ctx.chat!.id.toString()) {
+    // Обновляем chatId если изменился
+    existing = await prisma.user.update({
+      where: { id: existing.id },
+      data: { chatId: BigInt(ctx.chat!.id) },
+    });
+  }
 
   if (existing) {
+    const statusText = existing.status === "APPROVED"
+      ? "✅ Вы зарегистрированы и одобрены."
+      : existing.status === "PENDING"
+      ? "⏳ Ваша заявка на рассмотрении. Дождитесь одобрения."
+      : existing.status === "REJECTED"
+      ? "❌ Ваша заявка была отклонена."
+      : "🚫 Ваш аккаунт заблокирован.";
+
     await ctx.reply(
-      `👋 С возвращением, ${existing.displayName}!\n\n` +
-        `Ваш PIN-код: \`${existing.pinCode}\`\n` +
-        `Роль: ${formatRole(existing.role)}\n\n` +
-        `Используйте PIN для входа на сайт.`,
-      { parse_mode: "Markdown" }
+      `👋 ${existing.displayName}!\n\n${statusText}\nРоль: ${formatRole(existing.role)}`,
+      { reply_markup: mainMenuKeyboard(existing.status) }
     );
     return;
   }
 
-  // Новый пользователь — спрашиваем роль
-  const keyboard = new InlineKeyboard()
-    .text("📊 Маркетолог", "role_MARKETER")
-    .text("🎬 Креатор", "role_CREATOR")
-    .row()
-    .text("⭐ Главный креатор", "role_LEAD_CREATOR");
+  // Новый пользователь — выбор роли
+  const kb = new InlineKeyboard()
+    .text("🎬 Креатор", "reg_CREATOR")
+    .text("📋 Маркетолог", "reg_MARKETER");
 
   await ctx.reply(
-    `👋 Добро пожаловать в CRM Creators!\n\nВыберите вашу роль:`,
-    { reply_markup: keyboard }
+    `👋 Добро пожаловать в *TRENITY CRM*!\n\n` +
+    `Для начала работы нужно подать заявку.\n` +
+    `Выберите вашу роль:`,
+    { parse_mode: "Markdown", reply_markup: kb }
   );
 });
 
 // Обработка выбора роли при регистрации
-bot.callbackQuery(/^role_(.+)$/, async (ctx) => {
+bot.callbackQuery(/^reg_(.+)$/, async (ctx) => {
   const roleStr = ctx.match![1] as UserRole;
   const telegramId = BigInt(ctx.from!.id);
-  const username = ctx.from?.username || null;
-  const displayName =
-    ctx.from?.first_name +
-    (ctx.from?.last_name ? ` ${ctx.from.last_name}` : "");
 
-  // Проверяем на дубль
   const existing = await prisma.user.findUnique({ where: { telegramId } });
   if (existing) {
     await ctx.answerCallbackQuery("Вы уже зарегистрированы!");
     return;
   }
 
-  const pinCode = await generateUniquePin(prisma);
+  const username = ctx.from?.username || null;
+  const displayName = ctx.from?.first_name + (ctx.from?.last_name ? ` ${ctx.from.last_name}` : "");
 
+  // Создаём заявку (статус PENDING, без PIN)
   await prisma.user.create({
     data: {
       telegramId,
       telegramUsername: username,
       displayName,
       role: roleStr,
-      pinCode,
+      status: UserStatus.PENDING,
       chatId: BigInt(ctx.chat!.id),
+      // pinCode — не выдаётся до одобрения
     },
   });
 
-  await ctx.answerCallbackQuery("Регистрация завершена!");
+  // Уведомляем админов и лидов
+  const managers = await prisma.user.findMany({
+    where: {
+      status: UserStatus.APPROVED,
+      role: { in: [UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.HEAD_CREATOR, UserRole.LEAD_CREATOR] },
+    },
+    select: { id: true },
+  });
+
+  for (const m of managers) {
+    await prisma.notification.create({
+      data: {
+        userId: m.id,
+        type: NotificationType.REGISTRATION_REQUEST,
+        message: `📥 Новая заявка: ${displayName} (@${username || "—"}) → ${formatRole(roleStr)}`,
+      },
+    });
+  }
+
+  await ctx.answerCallbackQuery("Заявка отправлена!");
   await ctx.editMessageText(
-    `✅ Регистрация завершена!\n\n` +
-      `👤 Имя: ${displayName}\n` +
-      `📋 Роль: ${formatRole(roleStr)}\n` +
-      `🔑 Ваш PIN-код: \`${pinCode}\`\n\n` +
-      `Используйте этот PIN для входа на сайт.\n` +
-      `Сменить PIN: /pin\n` +
-      `Редактировать профиль: /profile`,
-    { parse_mode: "Markdown" }
+    `✅ Заявка отправлена!\n\n` +
+    `👤 ${displayName}\n` +
+    `📋 Роль: ${formatRole(roleStr)}\n\n` +
+    `⏳ Дождитесь одобрения от администратора.\n` +
+    `Вам придёт уведомление и PIN-код для входа на сайт.`,
+    { reply_markup: mainMenuKeyboard(UserStatus.PENDING) }
   );
 });
 
-// ==================== /pin — ПОКАЗАТЬ / СМЕНИТЬ PIN ====================
+// ==================== КНОПКИ МЕНЮ ====================
 
-bot.command("pin", async (ctx) => {
-  const telegramId = BigInt(ctx.from!.id);
-  const user = await prisma.user.findUnique({ where: { telegramId } });
-
-  if (!user) {
-    await ctx.reply("❌ Вы не зарегистрированы. Используйте /start");
-    return;
-  }
-
-  const keyboard = new InlineKeyboard()
-    .text("🔄 Сменить PIN", "change_pin")
-    .text("👁 Показать PIN", "show_pin");
-
-  await ctx.reply("🔑 Управление PIN-кодом:", { reply_markup: keyboard });
-});
-
+// Показать PIN
 bot.callbackQuery("show_pin", async (ctx) => {
-  const telegramId = BigInt(ctx.from!.id);
-  const user = await prisma.user.findUnique({ where: { telegramId } });
-
-  if (!user) {
-    await ctx.answerCallbackQuery("Ошибка");
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || !user.pinCode) {
+    await ctx.answerCallbackQuery("PIN не найден");
     return;
   }
-
   await ctx.answerCallbackQuery();
-  await ctx.reply(`🔑 Ваш PIN-код: \`${user.pinCode}\``, {
-    parse_mode: "Markdown",
-  });
+  await ctx.reply(`🔑 Ваш PIN-код: \`${user.pinCode}\`\n\nИспользуйте для входа на сайт.`, { parse_mode: "Markdown" });
 });
 
+// Сменить PIN
 bot.callbackQuery("change_pin", async (ctx) => {
-  const telegramId = BigInt(ctx.from!.id);
-  const user = await prisma.user.findUnique({ where: { telegramId } });
-
-  if (!user) {
-    await ctx.answerCallbackQuery("Ошибка");
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || user.status !== "APPROVED") {
+    await ctx.answerCallbackQuery("Недоступно");
     return;
   }
 
-  const newPin = await generateUniquePin(prisma);
-  await prisma.user.update({
-    where: { telegramId },
-    data: { pinCode: newPin },
-  });
+  const newPin = await generateUniquePin();
+  await prisma.user.update({ where: { id: user.id }, data: { pinCode: newPin } });
 
   await ctx.answerCallbackQuery("PIN изменён!");
-  await ctx.editMessageText(
-    `✅ PIN-код изменён!\n\nНовый PIN: \`${newPin}\``,
-    { parse_mode: "Markdown" }
-  );
+  await ctx.reply(`✅ Новый PIN-код: \`${newPin}\``, { parse_mode: "Markdown" });
 });
 
-// ==================== /profile — РЕДАКТИРОВАНИЕ ПРОФИЛЯ ====================
-
-bot.command("profile", async (ctx) => {
-  const telegramId = BigInt(ctx.from!.id);
-  const user = await prisma.user.findUnique({ where: { telegramId } });
-
-  if (!user) {
-    await ctx.reply("❌ Вы не зарегистрированы. Используйте /start");
-    return;
-  }
-
-  const keyboard = new InlineKeyboard().text(
-    "✏️ Изменить имя",
-    "edit_name"
-  );
-
-  await ctx.reply(
-    `👤 Ваш профиль:\n\n` +
-      `Имя: ${user.displayName}\n` +
-      `Telegram: @${user.telegramUsername || "не указан"}\n` +
-      `Роль: ${formatRole(user.role)}\n` +
-      `Зарегистрирован: ${user.createdAt.toLocaleDateString("ru-RU")}`,
-    { reply_markup: keyboard }
-  );
-});
-
-// Состояние для ожидания ввода имени
-const waitingForName = new Set<number>();
-
-bot.callbackQuery("edit_name", async (ctx) => {
-  waitingForName.add(ctx.from!.id);
+// Статус заявки
+bot.callbackQuery("check_status", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
   await ctx.answerCallbackQuery();
-  await ctx.reply("✏️ Введите новое отображаемое имя:");
-});
-
-// Обработка текстовых сообщений (для имени и отчётов)
-bot.on("message:text", async (ctx, next) => {
-  const userId = ctx.from!.id;
-
-  // Обработка смены имени
-  if (waitingForName.has(userId)) {
-    waitingForName.delete(userId);
-
-    const newName = ctx.message.text.trim();
-    if (newName.length < 2 || newName.length > 50) {
-      await ctx.reply("❌ Имя должно быть от 2 до 50 символов");
-      return;
-    }
-
-    await prisma.user.update({
-      where: { telegramId: BigInt(userId) },
-      data: { displayName: newName },
-    });
-
-    await ctx.reply(`✅ Имя изменено на: ${newName}`);
-    return;
-  }
-
-  // Обработка отчёта
-  if (waitingForReport.has(userId)) {
-    const orderId = waitingForReport.get(userId)!;
-    waitingForReport.delete(userId);
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const user = await prisma.user.findUnique({
-      where: { telegramId: BigInt(userId) },
-    });
-    if (!user) return;
-
-    await prisma.dailyReport.upsert({
-      where: {
-        orderId_creatorId_reportDate: {
-          orderId,
-          creatorId: user.id,
-          reportDate: today,
-        },
-      },
-      update: { reportText: ctx.message.text, submittedAt: new Date() },
-      create: {
-        orderId,
-        creatorId: user.id,
-        reportText: ctx.message.text,
-        reportDate: today,
-      },
-    });
-
-    await ctx.reply("✅ Отчёт отправлен! Спасибо за работу 💪");
-    return;
-  }
-
-  await next();
-});
-
-// ==================== /myorders — МОИ ЗАКАЗЫ ====================
-
-bot.command("myorders", async (ctx) => {
-  const telegramId = BigInt(ctx.from!.id);
-  const user = await prisma.user.findUnique({ where: { telegramId } });
 
   if (!user) {
-    await ctx.reply("❌ Вы не зарегистрированы. Используйте /start");
+    await ctx.reply("Вы не зарегистрированы. Нажмите /start");
     return;
   }
 
-  let orders;
-  if (user.role === UserRole.MARKETER) {
-    orders = await prisma.order.findMany({
-      where: { marketerId: user.id, status: { not: "ARCHIVED" } },
-      include: {
-        creators: { include: { creator: { select: { displayName: true } } } },
-        stages: { orderBy: { sortOrder: "asc" } },
-      },
-      orderBy: { updatedAt: "desc" },
-      take: 10,
-    });
-  } else {
-    orders = await prisma.order.findMany({
-      where: {
-        creators: { some: { creatorId: user.id } },
-        status: { not: "ARCHIVED" },
-      },
-      include: {
-        marketer: { select: { displayName: true } },
-        stages: { orderBy: { sortOrder: "asc" } },
-      },
-      orderBy: { updatedAt: "desc" },
-      take: 10,
-    });
-  }
-
-  if (orders.length === 0) {
-    await ctx.reply("📭 У вас пока нет активных заказов.");
-    return;
-  }
-
-  const statusEmoji: Record<string, string> = {
-    NEW: "🆕",
-    IN_PROGRESS: "🔄",
-    ON_REVIEW: "👀",
-    DONE: "✅",
-    ARCHIVED: "📦",
+  const statusText: Record<string, string> = {
+    PENDING: "⏳ На рассмотрении. Дождитесь одобрения.",
+    APPROVED: "✅ Одобрено! Используйте /start чтобы получить PIN.",
+    REJECTED: "❌ Отклонена. Свяжитесь с администратором.",
+    BLOCKED: "🚫 Заблокирован.",
   };
 
-  let text = `📋 Ваши заказы (${orders.length}):\n\n`;
+  await ctx.reply(statusText[user.status] || user.status);
+});
 
-  for (const order of orders) {
-    const doneStages = order.stages.filter((s) => s.status === "DONE").length;
-    const totalStages = order.stages.length;
-    const progress = `${"▓".repeat(doneStages)}${"░".repeat(totalStages - doneStages)}`;
+// Профиль
+bot.callbackQuery("my_profile", async (ctx) => {
+  const user = await prisma.user.findUnique({
+    where: { telegramId: BigInt(ctx.from!.id) },
+    include: {
+      teamLead: { select: { displayName: true, telegramUsername: true } },
+      _count: { select: { assignments: true, createdOrders: true } },
+    },
+  });
 
-    text +=
-      `${statusEmoji[order.status] || "📋"} *${order.title}*\n` +
-      `   Прогресс: ${progress} (${doneStages}/${totalStages})\n`;
+  if (!user) { await ctx.answerCallbackQuery("Не найден"); return; }
+  await ctx.answerCallbackQuery();
 
-    if (order.deadline) {
-      const days = Math.ceil(
-        (order.deadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-      );
-      text +=
-        days > 0
-          ? `   ⏰ Дедлайн через ${days} дн.\n`
-          : `   🔴 Просрочено!\n`;
+  let text = `👤 *Ваш профиль*\n\n` +
+    `Имя: ${user.displayName}\n` +
+    `Telegram: @${user.telegramUsername || "—"}\n` +
+    `Роль: ${formatRole(user.role)}\n` +
+    `Статус: ${user.status}\n`;
+
+  if (user.teamLead) {
+    text += `Тимлид: ${user.teamLead.displayName} (@${user.teamLead.telegramUsername || "—"})\n`;
+  }
+
+  text += `\nЗаказов создано: ${user._count.createdOrders}\n`;
+  text += `Назначений: ${user._count.assignments}\n`;
+  text += `Зарегистрирован: ${user.createdAt.toLocaleDateString("ru-RU")}`;
+
+  const kb = new InlineKeyboard().text("✏️ Изменить имя", "edit_name").text("🔙 Меню", "back_menu");
+  await ctx.reply(text, { parse_mode: "Markdown", reply_markup: kb });
+});
+
+// Мои заказы
+bot.callbackQuery("my_orders", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user) { await ctx.answerCallbackQuery("Не найден"); return; }
+  await ctx.answerCallbackQuery();
+
+  const isMarketer = ["ADMIN", "HEAD_MARKETER", "MARKETER"].includes(user.role);
+
+  const orders = await prisma.order.findMany({
+    where: isMarketer
+      ? { marketerId: user.id, status: { not: "ARCHIVED" } }
+      : { creators: { some: { creatorId: user.id } }, status: { not: "ARCHIVED" } },
+    include: { stages: { orderBy: { sortOrder: "asc" } } },
+    orderBy: { updatedAt: "desc" },
+    take: 10,
+  });
+
+  if (orders.length === 0) {
+    await ctx.reply("📭 Нет активных заказов.");
+    return;
+  }
+
+  const emoji: Record<string, string> = {
+    NEW: "🆕", IN_PROGRESS: "🔄", ON_REVIEW: "👀", DONE: "✅", ARCHIVED: "📦",
+  };
+
+  let text = `📋 *Ваши заказы* (${orders.length}):\n\n`;
+  for (const o of orders) {
+    const done = o.stages.filter((s) => s.status === "DONE").length;
+    const total = o.stages.length;
+    const bar = "▓".repeat(done) + "░".repeat(total - done);
+
+    text += `${emoji[o.status] || "📋"} *${o.title}*\n`;
+    text += `   ${bar} (${done}/${total})\n`;
+
+    if (o.deadline) {
+      const days = Math.ceil((o.deadline.getTime() - Date.now()) / 86400000);
+      text += days > 0 ? `   ⏰ ${days} дн. до дедлайна\n` : `   🔴 Просрочено!\n`;
     }
-
     text += "\n";
   }
 
   await ctx.reply(text, { parse_mode: "Markdown" });
 });
 
-// ==================== /report — ОТПРАВИТЬ ОТЧЁТ ====================
+// Назад в меню
+bot.callbackQuery("back_menu", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  await ctx.answerCallbackQuery();
+  if (!user) return;
+  await ctx.reply("📋 Главное меню:", { reply_markup: mainMenuKeyboard(user.status) });
+});
 
-const waitingForReport = new Map<number, string>(); // userId → orderId
+// ==================== ОТПРАВКА ОТЧЁТА ====================
 
-bot.command("report", async (ctx) => {
-  const telegramId = BigInt(ctx.from!.id);
-  const user = await prisma.user.findUnique({ where: { telegramId } });
+const waitingForReport = new Map<number, string>();
+const waitingForName = new Set<number>();
 
-  if (!user) {
-    await ctx.reply("❌ Вы не зарегистрированы. Используйте /start");
-    return;
-  }
+bot.callbackQuery("send_report", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || user.status !== "APPROVED") { await ctx.answerCallbackQuery("Недоступно"); return; }
+  await ctx.answerCallbackQuery();
 
-  // Находим активные заказы креатора
   const orders = await prisma.order.findMany({
-    where: {
-      creators: { some: { creatorId: user.id } },
-      status: { in: ["IN_PROGRESS", "ON_REVIEW"] },
-    },
+    where: { creators: { some: { creatorId: user.id } }, status: { in: ["IN_PROGRESS", "ON_REVIEW"] } },
     select: { id: true, title: true },
   });
 
@@ -340,73 +361,130 @@ bot.command("report", async (ctx) => {
   }
 
   if (orders.length === 1) {
-    // Один заказ — сразу спрашиваем текст
     waitingForReport.set(ctx.from!.id, orders[0].id);
-    await ctx.reply(
-      `📝 Отчёт по заказу «${orders[0].title}»\n\nНапишите, что сделали:`
-    );
+    await ctx.reply(`📝 Отчёт по «${orders[0].title}»\n\nНапишите, что сделали сегодня:`);
     return;
   }
 
-  // Несколько заказов — выбор
-  const keyboard = new InlineKeyboard();
-  for (const order of orders) {
-    keyboard.text(order.title.slice(0, 40), `report_${order.id}`).row();
+  const kb = new InlineKeyboard();
+  for (const o of orders) {
+    kb.text(o.title.slice(0, 40), `rpt_${o.id}`).row();
   }
-
-  await ctx.reply("📝 Выберите заказ для отчёта:", {
-    reply_markup: keyboard,
-  });
+  await ctx.reply("📝 Выберите заказ:", { reply_markup: kb });
 });
 
-bot.callbackQuery(/^report_(.+)$/, async (ctx) => {
+bot.callbackQuery(/^rpt_(.+)$/, async (ctx) => {
   const orderId = ctx.match![1];
   waitingForReport.set(ctx.from!.id, orderId);
-
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    select: { title: true },
-  });
-
+  const order = await prisma.order.findUnique({ where: { id: orderId }, select: { title: true } });
   await ctx.answerCallbackQuery();
-  await ctx.reply(
-    `📝 Отчёт по заказу «${order?.title}»\n\nНапишите, что сделали за сегодня:`
-  );
+  await ctx.reply(`📝 Отчёт по «${order?.title}»\n\nНапишите, что сделали:`);
+});
+
+// Редактирование имени
+bot.callbackQuery("edit_name", async (ctx) => {
+  waitingForName.add(ctx.from!.id);
+  await ctx.answerCallbackQuery();
+  await ctx.reply("✏️ Введите новое имя:");
+});
+
+// ==================== ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ ====================
+
+bot.on("message:text", async (ctx) => {
+  const userId = ctx.from!.id;
+
+  // Смена имени
+  if (waitingForName.has(userId)) {
+    waitingForName.delete(userId);
+    const name = ctx.message.text.trim();
+    if (name.length < 2 || name.length > 50) {
+      await ctx.reply("❌ Имя: от 2 до 50 символов");
+      return;
+    }
+    await prisma.user.update({ where: { telegramId: BigInt(userId) }, data: { displayName: name } });
+    await ctx.reply(`✅ Имя изменено: ${name}`);
+    return;
+  }
+
+  // Отчёт
+  if (waitingForReport.has(userId)) {
+    const orderId = waitingForReport.get(userId)!;
+    waitingForReport.delete(userId);
+
+    const user = await prisma.user.findUnique({ where: { telegramId: BigInt(userId) } });
+    if (!user) return;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    await prisma.dailyReport.upsert({
+      where: { orderId_creatorId_reportDate: { orderId, creatorId: user.id, reportDate: today } },
+      update: { reportText: ctx.message.text, submittedAt: new Date() },
+      create: { orderId, creatorId: user.id, reportText: ctx.message.text, reportDate: today },
+    });
+
+    await ctx.reply("✅ Отчёт сохранён! 💪", {
+      reply_markup: new InlineKeyboard().text("🔙 Меню", "back_menu"),
+    });
+    return;
+  }
+
+  // Неизвестное сообщение — предлагаем меню
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(userId) } });
+  if (user) {
+    await ctx.reply("Используйте кнопки меню:", { reply_markup: mainMenuKeyboard(user.status) });
+  } else {
+    await ctx.reply("Нажмите /start чтобы начать");
+  }
+});
+
+// ==================== ТЕКСТОВЫЕ КОМАНДЫ (для удобства) ====================
+
+bot.command("pin", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || !user.pinCode) {
+    await ctx.reply("PIN не доступен. Используйте /start");
+    return;
+  }
+  await ctx.reply(`🔑 Ваш PIN: \`${user.pinCode}\``, { parse_mode: "Markdown" });
+});
+
+bot.command("menu", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user) { await ctx.reply("Нажмите /start"); return; }
+  await ctx.reply("📋 Меню:", { reply_markup: mainMenuKeyboard(user.status) });
 });
 
 // ==================== ОТПРАВКА УВЕДОМЛЕНИЙ ИЗ ОЧЕРЕДИ ====================
 
-async function processNotificationQueue() {
+async function processNotifications() {
   try {
     const pending = await prisma.notification.findMany({
       where: { isSent: false },
-      include: {
-        user: { select: { chatId: true, displayName: true } },
-        order: { select: { title: true } },
-      },
+      include: { user: { select: { chatId: true } } },
       take: 10,
       orderBy: { createdAt: "asc" },
     });
 
-    for (const notif of pending) {
-      if (!notif.user.chatId) continue;
+    for (const n of pending) {
+      if (!n.user.chatId) {
+        await prisma.notification.update({ where: { id: n.id }, data: { isSent: true, sentAt: new Date() } });
+        continue;
+      }
 
       try {
-        await bot.api.sendMessage(
-          notif.user.chatId.toString(),
-          notif.message,
-          { parse_mode: "Markdown" }
-        );
-
-        await prisma.notification.update({
-          where: { id: notif.id },
-          data: { isSent: true, sentAt: new Date() },
-        });
-      } catch (err) {
-        console.error(
-          `Failed to send notification ${notif.id}:`,
-          (err as Error).message
-        );
+        await bot.api.sendMessage(n.user.chatId.toString(), n.message, { parse_mode: "Markdown" });
+        await prisma.notification.update({ where: { id: n.id }, data: { isSent: true, sentAt: new Date() } });
+      } catch (err: any) {
+        // 403 — бот заблокирован, 400 — чат не найден (фейковый/устаревший chatId)
+        // В обоих случаях помечаем как отправлено чтобы больше не пытаться
+        if (err.error_code === 403 || err.error_code === 400) {
+          await prisma.notification.update({ where: { id: n.id }, data: { isSent: true, sentAt: new Date() } });
+        }
+        // Не спамим в консоль на каждый цикл — только если неизвестная ошибка
+        if (err.error_code !== 400 && err.error_code !== 403) {
+          console.error(`Notification ${n.id} failed:`, err.message);
+        }
       }
     }
   } catch (err) {
@@ -414,30 +492,16 @@ async function processNotificationQueue() {
   }
 }
 
-// Обрабатываем очередь каждые 5 секунд
-setInterval(processNotificationQueue, 5000);
-
-// ==================== ХЕЛПЕРЫ ====================
-
-function formatRole(role: UserRole): string {
-  const map: Record<UserRole, string> = {
-    MARKETER: "📊 Маркетолог",
-    CREATOR: "🎬 Креатор",
-    LEAD_CREATOR: "⭐ Главный креатор",
-    ADMIN: "👑 Администратор",
-  };
-  return map[role] || role;
-}
+setInterval(processNotifications, 5000);
 
 // ==================== ЗАПУСК ====================
 
-bot.catch((err) => {
-  console.error("Bot error:", err);
-});
+bot.catch((err) => console.error("Bot error:", err));
 
 bot.start({
   onStart: () => {
-    console.log("🤖 Telegram bot started");
-    console.log("📨 Notification queue active (5s interval)");
+    console.log("🤖 TRENITY CRM Bot started");
+    console.log("🛡️  Anti-spam: " + RATE_LIMIT + " msg/" + (RATE_WINDOW / 1000) + "s");
+    console.log("📨 Notification queue: 5s interval");
   },
 });

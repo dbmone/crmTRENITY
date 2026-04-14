@@ -1,17 +1,7 @@
-import {
-  PrismaClient,
-  StageName,
-  StageStatus,
-  OrderStatus,
-  UserRole,
-} from "@prisma/client";
+import { PrismaClient, StageName, StageStatus, OrderStatus, UserRole } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-/**
- * Обновить статус этапа.
- * REVIEW → COMPLETED может только маркетолог, лид-креатор или админ.
- */
 export async function updateStage(
   orderId: string,
   stageId: string,
@@ -25,27 +15,21 @@ export async function updateStage(
 
   if (!stage) throw { statusCode: 404, message: "Этап не найден" };
 
-  // Проверка: переход REVIEW → COMPLETED
-  if (
-    stage.name === StageName.REVIEW &&
-    newStatus === StageStatus.DONE
-  ) {
-    // Проверяем, является ли пользователь лид-креатором на этом заказе
+  // REVIEW → DONE: только маркетолог / лид-креатор / админ
+  if (stage.name === StageName.REVIEW && newStatus === StageStatus.DONE) {
     const isLeadOnOrder = await prisma.orderCreator.findFirst({
       where: { orderId, creatorId: userId, isLead: true },
     });
 
     const canApprove =
       userRole === UserRole.ADMIN ||
+      userRole === UserRole.HEAD_MARKETER ||
       userRole === UserRole.MARKETER ||
       userRole === UserRole.LEAD_CREATOR ||
       !!isLeadOnOrder;
 
     if (!canApprove) {
-      throw {
-        statusCode: 403,
-        message: "Только маркетолог или главный креатор может утвердить этап ревью",
-      };
+      throw { statusCode: 403, message: "Только маркетолог или главный креатор может утвердить" };
     }
   }
 
@@ -64,19 +48,10 @@ export async function updateStage(
     data: updateData,
   });
 
-  // Автоматически обновляем статус заказа
   await syncOrderStatus(orderId);
-
   return updated;
 }
 
-/**
- * Синхронизирует статус заказа на основе этапов.
- * - Все PENDING → NEW
- * - Есть IN_PROGRESS → IN_PROGRESS
- * - REVIEW в IN_PROGRESS → ON_REVIEW
- * - Все DONE → DONE
- */
 async function syncOrderStatus(orderId: string) {
   const stages = await prisma.orderStage.findMany({
     where: { orderId },
@@ -89,26 +64,14 @@ async function syncOrderStatus(orderId: string) {
   const reviewActive = reviewStage?.status === StageStatus.IN_PROGRESS;
 
   let newStatus: OrderStatus;
+  if (allDone) newStatus = OrderStatus.DONE;
+  else if (allPending) newStatus = OrderStatus.NEW;
+  else if (reviewActive) newStatus = OrderStatus.ON_REVIEW;
+  else newStatus = OrderStatus.IN_PROGRESS;
 
-  if (allDone) {
-    newStatus = OrderStatus.DONE;
-  } else if (allPending) {
-    newStatus = OrderStatus.NEW;
-  } else if (reviewActive) {
-    newStatus = OrderStatus.ON_REVIEW;
-  } else {
-    newStatus = OrderStatus.IN_PROGRESS;
-  }
-
-  await prisma.order.update({
-    where: { id: orderId },
-    data: { status: newStatus },
-  });
+  await prisma.order.update({ where: { id: orderId }, data: { status: newStatus } });
 }
 
-/**
- * Получить все этапы заказа
- */
 export async function getStages(orderId: string) {
   return prisma.orderStage.findMany({
     where: { orderId },

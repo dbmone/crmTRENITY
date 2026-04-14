@@ -3,8 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/auth.store";
 
 export default function LoginPage() {
-  const [digits, setDigits] = useState(["", "", "", ""]);
-  const [error, setError] = useState("");
+  const [digits,  setDigits]  = useState(["", "", "", ""]);
+  const [error,   setError]   = useState("");
   const [loading, setLoading] = useState(false);
   const refs = [
     useRef<HTMLInputElement>(null),
@@ -13,11 +13,9 @@ export default function LoginPage() {
     useRef<HTMLInputElement>(null),
   ];
   const navigate = useNavigate();
-  const login = useAuthStore((s) => s.login);
+  const login    = useAuthStore((s) => s.login);
 
-  useEffect(() => {
-    refs[0].current?.focus();
-  }, []);
+  useEffect(() => { refs[0].current?.focus(); }, []);
 
   const handleChange = (index: number, value: string) => {
     if (value.length > 1) value = value.slice(-1);
@@ -25,41 +23,23 @@ export default function LoginPage() {
     next[index] = value;
     setDigits(next);
     setError("");
-
-    if (value && index < 3) {
-      refs[index + 1].current?.focus();
-    }
-
-    // Автосабмит при заполнении всех 4
-    if (index === 3 && value) {
-      const pin = next.join("");
-      if (pin.length === 4) submitPin(pin);
-    }
+    if (value && index < 3) refs[index + 1].current?.focus();
+    if (index === 3 && value && next.join("").length === 4) submitPin(next.join(""));
   };
 
   const handleKeyDown = (index: number, e: React.KeyboardEvent) => {
-    if (e.key === "Backspace" && !digits[index] && index > 0) {
-      refs[index - 1].current?.focus();
-    }
-    if (e.key === "Enter") {
-      const pin = digits.join("");
-      if (pin.length === 4) submitPin(pin);
-    }
+    if (e.key === "Backspace" && !digits[index] && index > 0) refs[index - 1].current?.focus();
+    if (e.key === "Enter") { const p = digits.join(""); if (p.length === 4) submitPin(p); }
   };
 
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
     const text = e.clipboardData.getData("text").trim().slice(0, 4);
-    const next = [...digits];
-    for (let i = 0; i < text.length; i++) {
-      next[i] = text[i];
-    }
+    const next  = [...digits];
+    for (let i = 0; i < text.length; i++) next[i] = text[i];
     setDigits(next);
-    if (text.length === 4) {
-      submitPin(text);
-    } else {
-      refs[Math.min(text.length, 3)].current?.focus();
-    }
+    if (text.length === 4) submitPin(text);
+    else refs[Math.min(text.length, 3)].current?.focus();
   };
 
   const submitPin = async (pin: string) => {
@@ -78,23 +58,25 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-surface-secondary">
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-10 w-full max-w-sm">
+    <div className="min-h-screen flex items-center justify-center bg-bg-base">
+      {/* Background glow */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-green-500/5 rounded-full blur-3xl" />
+      </div>
+
+      <div className="relative bg-bg-surface border border-bg-border rounded-modal p-10 w-full max-w-sm shadow-modal">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="w-14 h-14 bg-brand-50 rounded-xl flex items-center justify-center mx-auto mb-4">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#534AB7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="7" height="7" rx="1" />
-              <rect x="14" y="3" width="7" height="7" rx="1" />
-              <rect x="3" y="14" width="7" height="7" rx="1" />
-              <rect x="14" y="14" width="7" height="7" rx="1" />
-            </svg>
+          <div className="w-14 h-14 rounded-2xl bg-green-500/10 border border-green-500/20 flex items-center justify-center mx-auto mb-4">
+            <span className="text-green-400 font-black text-2xl">T</span>
           </div>
-          <h1 className="text-xl font-semibold text-ink-primary">CRM Creators</h1>
-          <p className="text-sm text-ink-tertiary mt-1">Введите PIN-код для входа</p>
+          <h1 className="text-xl font-bold text-ink-primary tracking-tight">
+            TRENITY <span className="text-green-500">CRM</span>
+          </h1>
+          <p className="text-sm text-ink-tertiary mt-1.5">Введите PIN-код для входа</p>
         </div>
 
-        {/* PIN Input */}
+        {/* PIN input */}
         <div className="flex gap-3 justify-center mb-6">
           {digits.map((d, i) => (
             <input
@@ -107,27 +89,23 @@ export default function LoginPage() {
               onChange={(e) => handleChange(i, e.target.value)}
               onKeyDown={(e) => handleKeyDown(i, e)}
               onPaste={i === 0 ? handlePaste : undefined}
-              className={`w-14 h-16 text-center text-2xl font-semibold rounded-xl border-2 outline-none transition-all ${
+              className={`w-14 h-16 text-center text-2xl font-bold rounded-xl border-2 outline-none transition-all bg-bg-raised text-ink-primary ${
                 error
-                  ? "border-red-300 bg-red-50"
+                  ? "border-red-500/50 bg-red-500/5"
                   : d
-                  ? "border-brand-400 bg-brand-50"
-                  : "border-gray-200 bg-surface-secondary focus:border-brand-400 focus:bg-brand-50"
+                  ? "border-green-500/50 bg-green-500/5 text-green-400"
+                  : "border-bg-border focus:border-green-500/50 focus:bg-green-500/5"
               }`}
               disabled={loading}
             />
           ))}
         </div>
 
-        {/* Error */}
-        {error && (
-          <p className="text-center text-sm text-red-500 mb-4">{error}</p>
-        )}
+        {error && <p className="text-center text-sm text-red-400 mb-4">{error}</p>}
 
-        {/* Loading */}
         {loading && (
           <div className="flex justify-center mb-4">
-            <div className="w-6 h-6 border-2 border-brand-400 border-t-transparent rounded-full animate-spin" />
+            <div className="w-5 h-5 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
           </div>
         )}
 

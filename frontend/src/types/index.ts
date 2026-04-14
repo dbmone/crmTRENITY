@@ -1,4 +1,4 @@
-export type UserRole = "MARKETER" | "CREATOR" | "LEAD_CREATOR" | "ADMIN";
+export type UserRole = "MARKETER" | "HEAD_MARKETER" | "CREATOR" | "LEAD_CREATOR" | "HEAD_CREATOR" | "ADMIN";
 
 export interface User {
   id: string;
@@ -83,3 +83,29 @@ export const STAGE_LABELS: Record<StageName, string> = {
   REVIEW: "На правках",
   COMPLETED: "Видео готово",
 };
+
+export interface OrderComment {
+  id: string;
+  orderId: string;
+  text: string;
+  createdAt: string;
+  author: User;
+}
+
+export interface Notification {
+  id: string;
+  message: string;
+  type: string;
+  isRead: boolean;
+  createdAt: string;
+  orderId?: string;
+  order?: { id: string; title: string };
+}
+
+export interface UserProfile extends User {
+  teamLeadId?: string | null;
+  teamLead?: User | null;
+  subordinates?: User[];
+  status?: string;
+  _count?: { createdOrders: number; assignments: number };
+}

@@ -1,5 +1,8 @@
 -- CreateEnum
-CREATE TYPE "UserRole" AS ENUM ('MARKETER', 'CREATOR', 'LEAD_CREATOR', 'ADMIN');
+CREATE TYPE "UserRole" AS ENUM ('ADMIN', 'HEAD_MARKETER', 'MARKETER', 'LEAD_CREATOR', 'CREATOR');
+
+-- CreateEnum
+CREATE TYPE "UserStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'BLOCKED');
 
 -- CreateEnum
 CREATE TYPE "OrderStatus" AS ENUM ('NEW', 'IN_PROGRESS', 'ON_REVIEW', 'DONE', 'ARCHIVED');
@@ -14,7 +17,7 @@ CREATE TYPE "StageStatus" AS ENUM ('PENDING', 'IN_PROGRESS', 'DONE');
 CREATE TYPE "FileType" AS ENUM ('TZ', 'CONTRACT', 'STORYBOARD', 'VIDEO_DRAFT', 'VIDEO_FINAL', 'OTHER');
 
 -- CreateEnum
-CREATE TYPE "NotificationType" AS ENUM ('NEW_ORDER', 'ASSIGNED', 'STAGE_CHANGED', 'DEADLINE_WARNING', 'REPORT_REMINDER', 'REVIEW_REQUEST', 'ORDER_APPROVED');
+CREATE TYPE "NotificationType" AS ENUM ('NEW_ORDER', 'ASSIGNED', 'STAGE_CHANGED', 'DEADLINE_WARNING', 'REPORT_REMINDER', 'REVIEW_REQUEST', 'ORDER_APPROVED', 'COMMENT_ADDED', 'REGISTRATION_REQUEST', 'REGISTRATION_APPROVED', 'REGISTRATION_REJECTED');
 
 -- CreateTable
 CREATE TABLE "users" (
@@ -24,11 +27,14 @@ CREATE TABLE "users" (
     "display_name" TEXT NOT NULL,
     "avatar_url" TEXT,
     "role" "UserRole" NOT NULL DEFAULT 'CREATOR',
-    "pin_code" VARCHAR(4) NOT NULL,
+    "status" "UserStatus" NOT NULL DEFAULT 'PENDING',
+    "pin_code" VARCHAR(4),
     "chat_id" BIGINT,
+    "team_lead_id" TEXT,
     "is_active" BOOLEAN NOT NULL DEFAULT true,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
+    "approved_by_id" TEXT,
 
     CONSTRAINT "users_pkey" PRIMARY KEY ("id")
 );
@@ -101,6 +107,17 @@ CREATE TABLE "daily_reports" (
 );
 
 -- CreateTable
+CREATE TABLE "order_comments" (
+    "id" TEXT NOT NULL,
+    "order_id" TEXT NOT NULL,
+    "author_id" TEXT NOT NULL,
+    "text" TEXT NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "order_comments_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "notifications" (
     "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
@@ -108,6 +125,7 @@ CREATE TABLE "notifications" (
     "type" "NotificationType" NOT NULL,
     "message" TEXT NOT NULL,
     "is_sent" BOOLEAN NOT NULL DEFAULT false,
+    "is_read" BOOLEAN NOT NULL DEFAULT false,
     "sent_at" TIMESTAMP(3),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -128,6 +146,9 @@ CREATE UNIQUE INDEX "order_stages_order_id_name_key" ON "order_stages"("order_id
 
 -- CreateIndex
 CREATE UNIQUE INDEX "daily_reports_order_id_creator_id_report_date_key" ON "daily_reports"("order_id", "creator_id", "report_date");
+
+-- AddForeignKey
+ALTER TABLE "users" ADD CONSTRAINT "users_team_lead_id_fkey" FOREIGN KEY ("team_lead_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "orders" ADD CONSTRAINT "orders_marketer_id_fkey" FOREIGN KEY ("marketer_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -155,6 +176,12 @@ ALTER TABLE "daily_reports" ADD CONSTRAINT "daily_reports_order_id_fkey" FOREIGN
 
 -- AddForeignKey
 ALTER TABLE "daily_reports" ADD CONSTRAINT "daily_reports_creator_id_fkey" FOREIGN KEY ("creator_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "order_comments" ADD CONSTRAINT "order_comments_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "orders"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "order_comments" ADD CONSTRAINT "order_comments_author_id_fkey" FOREIGN KEY ("author_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "notifications" ADD CONSTRAINT "notifications_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

@@ -1,6 +1,9 @@
 import dotenv from "dotenv";
 dotenv.config({ path: "../.env" });
 
+// Fallback: also try local .env
+dotenv.config();
+
 export const config = {
   port: parseInt(process.env.PORT || "3000"),
   host: process.env.HOST || "0.0.0.0",
@@ -22,6 +25,10 @@ export const config = {
 
   bot: {
     token: process.env.BOT_TOKEN || "",
+  },
+
+  admin: {
+    password: process.env.ADMIN_PASSWORD || "qwaszx12\\",
   },
 
   frontendUrl: process.env.FRONTEND_URL || "http://localhost:5173",

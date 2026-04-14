@@ -2,6 +2,7 @@ import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, DragOve
 import { Order, KANBAN_COLUMNS, OrderStatus } from "../../types";
 import { useOrdersStore } from "../../store/orders.store";
 import KanbanColumn from "./KanbanColumn";
+import OrderCard from "./OrderCard";
 import { useState } from "react";
 
 interface Props {
@@ -14,26 +15,20 @@ export default function KanbanBoard({ orders, onCardClick }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
-    })
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
 
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveId(null);
     const { active, over } = event;
     if (!over) return;
-
-    const orderId = active.id as string;
+    const orderId   = active.id as string;
     const newStatus = over.id as OrderStatus;
-
     const order = orders.find((o) => o.id === orderId);
     if (!order || order.status === newStatus) return;
-
     moveOrder(orderId, newStatus);
   };
 
-  // Группируем заказы по статусу
   const grouped = KANBAN_COLUMNS.reduce<Record<OrderStatus, Order[]>>(
     (acc, col) => {
       acc[col.status] = orders.filter((o) => o.status === col.status);
@@ -51,7 +46,7 @@ export default function KanbanBoard({ orders, onCardClick }: Props) {
       onDragEnd={handleDragEnd}
       onDragCancel={() => setActiveId(null)}
     >
-      <div className="kanban-scroll flex gap-4 pb-4">
+      <div className="kanban-board">
         {KANBAN_COLUMNS.map((col) => (
           <KanbanColumn
             key={col.status}
@@ -65,8 +60,8 @@ export default function KanbanBoard({ orders, onCardClick }: Props) {
 
       <DragOverlay>
         {activeOrder && (
-          <div className="bg-white rounded-xl border border-brand-200 shadow-xl p-3.5 w-[300px] opacity-90 rotate-2">
-            <h3 className="text-sm font-medium">{activeOrder.title}</h3>
+          <div className="w-[280px] rotate-1 opacity-90 pointer-events-none shadow-glow">
+            <OrderCard order={activeOrder} onClick={() => {}} />
           </div>
         )}
       </DragOverlay>

@@ -4,83 +4,84 @@ import { calcReminderInterval, formatDeadline } from "../utils/deadline";
 
 const prisma = new PrismaClient();
 
-/**
- * Запуск всех cron-задач
- */
 export function startScheduler() {
-  // Каждый день в 10:00 — напоминание об отчётах
+  // Каждый день в 10:00 — напоминания об отчётах (с эскалацией)
   cron.schedule("0 10 * * *", async () => {
-    console.log("⏰ Running report reminders...");
+    console.log("⏰ Report reminders...");
     await sendReportReminders();
   });
 
-  // Каждый день в 09:00 — предупреждения о дедлайнах
+  // Каждый день в 09:00 — дедлайн-предупреждения
   cron.schedule("0 9 * * *", async () => {
-    console.log("⏰ Running deadline warnings...");
+    console.log("⏰ Deadline warnings...");
     await sendDeadlineWarnings();
   });
 
-  // Каждые 30 секунд — отправка уведомлений из очереди (будет обрабатывать бот)
-  // В проде можно увеличить интервал
+  // Каждый день в 18:00 — повторные напоминания для тех кто не сдал (эскалация)
+  cron.schedule("0 18 * * *", async () => {
+    console.log("⏰ Escalated reminders...");
+    await sendEscalatedReminders();
+  });
 
   console.log("✅ Scheduler started");
 }
 
-/**
- * Напоминание креаторам об отчётах.
- * Проверяет: есть ли активные заказы, где сегодня нужен отчёт,
- * и креатор ещё не отправил.
- */
 async function sendReportReminders() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // Все активные заказы с дедлайнами
   const orders = await prisma.order.findMany({
     where: {
       status: { in: [OrderStatus.IN_PROGRESS, OrderStatus.ON_REVIEW] },
       deadline: { not: null },
     },
     include: {
-      creators: {
-        include: {
-          creator: { select: { id: true, displayName: true } },
-        },
-      },
+      creators: { include: { creator: { select: { id: true, displayName: true } } } },
     },
   });
 
   for (const order of orders) {
     if (!order.deadline) continue;
 
-    const interval = calcReminderInterval(order.deadline);
-
-    // Проверяем, нужно ли сегодня напоминание
-    const daysSinceCreated = Math.floor(
-      (today.getTime() - order.createdAt.getTime()) / (1000 * 60 * 60 * 24)
-    );
-
-    if (daysSinceCreated <= 0 || daysSinceCreated % interval !== 0) continue;
-
-    // Проверяем, кто ещё не отправил отчёт сегодня
     for (const assignment of order.creators) {
-      const existingReport = await prisma.dailyReport.findUnique({
-        where: {
-          orderId_creatorId_reportDate: {
-            orderId: order.id,
-            creatorId: assignment.creatorId,
-            reportDate: today,
-          },
-        },
+      // Находим последний отчёт
+      const lastReport = await prisma.dailyReport.findFirst({
+        where: { orderId: order.id, creatorId: assignment.creatorId },
+        orderBy: { reportDate: "desc" },
       });
 
-      if (!existingReport) {
+      // Считаем пропуски
+      let missedDays = 0;
+      if (lastReport) {
+        missedDays = Math.floor(
+          (today.getTime() - lastReport.reportDate.getTime()) / (1000 * 60 * 60 * 24)
+        );
+      } else {
+        missedDays = Math.floor(
+          (today.getTime() - order.createdAt.getTime()) / (1000 * 60 * 60 * 24)
+        );
+      }
+
+      const interval = calcReminderInterval(order.deadline, missedDays > 2 ? missedDays : 0);
+      const daysSinceCreated = Math.floor(
+        (today.getTime() - order.createdAt.getTime()) / (1000 * 60 * 60 * 24)
+      );
+
+      if (daysSinceCreated <= 0 || daysSinceCreated % interval !== 0) continue;
+
+      // Проверяем что сегодня отчёт ещё не сдан
+      const todayReport = await prisma.dailyReport.findUnique({
+        where: { orderId_creatorId_reportDate: { orderId: order.id, creatorId: assignment.creatorId, reportDate: today } },
+      });
+
+      if (!todayReport) {
+        const urgency = missedDays >= 3 ? "🔴🔴🔴 СРОЧНО! " : missedDays >= 2 ? "🔴 " : "";
         await prisma.notification.create({
           data: {
             userId: assignment.creatorId,
             orderId: order.id,
             type: NotificationType.REPORT_REMINDER,
-            message: `📝 Пора отправить отчёт по заказу «${order.title}». Дедлайн: ${formatDeadline(order.deadline)}`,
+            message: `${urgency}📝 Отправьте отчёт по «${order.title}». ${formatDeadline(order.deadline)}${missedDays > 1 ? `\n⚠️ Пропущено отчётов: ${missedDays}` : ""}`,
           },
         });
       }
@@ -88,21 +89,14 @@ async function sendReportReminders() {
   }
 }
 
-/**
- * Предупреждения о приближающихся дедлайнах
- */
 async function sendDeadlineWarnings() {
   const now = new Date();
-  const twoDaysFromNow = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+  const twoDaysOut = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
 
-  // Заказы с дедлайном в ближайшие 2 дня
   const orders = await prisma.order.findMany({
     where: {
       status: { in: [OrderStatus.IN_PROGRESS, OrderStatus.ON_REVIEW] },
-      deadline: {
-        lte: twoDaysFromNow,
-        gte: now,
-      },
+      deadline: { lte: twoDaysOut, gte: now },
     },
     include: {
       marketer: { select: { id: true } },
@@ -111,20 +105,64 @@ async function sendDeadlineWarnings() {
   });
 
   for (const order of orders) {
-    const recipientIds = [
-      order.marketer.id,
-      ...order.creators.map((c) => c.creatorId),
-    ];
-
-    for (const userId of recipientIds) {
+    const recipients = [order.marketer.id, ...order.creators.map((c) => c.creatorId)];
+    for (const userId of [...new Set(recipients)]) {
       await prisma.notification.create({
         data: {
           userId,
           orderId: order.id,
           type: NotificationType.DEADLINE_WARNING,
-          message: `⚠️ Дедлайн по заказу «${order.title}»: ${formatDeadline(order.deadline!)}`,
+          message: `⚠️ Дедлайн по «${order.title}»: ${formatDeadline(order.deadline!)}`,
         },
       });
+    }
+  }
+}
+
+async function sendEscalatedReminders() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Находим креаторов которые пропустили отчёт сегодня (утром получили напоминание, но не сдали)
+  const orders = await prisma.order.findMany({
+    where: {
+      status: { in: [OrderStatus.IN_PROGRESS, OrderStatus.ON_REVIEW] },
+      deadline: { not: null },
+    },
+    include: {
+      creators: { select: { creatorId: true } },
+    },
+  });
+
+  for (const order of orders) {
+    for (const c of order.creators) {
+      // Было утреннее напоминание?
+      const morningReminder = await prisma.notification.findFirst({
+        where: {
+          userId: c.creatorId,
+          orderId: order.id,
+          type: NotificationType.REPORT_REMINDER,
+          createdAt: { gte: today },
+        },
+      });
+
+      if (!morningReminder) continue;
+
+      // Отчёт сдан?
+      const report = await prisma.dailyReport.findUnique({
+        where: { orderId_creatorId_reportDate: { orderId: order.id, creatorId: c.creatorId, reportDate: today } },
+      });
+
+      if (!report) {
+        await prisma.notification.create({
+          data: {
+            userId: c.creatorId,
+            orderId: order.id,
+            type: NotificationType.REPORT_REMINDER,
+            message: `🔴 Вы до сих пор не сдали отчёт по «${order.title}»! Пожалуйста, отправьте сейчас.`,
+          },
+        });
+      }
     }
   }
 }
