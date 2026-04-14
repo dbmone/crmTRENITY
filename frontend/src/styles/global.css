@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "Inter", system-ui, sans-serif;
+  background: #F8F7F4;
+  color: #1A1A1A;
+  min-height: 100vh;
+}
+
+/* Scrollbar стилизация */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #D3D1C7;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #B4B2A9;
+}
+
+/* Канбан горизонтальный скролл */
+.kanban-scroll {
+  overflow-x: auto;
+  scroll-behavior: smooth;
+}
+.kanban-scroll::-webkit-scrollbar {
+  height: 8px;
+}

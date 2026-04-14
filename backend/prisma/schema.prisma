@@ -1,0 +1,193 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== ПОЛЬЗОВАТЕЛИ ====================
+
+enum UserRole {
+  MARKETER
+  CREATOR
+  LEAD_CREATOR
+  ADMIN
+}
+
+model User {
+  id               String    @id @default(uuid())
+  telegramId       BigInt    @unique @map("telegram_id")
+  telegramUsername  String?   @map("telegram_username")
+  displayName      String    @map("display_name")
+  avatarUrl        String?   @map("avatar_url")
+  role             UserRole  @default(CREATOR)
+  pinCode          String    @unique @map("pin_code") @db.VarChar(4)
+  chatId           BigInt?   @map("chat_id")
+  isActive         Boolean   @default(true) @map("is_active")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  createdOrders    Order[]          @relation("OrderMarketer")
+  assignments      OrderCreator[]   @relation("CreatorAssignments")
+  addedCreators    OrderCreator[]   @relation("AddedByUser")
+  uploadedFiles    OrderFile[]
+  dailyReports     DailyReport[]
+  notifications    Notification[]
+
+  @@map("users")
+}
+
+// ==================== ЗАКАЗЫ ====================
+
+enum OrderStatus {
+  NEW
+  IN_PROGRESS
+  ON_REVIEW
+  DONE
+  ARCHIVED
+}
+
+model Order {
+  id            String      @id @default(uuid())
+  title         String      @db.VarChar(255)
+  description   String?     @db.Text
+  status        OrderStatus @default(NEW)
+  deadline      DateTime?
+  reminderDays  Int         @default(2) @map("reminder_days")
+  marketerId    String      @map("marketer_id")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  marketer      User             @relation("OrderMarketer", fields: [marketerId], references: [id])
+  creators      OrderCreator[]
+  files         OrderFile[]
+  stages        OrderStage[]
+  reports       DailyReport[]
+  notifications Notification[]
+
+  @@map("orders")
+}
+
+// ==================== КРЕАТОРЫ НА ЗАКАЗЕ ====================
+
+model OrderCreator {
+  id         String   @id @default(uuid())
+  orderId    String   @map("order_id")
+  creatorId  String   @map("creator_id")
+  addedById  String   @map("added_by_id")
+  isLead     Boolean  @default(false) @map("is_lead")
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  order   Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  creator User  @relation("CreatorAssignments", fields: [creatorId], references: [id])
+  addedBy User  @relation("AddedByUser", fields: [addedById], references: [id])
+
+  @@unique([orderId, creatorId])
+  @@map("order_creators")
+}
+
+// ==================== ЭТАПЫ ЗАКАЗА ====================
+
+enum StageName {
+  STORYBOARD
+  ANIMATION
+  EDITING
+  REVIEW
+  COMPLETED
+}
+
+enum StageStatus {
+  PENDING
+  IN_PROGRESS
+  DONE
+}
+
+model OrderStage {
+  id          String      @id @default(uuid())
+  orderId     String      @map("order_id")
+  name        StageName
+  status      StageStatus @default(PENDING)
+  startedAt   DateTime?   @map("started_at")
+  completedAt DateTime?   @map("completed_at")
+  sortOrder   Int         @map("sort_order")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, name])
+  @@map("order_stages")
+}
+
+// ==================== ФАЙЛЫ ====================
+
+enum FileType {
+  TZ
+  CONTRACT
+  STORYBOARD
+  VIDEO_DRAFT
+  VIDEO_FINAL
+  OTHER
+}
+
+model OrderFile {
+  id           String   @id @default(uuid())
+  orderId      String   @map("order_id")
+  uploadedById String   @map("uploaded_by_id")
+  fileType     FileType @map("file_type")
+  fileName     String   @map("file_name")
+  fileSize     BigInt   @map("file_size")
+  mimeType     String   @map("mime_type")
+  storagePath  String   @map("storage_path")
+  uploadedAt   DateTime @default(now()) @map("uploaded_at")
+
+  order      Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  uploadedBy User  @relation(fields: [uploadedById], references: [id])
+
+  @@map("order_files")
+}
+
+// ==================== ЕЖЕДНЕВНЫЕ ОТЧЁТЫ ====================
+
+model DailyReport {
+  id          String   @id @default(uuid())
+  orderId     String   @map("order_id")
+  creatorId   String   @map("creator_id")
+  reportText  String   @map("report_text") @db.Text
+  reportDate  DateTime @map("report_date") @db.Date
+  submittedAt DateTime @default(now()) @map("submitted_at")
+
+  order   Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  creator User  @relation(fields: [creatorId], references: [id])
+
+  @@unique([orderId, creatorId, reportDate])
+  @@map("daily_reports")
+}
+
+// ==================== УВЕДОМЛЕНИЯ ====================
+
+enum NotificationType {
+  NEW_ORDER
+  ASSIGNED
+  STAGE_CHANGED
+  DEADLINE_WARNING
+  REPORT_REMINDER
+  REVIEW_REQUEST
+  ORDER_APPROVED
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String           @map("user_id")
+  orderId   String?          @map("order_id")
+  type      NotificationType
+  message   String           @db.Text
+  isSent    Boolean          @default(false) @map("is_sent")
+  sentAt    DateTime?        @map("sent_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user  User   @relation(fields: [userId], references: [id])
+  order Order? @relation(fields: [orderId], references: [id])
+
+  @@map("notifications")
+}
