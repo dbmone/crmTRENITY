@@ -1,5 +1,7 @@
 import { FastifyInstance } from "fastify";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, UserRole } from "@prisma/client";
+import { requireRole } from "../middleware/role.middleware";
+import { cleanupArchivedFiles } from "../services/file.service";
 
 const prisma = new PrismaClient();
 
@@ -8,7 +10,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
 
   // GET /api/dashboard/stats
   app.get("/stats", async () => {
-    const [totalOrders, byStatus, totalUsers, byRole, recentReports, avgCompletionTime] = await Promise.all([
+    const [totalOrders, byStatus, totalUsers, byRole, recentReports, avgCompletionTime, overdueCount] = await Promise.all([
       prisma.order.count(),
       prisma.order.groupBy({ by: ["status"], _count: { id: true } }),
       prisma.user.count({ where: { status: "APPROVED" } }),
@@ -19,6 +21,12 @@ export async function dashboardRoutes(app: FastifyInstance) {
         SELECT AVG(EXTRACT(EPOCH FROM ("updated_at" - "created_at")) / 86400)::numeric(10,1) as avg_days
         FROM orders WHERE status = 'DONE'
       ` as Promise<{ avg_days: string }[]>,
+      prisma.order.count({
+        where: {
+          status: { notIn: ["DONE", "ARCHIVED"] },
+          deadline: { lt: new Date() },
+        },
+      }),
     ]);
 
     const statusMap = Object.fromEntries(byStatus.map((s) => [s.status, s._count.id]));
@@ -32,6 +40,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
         onReview: statusMap.ON_REVIEW || 0,
         done: statusMap.DONE || 0,
         archived: statusMap.ARCHIVED || 0,
+        overdue: overdueCount,
       },
       users: { total: totalUsers, ...roleMap },
       reportsLastWeek: recentReports,
@@ -68,5 +77,18 @@ export async function dashboardRoutes(app: FastifyInstance) {
     ]);
 
     return { recentOrders, recentComments, recentReports };
+  });
+
+  // POST /api/dashboard/cleanup — ручная очистка файлов архивных заказов (90+ дней)
+  app.post("/cleanup", {
+    preHandler: [requireRole(UserRole.ADMIN)],
+  }, async (_req, reply) => {
+    try {
+      const result = await cleanupArchivedFiles();
+      const freedMb = (Number(result.freedBytes) / (1024 * 1024)).toFixed(2);
+      return { deleted: result.deleted, freedMb: parseFloat(freedMb) };
+    } catch (err: any) {
+      return reply.status(500).send({ error: err.message || "Ошибка очистки" });
+    }
   });
 }

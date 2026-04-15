@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import { PrismaClient, NotificationType, OrderStatus } from "@prisma/client";
 import { calcReminderInterval, formatDeadline } from "../utils/deadline";
+import { cleanupArchivedFiles } from "./file.service";
 
 const prisma = new PrismaClient();
 
@@ -21,6 +22,20 @@ export function startScheduler() {
   cron.schedule("0 18 * * *", async () => {
     console.log("⏰ Escalated reminders...");
     await sendEscalatedReminders();
+  });
+
+  // Каждое воскресенье в 03:00 — очистка файлов из архивных заказов (90+ дней)
+  cron.schedule("0 3 * * 0", async () => {
+    console.log("🗑️  Cleaning up archived files...");
+    try {
+      const result = await cleanupArchivedFiles();
+      if (result.deleted > 0) {
+        const mb = (Number(result.freedBytes) / (1024 * 1024)).toFixed(1);
+        console.log(`✅ Cleanup: removed ${result.deleted} files, freed ${mb} МБ`);
+      }
+    } catch (err) {
+      console.error("Cleanup failed:", err);
+    }
   });
 
   console.log("✅ Scheduler started");

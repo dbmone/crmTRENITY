@@ -56,5 +56,6 @@ export function assignableRoles(managerRole: UserRole): UserRole[] {
 }
 
 export function canApproveOrder(userRole: UserRole): boolean {
-  return [UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.MARKETER, UserRole.HEAD_CREATOR, UserRole.LEAD_CREATOR].includes(userRole);
+  const approvers: UserRole[] = [UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.MARKETER, UserRole.HEAD_CREATOR, UserRole.LEAD_CREATOR];
+  return approvers.includes(userRole);
 }

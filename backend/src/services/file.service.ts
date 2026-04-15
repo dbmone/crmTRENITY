@@ -79,3 +79,46 @@ export async function getOrderFiles(orderId: string) {
     orderBy: { uploadedAt: "desc" },
   });
 }
+
+// Удаляет файлы из MinIO для заказов, заархивированных 90+ дней назад
+export async function cleanupArchivedFiles(): Promise<{ deleted: number; freedBytes: bigint }> {
+  const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+
+  const archivedOrders = await prisma.order.findMany({
+    where: { status: "ARCHIVED", updatedAt: { lt: cutoff } },
+    select: { id: true },
+  });
+
+  if (archivedOrders.length === 0) return { deleted: 0, freedBytes: BigInt(0) };
+
+  const orderIds = archivedOrders.map((o) => o.id);
+  const files = await prisma.orderFile.findMany({
+    where: { orderId: { in: orderIds } },
+    select: { id: true, storagePath: true, fileSize: true },
+  });
+
+  if (files.length === 0) return { deleted: 0, freedBytes: BigInt(0) };
+
+  const client = getMinioClient();
+  let deleted = 0;
+  let freedBytes = BigInt(0);
+
+  for (const file of files) {
+    try {
+      await client.removeObject(config.minio.bucket, file.storagePath);
+      await prisma.orderFile.delete({ where: { id: file.id } });
+      deleted++;
+      freedBytes += file.fileSize;
+    } catch (err: any) {
+      // Если объект уже удалён — всё равно чистим запись в БД
+      if (err.code === "NoSuchKey" || err.code === "NotFound") {
+        await prisma.orderFile.delete({ where: { id: file.id } });
+        deleted++;
+      } else {
+        console.error(`Cleanup failed for file ${file.id}:`, err.message);
+      }
+    }
+  }
+
+  return { deleted, freedBytes };
+}

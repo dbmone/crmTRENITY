@@ -211,11 +211,9 @@ export async function updateOrderStatus(
   const order = await prisma.order.findUnique({ where: { id } });
   if (!order) throw { statusCode: 404, message: "Заказ не найден" };
 
-  // DONE может ставить только маркетолог+ или лид-креатор
-  if (
-    newStatus === OrderStatus.DONE &&
-    ![UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.MARKETER, UserRole.LEAD_CREATOR].includes(userRole)
-  ) {
+  // DONE может ставить только маркетолог+ или лид-креатор или главный креатор
+  const canFinish: UserRole[] = [UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.MARKETER, UserRole.HEAD_CREATOR, UserRole.LEAD_CREATOR];
+  if (newStatus === OrderStatus.DONE && !canFinish.includes(userRole)) {
     throw { statusCode: 403, message: "Только маркетолог или главный креатор может утвердить заказ" };
   }
 
@@ -250,10 +248,8 @@ export async function addCreator(
   }
 
   const creator = await prisma.user.findUnique({ where: { id: creatorId } });
-  if (
-    !creator ||
-    ![UserRole.CREATOR, UserRole.LEAD_CREATOR].includes(creator.role)
-  ) {
+  const creatorRoles: UserRole[] = [UserRole.CREATOR, UserRole.LEAD_CREATOR, UserRole.HEAD_CREATOR];
+  if (!creator || !creatorRoles.includes(creator.role)) {
     throw { statusCode: 400, message: "Пользователь не является креатором" };
   }
 

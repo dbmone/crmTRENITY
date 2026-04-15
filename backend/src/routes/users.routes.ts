@@ -11,8 +11,10 @@ export async function usersRoutes(app: FastifyInstance) {
 
   // GET /api/users — все одобренные пользователи
   app.get<{ Querystring: { includeAll?: string } }>("/", async (request) => {
-    const showAll = request.query.includeAll === "true" &&
-      [UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.LEAD_CREATOR].includes(request.currentUser.role as UserRole);
+    const showAll = request.query.includeAll === "true" && ((): boolean => {
+      const allowed: UserRole[] = [UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.HEAD_CREATOR, UserRole.LEAD_CREATOR];
+      return allowed.includes(request.currentUser.role as UserRole);
+    })();
 
     return prisma.user.findMany({
       where: showAll ? {} : { status: UserStatus.APPROVED, isActive: true },
@@ -141,7 +143,7 @@ export async function usersRoutes(app: FastifyInstance) {
 
   // PUT /api/users/:id/team-lead — назначить тимлида
   app.put<{ Params: { id: string }; Body: { teamLeadId: string | null } }>("/:id/team-lead", {
-    preHandler: [requireRole(UserRole.ADMIN, UserRole.LEAD_CREATOR)],
+    preHandler: [requireRole(UserRole.ADMIN, UserRole.HEAD_CREATOR, UserRole.HEAD_MARKETER, UserRole.LEAD_CREATOR)],
   }, async (request, reply) => {
     return prisma.user.update({
       where: { id: request.params.id },

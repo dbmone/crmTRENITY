@@ -43,7 +43,7 @@ export async function commentsRoutes(app: FastifyInstance) {
     const recipientIds = [order.marketerId, ...order.creators.map((c) => c.creatorId)]
       .filter((id) => id !== req.currentUser.id);
 
-    await notifyComment(order.id, order.title, author?.displayName || "Кто-то", [...new Set(recipientIds)]);
+    await notifyComment(order.id, order.title, author?.displayName || "Кто-то", [...new Set(recipientIds)], text.trim());
 
     return reply.status(201).send(comment);
   });

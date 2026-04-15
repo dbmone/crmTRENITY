@@ -95,9 +95,10 @@ export async function notifyOrderApproved(orderId: string, orderTitle: string, c
   }
 }
 
-export async function notifyComment(orderId: string, orderTitle: string, authorName: string, recipientIds: string[]) {
+export async function notifyComment(orderId: string, orderTitle: string, authorName: string, recipientIds: string[], text?: string) {
+  const preview = text ? (text.length > 80 ? text.slice(0, 77) + "..." : text) : "";
   for (const userId of recipientIds) {
-    await createNotification(userId, NotificationType.COMMENT_ADDED, `💬 ${authorName} написал в «${orderTitle}»`, orderId);
+    await createNotification(userId, NotificationType.COMMENT_ADDED, `💬 ${authorName} → «${orderTitle}»${preview ? `:\n${preview}` : ""}`, orderId);
   }
 }
 
