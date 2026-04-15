@@ -17,7 +17,7 @@ export default function BoardPage() {
   const [search,        setSearch]        = useState("");
   const [searchTimer,   setSearchTimer]   = useState<ReturnType<typeof setTimeout> | null>(null);
 
-  const isMarketer = ["MARKETER", "HEAD_MARKETER", "ADMIN", "HEAD_CREATOR"].includes(user?.role ?? "");
+  const isMarketer = user?.permissions?.create_order ?? ["MARKETER", "HEAD_MARKETER", "ADMIN", "HEAD_CREATOR"].includes(user?.role ?? "");
 
   useEffect(() => { fetchOrders(); }, []);
 

@@ -229,4 +229,36 @@ export async function restoreUser(id: string) {
   return data;
 }
 
+// ==================== PERMISSIONS ====================
+
+export async function getPermissions() {
+  const { data } = await api.get("/permissions");
+  return data as Array<{ key: string; label: string; roles: string[]; defaultRoles: string[] }>;
+}
+
+export async function updatePermission(key: string, roles: string[]) {
+  const { data } = await api.put(`/permissions/${key}`, { roles });
+  return data;
+}
+
+export async function resetPermission(key: string) {
+  const { data } = await api.delete(`/permissions/${key}`);
+  return data;
+}
+
+export async function getUserPermissionOverrides(userId: string) {
+  const { data } = await api.get(`/permissions/users/${userId}`);
+  return data as { user: { id: string; displayName: string; role: string }; overrides: Array<{ permission: string; granted: boolean }> };
+}
+
+export async function setUserPermissionOverride(userId: string, key: string, granted: boolean) {
+  const { data } = await api.put(`/permissions/users/${userId}/${key}`, { granted });
+  return data;
+}
+
+export async function deleteUserPermissionOverride(userId: string, key: string) {
+  const { data } = await api.delete(`/permissions/users/${userId}/${key}`);
+  return data;
+}
+
 export default api;

@@ -1,4 +1,5 @@
 import { PrismaClient, OrderStatus, UserRole, StageName } from "@prisma/client";
+import { getRoles } from "./permissions.service";
 
 const prisma = new PrismaClient();
 
@@ -211,10 +212,10 @@ export async function updateOrderStatus(
   const order = await prisma.order.findUnique({ where: { id } });
   if (!order) throw { statusCode: 404, message: "Заказ не найден" };
 
-  // DONE может ставить только маркетолог+ или лид-креатор или главный креатор
-  const canFinish: UserRole[] = [UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.MARKETER, UserRole.HEAD_CREATOR, UserRole.LEAD_CREATOR];
+  // DONE: проверяем через права доступа
+  const canFinish = getRoles("approve_order");
   if (newStatus === OrderStatus.DONE && !canFinish.includes(userRole)) {
-    throw { statusCode: 403, message: "Только маркетолог или главный креатор может утвердить заказ" };
+    throw { statusCode: 403, message: "Нет прав для завершения заказа" };
   }
 
   return prisma.order.update({

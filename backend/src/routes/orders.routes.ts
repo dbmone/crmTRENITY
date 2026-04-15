@@ -2,7 +2,7 @@ import { FastifyInstance } from "fastify";
 import { OrderStatus, UserRole } from "@prisma/client";
 import * as svc from "../services/order.service";
 import { notifyNewOrder, notifyAssigned } from "../services/notification.service";
-import { requireRole } from "../middleware/role.middleware";
+import { requirePermission } from "../middleware/role.middleware";
 
 export async function ordersRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
@@ -34,7 +34,7 @@ export async function ordersRoutes(app: FastifyInstance) {
   // POST /api/orders
   app.post<{ Body: { title: string; description?: string; deadline?: string; reminderDays?: number } }>(
     "/",
-    { preHandler: [requireRole(UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.MARKETER)] },
+    { preHandler: [requirePermission("create_order")] },
     async (request, reply) => {
       const { title, description, deadline, reminderDays } = request.body;
       if (!title?.trim()) return reply.status(400).send({ error: "Название обязательно" });

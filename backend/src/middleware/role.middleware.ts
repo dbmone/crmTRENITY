@@ -1,5 +1,6 @@
 import { FastifyRequest, FastifyReply } from "fastify";
 import { UserRole } from "@prisma/client";
+import { checkUserPermission, PermissionKey } from "../services/permissions.service";
 
 /**
  * Иерархия ролей:
@@ -58,4 +59,19 @@ export function assignableRoles(managerRole: UserRole): UserRole[] {
 export function canApproveOrder(userRole: UserRole): boolean {
   const approvers: UserRole[] = [UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.MARKETER, UserRole.HEAD_CREATOR, UserRole.LEAD_CREATOR];
   return approvers.includes(userRole);
+}
+
+/** Middleware для проверки прав через permissions.service (с поддержкой индивидуальных override). */
+export function requirePermission(key: PermissionKey) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    const userId   = request.currentUser?.id;
+    const userRole = request.currentUser?.role as UserRole;
+    if (!userId || !userRole) {
+      return reply.status(401).send({ error: "Не авторизован" });
+    }
+    const allowed = await checkUserPermission(userId, userRole, key);
+    if (!allowed) {
+      return reply.status(403).send({ error: "Нет доступа" });
+    }
+  };
 }

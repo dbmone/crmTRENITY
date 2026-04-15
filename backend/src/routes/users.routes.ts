@@ -1,6 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { PrismaClient, UserRole, UserStatus } from "@prisma/client";
-import { requireRole, canManageUser, assignableRoles } from "../middleware/role.middleware";
+import { requireRole, requirePermission, canManageUser, assignableRoles } from "../middleware/role.middleware";
 import { generateUniquePin } from "../utils/pin";
 import { notifyRegistrationResult } from "../services/notification.service";
 
@@ -30,7 +30,7 @@ export async function usersRoutes(app: FastifyInstance) {
 
   // GET /api/users/pending — заявки на регистрацию
   app.get("/pending", {
-    preHandler: [requireRole(UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.HEAD_CREATOR, UserRole.LEAD_CREATOR)],
+    preHandler: [requirePermission("approve_user")],
   }, async (request) => {
     const userRole = request.currentUser.role as UserRole;
 
@@ -84,7 +84,7 @@ export async function usersRoutes(app: FastifyInstance) {
 
   // POST /api/users/:id/approve — одобрить заявку (опционально сменить роль)
   app.post<{ Params: { id: string }; Body: { role?: UserRole } }>("/:id/approve", {
-    preHandler: [requireRole(UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.HEAD_CREATOR, UserRole.LEAD_CREATOR)],
+    preHandler: [requirePermission("approve_user")],
   }, async (request, reply) => {
     const target = await prisma.user.findUnique({ where: { id: request.params.id } });
     if (!target) return reply.status(404).send({ error: "Не найден" });
@@ -108,7 +108,7 @@ export async function usersRoutes(app: FastifyInstance) {
 
   // POST /api/users/:id/reject — отклонить
   app.post<{ Params: { id: string } }>("/:id/reject", {
-    preHandler: [requireRole(UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.HEAD_CREATOR, UserRole.LEAD_CREATOR)],
+    preHandler: [requirePermission("reject_user")],
   }, async (request, reply) => {
     const target = await prisma.user.findUnique({ where: { id: request.params.id } });
     if (!target) return reply.status(404).send({ error: "Не найден" });
@@ -124,7 +124,7 @@ export async function usersRoutes(app: FastifyInstance) {
 
   // PUT /api/users/:id/role — сменить роль
   app.put<{ Params: { id: string }; Body: { role: UserRole } }>("/:id/role", {
-    preHandler: [requireRole(UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.HEAD_CREATOR, UserRole.LEAD_CREATOR)],
+    preHandler: [requirePermission("change_user_role")],
   }, async (request, reply) => {
     const { role } = request.body;
     const managerRole = request.currentUser.role as UserRole;
@@ -143,7 +143,7 @@ export async function usersRoutes(app: FastifyInstance) {
 
   // PUT /api/users/:id/team-lead — назначить тимлида
   app.put<{ Params: { id: string }; Body: { teamLeadId: string | null } }>("/:id/team-lead", {
-    preHandler: [requireRole(UserRole.ADMIN, UserRole.HEAD_CREATOR, UserRole.HEAD_MARKETER, UserRole.LEAD_CREATOR)],
+    preHandler: [requirePermission("manage_team_lead")],
   }, async (request, reply) => {
     return prisma.user.update({
       where: { id: request.params.id },
@@ -154,7 +154,7 @@ export async function usersRoutes(app: FastifyInstance) {
 
   // POST /api/users/:id/block — заблокировать
   app.post<{ Params: { id: string } }>("/:id/block", {
-    preHandler: [requireRole(UserRole.ADMIN)],
+    preHandler: [requirePermission("block_user")],
   }, async (request) => {
     return prisma.user.update({
       where: { id: request.params.id },
@@ -164,7 +164,7 @@ export async function usersRoutes(app: FastifyInstance) {
 
   // POST /api/users/:id/restore — восстановить заблокированного
   app.post<{ Params: { id: string } }>("/:id/restore", {
-    preHandler: [requireRole(UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.HEAD_CREATOR)],
+    preHandler: [requirePermission("restore_user")],
   }, async (request, reply) => {
     const target = await prisma.user.findUnique({ where: { id: request.params.id } });
     if (!target) return reply.status(404).send({ error: "Не найден" });
@@ -176,7 +176,7 @@ export async function usersRoutes(app: FastifyInstance) {
 
   // POST /api/users/pre-approve — создать пре-одобренного пользователя по TG username
   app.post<{ Body: { telegramUsername: string; role: UserRole } }>("/pre-approve", {
-    preHandler: [requireRole(UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.HEAD_CREATOR)],
+    preHandler: [requirePermission("pre_approve_user")],
   }, async (request, reply) => {
     const { telegramUsername, role } = request.body;
     const username = telegramUsername.replace(/^@/, "").trim();
@@ -216,7 +216,7 @@ export async function usersRoutes(app: FastifyInstance) {
 
   // GET /api/users/pre-approved — список пре-одобренных (без реального TG аккаунта)
   app.get("/pre-approved", {
-    preHandler: [requireRole(UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.HEAD_CREATOR)],
+    preHandler: [requirePermission("pre_approve_user")],
   }, async () => {
     // Пре-одобренные — APPROVED пользователи с отрицательным telegramId (fake)
     return prisma.user.findMany({

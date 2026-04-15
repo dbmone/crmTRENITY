@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "../store/auth.store";
 import Header from "../components/layout/Header";
-import { Check, X, Shield, RefreshCw, UserX, Crown, Users, ChevronRight, Trash2, UserPlus, RotateCcw } from "lucide-react";
+import { Check, X, Shield, RefreshCw, UserX, Crown, Users, ChevronRight, Trash2, UserPlus, RotateCcw, Lock, Unlock } from "lucide-react";
 import * as api from "../api/client";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -33,7 +33,7 @@ export default function AdminPage() {
   const [pending,  setPending]  = useState<UserRow[]>([]);
   const [blocked,  setBlocked]  = useState<UserRow[]>([]);
   const [loading,  setLoading]  = useState(true);
-  const [tab,      setTab]      = useState<"users" | "pending" | "team" | "access">(
+  const [tab,      setTab]      = useState<"users" | "pending" | "team" | "access" | "rights">(
     searchParams.get("tab") === "pending" ? "pending" : "users"
   );
   const [working,  setWorking]  = useState<string | null>(null);
@@ -130,12 +130,13 @@ export default function AdminPage() {
 
   if (!canAccess) return null;
 
-  const TABS: { id: "users" | "pending" | "team" | "access"; label: string }[] = [
+  const TABS: { id: "users" | "pending" | "team" | "access" | "rights"; label: string; adminOnly?: boolean }[] = [
     { id: "users",   label: "Пользователи" },
     { id: "pending", label: pending.length > 0 ? `Заявки (${pending.length})` : "Заявки" },
     { id: "team",    label: "Иерархия" },
     { id: "access",  label: "Доступ" },
-  ];
+    { id: "rights",  label: "Права", adminOnly: true },
+  ].filter((t) => !t.adminOnly || isAdmin);
 
   return (
     <div className="min-h-screen bg-bg-base">
@@ -195,6 +196,8 @@ export default function AdminPage() {
           />
         ) : tab === "access" ? (
           <PreApproveTab isAdmin={isAdmin} isHeadMark={isHeadMark} isHeadCreator={isHeadCreator} />
+        ) : tab === "rights" ? (
+          <PermissionsTab users={[...users, ...blocked]} />
         ) : (
           <UsersList rows={users} blocked={blocked} onChangeRole={changeRole} onDeactivate={deactivate} onRestore={restore} working={working} currentUser={user} isAdmin={isAdmin} />
         )}
@@ -762,6 +765,235 @@ function PreApproveTab({ isAdmin, isHeadMark, isHeadCreator }: { isAdmin: boolea
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Permissions Tab
+// ──────────────────────────────────────────────────────────────────────────────
+
+const ALL_ROLES_ORDER = ["ADMIN", "HEAD_MARKETER", "MARKETER", "HEAD_CREATOR", "LEAD_CREATOR", "CREATOR"];
+const ROLE_SHORT: Record<string, string> = {
+  ADMIN: "Админ", HEAD_MARKETER: "Гл.мкт", MARKETER: "Мкт",
+  HEAD_CREATOR: "Гл.кр", LEAD_CREATOR: "Лид", CREATOR: "Кр",
+};
+
+interface PermConfig { key: string; label: string; roles: string[]; defaultRoles: string[] }
+interface Override { permission: string; granted: boolean }
+
+function PermissionsTab({ users }: { users: UserRow[] }) {
+  const [perms,     setPerms]     = useState<PermConfig[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [saving,    setSaving]    = useState<string | null>(null);
+  const [dirty,     setDirty]     = useState<Record<string, string[]>>({});
+
+  const [selUserId, setSelUserId] = useState("");
+  const [overrides, setOverrides] = useState<Override[]>([]);
+  const [overUser,  setOverUser]  = useState<{ id: string; displayName: string; role: string } | null>(null);
+  const [savingOvr, setSavingOvr] = useState<string | null>(null);
+
+  const loadPerms = async () => {
+    setLoading(true);
+    try { const d = await (api as any).getPermissions(); setPerms(d); } catch {}
+    setLoading(false);
+  };
+
+  useEffect(() => { loadPerms(); }, []);
+
+  const toggleRole = (key: string, role: string) => {
+    const current = dirty[key] ?? perms.find((p) => p.key === key)?.roles ?? [];
+    const next = current.includes(role) ? current.filter((r) => r !== role) : [...current, role];
+    setDirty((d) => ({ ...d, [key]: next }));
+  };
+
+  const save = async (key: string) => {
+    const roles = dirty[key] ?? perms.find((p) => p.key === key)?.roles ?? [];
+    setSaving(key);
+    try {
+      const updated = await (api as any).updatePermission(key, roles);
+      setPerms(updated);
+      setDirty((d) => { const n = { ...d }; delete n[key]; return n; });
+    } catch (e: any) { alert(e.response?.data?.error || "Ошибка"); }
+    setSaving(null);
+  };
+
+  const reset = async (key: string) => {
+    if (!confirm("Сбросить к значениям по умолчанию?")) return;
+    setSaving(key);
+    try {
+      const updated = await (api as any).resetPermission(key);
+      setPerms(updated);
+      setDirty((d) => { const n = { ...d }; delete n[key]; return n; });
+    } catch (e: any) { alert(e.response?.data?.error || "Ошибка"); }
+    setSaving(null);
+  };
+
+  const loadUserOverrides = async (userId: string) => {
+    if (!userId) { setOverrides([]); setOverUser(null); return; }
+    try {
+      const d = await (api as any).getUserPermissionOverrides(userId);
+      setOverrides(d.overrides);
+      setOverUser(d.user);
+    } catch {}
+  };
+
+  const setOverride = async (key: string, granted: boolean | null) => {
+    if (!selUserId) return;
+    setSavingOvr(key);
+    try {
+      if (granted === null) {
+        await (api as any).deleteUserPermissionOverride(selUserId, key);
+        setOverrides((prev) => prev.filter((o) => o.permission !== key));
+      } else {
+        await (api as any).setUserPermissionOverride(selUserId, key, granted);
+        setOverrides((prev) => {
+          const ex = prev.find((o) => o.permission === key);
+          if (ex) return prev.map((o) => o.permission === key ? { ...o, granted } : o);
+          return [...prev, { permission: key, granted }];
+        });
+      }
+    } catch (e: any) { alert(e.response?.data?.error || "Ошибка"); }
+    setSavingOvr(null);
+  };
+
+  if (loading) return (
+    <div className="flex justify-center py-16">
+      <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  return (
+    <div className="space-y-8">
+      {/* ── Матрица прав по ролям ── */}
+      <div className="bg-bg-surface border border-bg-border rounded-xl overflow-hidden">
+        <div className="p-4 border-b border-bg-border flex items-center gap-2">
+          <Lock size={15} className="text-amber-400" />
+          <h2 className="text-sm font-semibold text-ink-primary">Права по ролям</h2>
+          <span className="text-xs text-ink-tertiary ml-1">ADMIN всегда имеет полный доступ</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-bg-border">
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-ink-tertiary uppercase tracking-wide min-w-[210px]">Действие</th>
+                {ALL_ROLES_ORDER.map((r) => (
+                  <th key={r} className="px-2 py-2.5 text-center">
+                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded whitespace-nowrap ${ROLE_COLORS[r] || ""}`}>{ROLE_SHORT[r]}</span>
+                  </th>
+                ))}
+                <th className="px-3 py-2.5 text-xs text-ink-tertiary min-w-[100px]"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {perms.map((p) => {
+                const current = dirty[p.key] ?? p.roles;
+                const isDirtyRow = !!dirty[p.key];
+                const isDefault = JSON.stringify([...current].sort()) === JSON.stringify([...p.defaultRoles].sort());
+                return (
+                  <tr key={p.key} className={`border-b border-bg-border/50 hover:bg-bg-raised/50 transition-colors ${isDirtyRow ? "bg-amber-500/5" : ""}`}>
+                    <td className="px-4 py-3">
+                      <div className="text-xs font-medium text-ink-primary">{p.label}</div>
+                      {!isDefault && <div className="text-[10px] text-amber-400 mt-0.5">изменено</div>}
+                    </td>
+                    {ALL_ROLES_ORDER.map((role) => {
+                      const isAdminRole = role === "ADMIN";
+                      const checked = isAdminRole || current.includes(role);
+                      return (
+                        <td key={role} className="px-2 py-3 text-center">
+                          <button
+                            onClick={() => !isAdminRole && toggleRole(p.key, role)}
+                            disabled={isAdminRole || saving === p.key}
+                            className={`w-5 h-5 rounded border-2 flex items-center justify-center mx-auto transition-all ${
+                              isAdminRole
+                                ? "border-green-500/40 bg-green-500/10 cursor-not-allowed"
+                                : checked
+                                ? "border-green-500 bg-green-500 hover:bg-green-400"
+                                : "border-bg-border bg-bg-raised hover:border-green-500/40"
+                            }`}
+                          >
+                            {checked && <Check size={11} className={isAdminRole ? "text-green-400" : "text-black"} strokeWidth={3} />}
+                          </button>
+                        </td>
+                      );
+                    })}
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1.5">
+                        {isDirtyRow && (
+                          <button onClick={() => save(p.key)} disabled={saving === p.key}
+                            className="px-2.5 py-1 rounded-lg bg-green-500 text-black text-xs font-bold hover:bg-green-400 disabled:opacity-50 transition-colors">
+                            {saving === p.key ? "..." : "Сохранить"}
+                          </button>
+                        )}
+                        {!isDefault && !isDirtyRow && (
+                          <button onClick={() => reset(p.key)} disabled={saving === p.key}
+                            className="px-2 py-1 rounded-lg border border-bg-border text-xs text-ink-tertiary hover:text-ink-primary hover:border-bg-hover transition-colors">
+                            Сброс
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Индивидуальные переопределения ── */}
+      <div className="bg-bg-surface border border-bg-border rounded-xl p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <Unlock size={15} className="text-blue-400" />
+          <h2 className="text-sm font-semibold text-ink-primary">Индивидуальные права</h2>
+          <span className="text-xs text-ink-tertiary ml-1">Переопределяют роль для конкретного пользователя</span>
+        </div>
+        <select
+          value={selUserId}
+          onChange={(e) => { setSelUserId(e.target.value); loadUserOverrides(e.target.value); }}
+          className="w-full text-sm px-3 py-2 rounded-lg border border-bg-border bg-bg-raised text-ink-primary outline-none mb-4"
+        >
+          <option value="">— Выберите пользователя —</option>
+          {users.map((u) => (
+            <option key={u.id} value={u.id}>{u.displayName} ({ROLE_LABELS[u.role] || u.role})</option>
+          ))}
+        </select>
+
+        {selUserId && overUser && perms.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs text-ink-tertiary mb-3">
+              <span className="text-ink-primary font-medium">{overUser.displayName}</span> — {ROLE_LABELS[overUser.role] || overUser.role}
+            </p>
+            {perms.map((p) => {
+              const override = overrides.find((o) => o.permission === p.key);
+              const state = override ? (override.granted ? "grant" : "deny") : "default";
+              return (
+                <div key={p.key} className="flex items-center justify-between p-3 rounded-lg bg-bg-raised border border-bg-border">
+                  <span className="text-xs text-ink-primary">{p.label}</span>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {(["default", "grant", "deny"] as const).map((s) => (
+                      <button key={s}
+                        onClick={() => setOverride(p.key, s === "default" ? null : s === "grant")}
+                        disabled={savingOvr === p.key}
+                        className={`px-2 py-1 rounded text-[10px] font-medium transition-colors disabled:opacity-50 ${
+                          state === s
+                            ? s === "grant" ? "bg-green-500 text-black"
+                              : s === "deny" ? "bg-red-500 text-white"
+                              : "bg-bg-border text-ink-primary"
+                            : "text-ink-tertiary hover:text-ink-primary border border-transparent hover:border-bg-border"
+                        }`}
+                      >
+                        {s === "default" ? "По роли" : s === "grant" ? "✓ Разрешить" : "✗ Запретить"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {!selUserId && <p className="text-sm text-ink-tertiary text-center py-4">Выберите пользователя для настройки</p>}
       </div>
     </div>
   );

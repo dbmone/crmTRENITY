@@ -1,6 +1,7 @@
 import { FastifyInstance } from "fastify";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, UserRole } from "@prisma/client";
 import { loginByPin } from "../services/auth.service";
+import { getUserEffectivePermissions } from "../services/permissions.service";
 
 const prisma = new PrismaClient();
 
@@ -18,9 +19,9 @@ export async function authRoutes(app: FastifyInstance) {
     }
   });
 
-  // GET /api/auth/me
+  // GET /api/auth/me — профиль + эффективные права
   app.get("/me", { preHandler: [app.authenticate] }, async (request) => {
-    return prisma.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { id: request.currentUser.id },
       select: {
         id: true, displayName: true, telegramUsername: true, role: true,
@@ -29,5 +30,8 @@ export async function authRoutes(app: FastifyInstance) {
         teamLead: { select: { id: true, displayName: true, telegramUsername: true, role: true, avatarUrl: true } },
       },
     });
+    if (!user) return null;
+    const permissions = await getUserEffectivePermissions(user.id, user.role as UserRole);
+    return { ...user, permissions };
   });
 }

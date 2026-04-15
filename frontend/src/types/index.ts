@@ -1,11 +1,17 @@
 export type UserRole = "MARKETER" | "HEAD_MARKETER" | "CREATOR" | "LEAD_CREATOR" | "HEAD_CREATOR" | "ADMIN";
 
+export type PermissionKey =
+  | "create_order" | "approve_review" | "approve_order" | "access_admin"
+  | "approve_user" | "reject_user" | "block_user" | "restore_user"
+  | "pre_approve_user" | "manage_team_lead" | "change_user_role" | "submit_report";
+
 export interface User {
   id: string;
   displayName: string;
   telegramUsername: string | null;
   role: UserRole;
   avatarUrl: string | null;
+  permissions?: Record<PermissionKey, boolean>;
 }
 
 export type OrderStatus = "NEW" | "IN_PROGRESS" | "ON_REVIEW" | "DONE" | "ARCHIVED";

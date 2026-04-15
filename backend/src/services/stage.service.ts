@@ -1,4 +1,5 @@
 import { PrismaClient, StageName, StageStatus, OrderStatus, UserRole } from "@prisma/client";
+import { getRoles } from "./permissions.service";
 
 const prisma = new PrismaClient();
 
@@ -15,21 +16,16 @@ export async function updateStage(
 
   if (!stage) throw { statusCode: 404, message: "Этап не найден" };
 
-  // REVIEW → DONE: только маркетолог / лид-креатор / админ
+  // REVIEW → DONE: проверяем через права доступа
   if (stage.name === StageName.REVIEW && newStatus === StageStatus.DONE) {
     const isLeadOnOrder = await prisma.orderCreator.findFirst({
       where: { orderId, creatorId: userId, isLead: true },
     });
-
-    const canApprove =
-      userRole === UserRole.ADMIN ||
-      userRole === UserRole.HEAD_MARKETER ||
-      userRole === UserRole.MARKETER ||
-      userRole === UserRole.LEAD_CREATOR ||
-      !!isLeadOnOrder;
+    const approveRoles = getRoles("approve_review");
+    const canApprove   = approveRoles.includes(userRole) || !!isLeadOnOrder;
 
     if (!canApprove) {
-      throw { statusCode: 403, message: "Только маркетолог или главный креатор может утвердить" };
+      throw { statusCode: 403, message: "Нет прав для утверждения этапа REVIEW" };
     }
   }
 

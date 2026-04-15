@@ -51,6 +51,7 @@ model User {
   dailyReports     DailyReport[]
   notifications    Notification[]
   comments         OrderComment[]
+  userPermissions  UserPermission[]
   approvedById     String?          @map("approved_by_id")
 
   @@map("users")
@@ -228,4 +229,27 @@ model Notification {
   order Order? @relation(fields: [orderId], references: [id])
 
   @@map("notifications")
+}
+
+// ==================== ПРАВА ДОСТУПА ====================
+
+model Permission {
+  id        String     @id @default(cuid())
+  key       String     @unique
+  label     String
+  roles     UserRole[]
+  updatedAt DateTime   @updatedAt
+
+  @@map("permissions")
+}
+
+model UserPermission {
+  id         String  @id @default(cuid())
+  userId     String  @map("user_id")
+  permission String
+  granted    Boolean
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permission])
+  @@map("user_permissions")
 }

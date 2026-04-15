@@ -19,6 +19,8 @@ import { reportsRoutes } from "./routes/reports.routes";
 import { commentsRoutes } from "./routes/comments.routes";
 import { notificationsRoutes } from "./routes/notifications.routes";
 import { dashboardRoutes } from "./routes/dashboard.routes";
+import { permissionsRoutes } from "./routes/permissions.routes";
+import { loadPermissions } from "./services/permissions.service";
 
 const app = Fastify({
   logger: {
@@ -47,6 +49,7 @@ app.register(usersRoutes, { prefix: "/api/users" });
 app.register(ordersRoutes, { prefix: "/api/orders" });
 app.register(notificationsRoutes, { prefix: "/api/notifications" });
 app.register(dashboardRoutes, { prefix: "/api/dashboard" });
+app.register(permissionsRoutes, { prefix: "/api/permissions" });
 app.register(filesGlobalRoutes, { prefix: "/api/files" });
 
 // Вложенные под /api/orders/:orderId/
@@ -85,6 +88,8 @@ async function start() {
     }
 
     startScheduler();
+    await loadPermissions();
+    console.log("✅ Permissions loaded");
 
     await app.listen({ port: config.port, host: config.host });
     console.log(`\n🚀 TRENITY CRM API v2.0`);
