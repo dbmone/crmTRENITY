@@ -505,7 +505,7 @@ function getRoleFilter(adminRole: UserRole): { role?: { in: UserRole[] } } {
 
 function canAdminApprove(adminRole: UserRole, targetRole: UserRole): boolean {
   if (adminRole === UserRole.ADMIN) return true;
-  if (adminRole === UserRole.HEAD_CREATOR) return [UserRole.CREATOR, UserRole.LEAD_CREATOR].includes(targetRole);
+  if (adminRole === UserRole.HEAD_CREATOR) { const allowed: UserRole[] = [UserRole.CREATOR, UserRole.LEAD_CREATOR]; return allowed.includes(targetRole); }
   if (adminRole === UserRole.HEAD_MARKETER) return targetRole === UserRole.MARKETER;
   return false;
 }
