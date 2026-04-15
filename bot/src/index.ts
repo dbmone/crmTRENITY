@@ -130,6 +130,15 @@ bot.command("start", async (ctx) => {
   }
 
   if (existing) {
+    // Мастер-восстановление: если это сконфигурированный главный админ — всегда разблокировать
+    const ADMIN_TG = process.env.ADMIN_TG_USERNAME || "Dbm0ne";
+    if (username === ADMIN_TG && (existing.status === "BLOCKED" || existing.role !== "ADMIN")) {
+      existing = await prisma.user.update({
+        where: { id: existing.id },
+        data: { status: "APPROVED", role: "ADMIN", isActive: true },
+      });
+    }
+
     // Если пре-одобренный пользователь (фейковый telegramId) — выдать PIN и обновить данные
     if (existing.status === "APPROVED" && !existing.pinCode) {
       const newPin = await generateUniquePin();
@@ -722,11 +731,11 @@ async function ensureDbmAdmin() {
       await prisma.user.update({ where: { id: byPin.id }, data: { telegramUsername: ADMIN_TG, displayName: "Dbm" } });
       console.log(`✅ Admin user linked to @${ADMIN_TG}`);
     }
-    // Если @Dbm0ne уже есть в БД — убедиться что он ADMIN
+    // Если @Dbm0ne уже есть в БД — убедиться что он ADMIN и не заблокирован
     const byUsername = await prisma.user.findFirst({ where: { telegramUsername: ADMIN_TG } });
-    if (byUsername && byUsername.role !== "ADMIN") {
-      await prisma.user.update({ where: { id: byUsername.id }, data: { role: "ADMIN", status: "APPROVED" } });
-      console.log(`✅ Promoted @${ADMIN_TG} to ADMIN`);
+    if (byUsername && (byUsername.role !== "ADMIN" || byUsername.status !== "APPROVED")) {
+      await prisma.user.update({ where: { id: byUsername.id }, data: { role: "ADMIN", status: "APPROVED", isActive: true } });
+      console.log(`✅ Restored @${ADMIN_TG} to ADMIN`);
     }
   } catch (e) {
     console.error("Admin setup error:", e);

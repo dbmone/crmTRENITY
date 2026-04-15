@@ -20,7 +20,7 @@ export async function usersRoutes(app: FastifyInstance) {
       where: showAll ? {} : { status: UserStatus.APPROVED, isActive: true },
       select: {
         id: true, displayName: true, telegramUsername: true, role: true,
-        status: true, avatarUrl: true, teamLeadId: true, createdAt: true,
+        status: true, isActive: true, avatarUrl: true, teamLeadId: true, createdAt: true,
         teamLead: { select: { id: true, displayName: true, telegramUsername: true, role: true } },
         _count: { select: { createdOrders: true, assignments: true, subordinates: true } },
       },
@@ -159,6 +159,18 @@ export async function usersRoutes(app: FastifyInstance) {
     return prisma.user.update({
       where: { id: request.params.id },
       data: { status: UserStatus.BLOCKED, isActive: false },
+    });
+  });
+
+  // POST /api/users/:id/restore — восстановить заблокированного
+  app.post<{ Params: { id: string } }>("/:id/restore", {
+    preHandler: [requireRole(UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.HEAD_CREATOR)],
+  }, async (request, reply) => {
+    const target = await prisma.user.findUnique({ where: { id: request.params.id } });
+    if (!target) return reply.status(404).send({ error: "Не найден" });
+    return prisma.user.update({
+      where: { id: request.params.id },
+      data: { status: UserStatus.APPROVED, isActive: true },
     });
   });
 

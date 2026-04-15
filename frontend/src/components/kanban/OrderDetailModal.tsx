@@ -340,7 +340,9 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                   <p className="text-[10px] text-ink-tertiary uppercase tracking-wide mb-2">Управление командой</p>
                   {o.creators.filter((c) => isMarketer || c.addedById === user?.id).map((c) => (
                     <div key={c.id} className="flex items-center justify-between py-1.5">
-                      <span className="text-sm text-ink-secondary">{c.creator.displayName}</span>
+                      <UserProfileCard userId={c.creatorId} trigger={
+                        <span className="text-sm text-ink-secondary hover:text-ink-primary cursor-pointer transition-colors">{c.creator.displayName}</span>
+                      } />
                       <button onClick={() => handleRemoveCreator(c.creatorId)} className="text-xs text-ink-tertiary hover:text-red-400 transition-colors">Убрать</button>
                     </div>
                   ))}

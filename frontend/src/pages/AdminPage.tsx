@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "../store/auth.store";
 import Header from "../components/layout/Header";
-import { Check, X, Shield, RefreshCw, UserX, Crown, Users, ChevronRight, Trash2, UserPlus } from "lucide-react";
+import { Check, X, Shield, RefreshCw, UserX, Crown, Users, ChevronRight, Trash2, UserPlus, RotateCcw } from "lucide-react";
 import * as api from "../api/client";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -18,7 +18,7 @@ const ROLE_COLORS: Record<string, string> = {
 
 interface UserRow {
   id: string; displayName: string; telegramUsername: string | null;
-  role: string; status: string; createdAt: string;
+  role: string; status: string; isActive: boolean; createdAt: string;
   teamLeadId?: string | null;
   teamLead?: { id: string; displayName: string } | null;
   _count?: { assignments: number; subordinates?: number };
@@ -31,6 +31,7 @@ export default function AdminPage() {
 
   const [users,    setUsers]    = useState<UserRow[]>([]);
   const [pending,  setPending]  = useState<UserRow[]>([]);
+  const [blocked,  setBlocked]  = useState<UserRow[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [tab,      setTab]      = useState<"users" | "pending" | "team" | "access">(
     searchParams.get("tab") === "pending" ? "pending" : "users"
@@ -49,8 +50,9 @@ export default function AdminPage() {
     try {
       const u = await api.getUsers({ includeAll: true });
       const all = Array.isArray(u) ? u : (u.users ?? []);
-      setUsers(all.filter((x: UserRow) => x.status === "APPROVED"));
+      setUsers(all.filter((x: UserRow) => x.status === "APPROVED" && x.isActive !== false));
       setPending(all.filter((x: UserRow) => x.status === "PENDING"));
+      setBlocked(all.filter((x: UserRow) => x.status === "BLOCKED" || x.isActive === false));
     } catch {}
     setLoading(false);
   };
@@ -93,6 +95,15 @@ export default function AdminPage() {
     setWorking(id);
     try {
       await api.deactivateUser(id);
+      await load();
+    } catch (e: any) { alert(e.response?.data?.error || "Ошибка"); }
+    setWorking(null);
+  };
+
+  const restore = async (id: string) => {
+    setWorking(id);
+    try {
+      await api.restoreUser(id);
       await load();
     } catch (e: any) { alert(e.response?.data?.error || "Ошибка"); }
     setWorking(null);
@@ -185,7 +196,7 @@ export default function AdminPage() {
         ) : tab === "access" ? (
           <PreApproveTab isAdmin={isAdmin} isHeadMark={isHeadMark} isHeadCreator={isHeadCreator} />
         ) : (
-          <UsersList rows={users} onChangeRole={changeRole} onDeactivate={deactivate} working={working} currentUser={user} isAdmin={isAdmin} />
+          <UsersList rows={users} blocked={blocked} onChangeRole={changeRole} onDeactivate={deactivate} onRestore={restore} working={working} currentUser={user} isAdmin={isAdmin} />
         )}
       </div>
     </div>
@@ -508,9 +519,82 @@ function PendingList({ rows, onApprove, onReject, working, isAdmin, isHeadMark }
   );
 }
 
-function UsersList({ rows, onChangeRole, onDeactivate, working, currentUser, isAdmin }: any) {
-  const [editRole, setEditRole] = useState<string | null>(null);
+function UserRow3({ u, working, currentUser, isAdmin, assignable, onChangeRole, onDeactivate, onRestore, isBlocked = false }: {
+  u: UserRow; working: string | null; currentUser: any; isAdmin: boolean;
+  assignable: string[]; onChangeRole?: (id: string, role: string) => void;
+  onDeactivate?: (id: string) => void; onRestore?: (id: string) => void;
+  isBlocked?: boolean;
+}) {
+  const [editRole, setEditRole] = useState(false);
+  return (
+    <div className={`bg-bg-surface border rounded-card p-4 flex items-center justify-between gap-4 ${isBlocked ? "border-red-500/20 opacity-70" : "border-bg-border"}`}>
+      <div className="flex items-center gap-3 min-w-0">
+        <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 border ${isBlocked ? "bg-red-500/10 border-red-500/20" : "bg-green-500/10 border-green-500/20"}`}>
+          <span className={`text-xs font-bold ${isBlocked ? "text-red-400" : "text-green-400"}`}>
+            {u.displayName.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0,2)}
+          </span>
+        </div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-medium text-ink-primary truncate">{u.displayName}</span>
+            {u.telegramUsername && (
+              <a href={`https://t.me/${u.telegramUsername}`} target="_blank" rel="noreferrer"
+                className="text-xs text-ink-tertiary hover:text-green-400 transition-colors">
+                @{u.telegramUsername}
+              </a>
+            )}
+            {isBlocked && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-400 font-medium">Заблокирован</span>}
+          </div>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_COLORS[u.role] || ""}`}>
+              {ROLE_LABELS[u.role] || u.role}
+            </span>
+            {u.teamLead && <span className="text-xs text-ink-tertiary">тимлид: {u.teamLead.displayName}</span>}
+            {u._count && <span className="text-xs text-ink-tertiary">{u._count.assignments} заказов</span>}
+          </div>
+        </div>
+      </div>
 
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {isBlocked ? (
+          onRestore && (
+            <button onClick={() => onRestore(u.id)} disabled={working === u.id}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20 text-xs font-medium transition-colors disabled:opacity-40">
+              <RotateCcw size={12} /> Восстановить
+            </button>
+          )
+        ) : editRole ? (
+          <div className="flex items-center gap-2">
+            <select defaultValue={u.role}
+              onChange={(e) => { onChangeRole?.(u.id, e.target.value); setEditRole(false); }}
+              className="text-sm bg-bg-raised border border-bg-border rounded-lg px-2 py-1.5 text-ink-primary outline-none"
+              autoFocus>
+              {assignable.map((r: string) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+            </select>
+            <button onClick={() => setEditRole(false)} className="text-ink-tertiary hover:text-ink-primary"><X size={14} /></button>
+          </div>
+        ) : (
+          <>
+            {u.id !== currentUser?.id && (
+              <button onClick={() => setEditRole(true)} disabled={working === u.id}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-bg-border text-ink-tertiary hover:text-ink-primary hover:border-bg-hover text-xs transition-colors disabled:opacity-40">
+                <Crown size={12} /> Роль
+              </button>
+            )}
+            {isAdmin && u.id !== currentUser?.id && (
+              <button onClick={() => onDeactivate?.(u.id)} disabled={working === u.id}
+                className="p-1.5 rounded-lg hover:bg-red-500/10 text-ink-tertiary hover:text-red-400 transition-colors disabled:opacity-40">
+                <UserX size={15} />
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function UsersList({ rows, blocked, onChangeRole, onDeactivate, onRestore, working, currentUser, isAdmin }: any) {
   const assignable = isAdmin
     ? ["CREATOR","LEAD_CREATOR","HEAD_CREATOR","MARKETER","HEAD_MARKETER","ADMIN"]
     : currentUser?.role === "HEAD_MARKETER"
@@ -520,81 +604,27 @@ function UsersList({ rows, onChangeRole, onDeactivate, working, currentUser, isA
     : ["CREATOR"];
 
   return (
-    <div className="space-y-2">
-      {rows.map((u: UserRow) => (
-        <div key={u.id} className="bg-bg-surface border border-bg-border rounded-card p-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center flex-shrink-0">
-              <span className="text-xs font-bold text-green-400">
-                {u.displayName.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0,2)}
-              </span>
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-ink-primary truncate">{u.displayName}</span>
-                {u.telegramUsername && (
-                  <a href={`https://t.me/${u.telegramUsername}`} target="_blank" rel="noreferrer"
-                    className="text-xs text-ink-tertiary hover:text-green-400 transition-colors">
-                    @{u.telegramUsername}
-                  </a>
-                )}
-              </div>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_COLORS[u.role] || ""}`}>
-                  {ROLE_LABELS[u.role] || u.role}
-                </span>
-                {u.teamLead && (
-                  <span className="text-xs text-ink-tertiary">тимлид: {u.teamLead.displayName}</span>
-                )}
-                {u._count && (
-                  <span className="text-xs text-ink-tertiary">{u._count.assignments} заказов</span>
-                )}
-              </div>
-            </div>
-          </div>
+    <div className="space-y-6">
+      <div className="space-y-2">
+        {rows.map((u: UserRow) => (
+          <UserRow3 key={u.id} u={u} working={working} currentUser={currentUser} isAdmin={isAdmin}
+            assignable={assignable} onChangeRole={onChangeRole} onDeactivate={onDeactivate} />
+        ))}
+      </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {editRole === u.id ? (
-              <div className="flex items-center gap-2">
-                <select
-                  defaultValue={u.role}
-                  onChange={(e) => { onChangeRole(u.id, e.target.value); setEditRole(null); }}
-                  className="text-sm bg-bg-raised border border-bg-border rounded-lg px-2 py-1.5 text-ink-primary outline-none"
-                  autoFocus
-                >
-                  {assignable.map((r: string) => (
-                    <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-                  ))}
-                </select>
-                <button onClick={() => setEditRole(null)} className="text-ink-tertiary hover:text-ink-primary">
-                  <X size={14} />
-                </button>
-              </div>
-            ) : (
-              <>
-                {u.id !== currentUser?.id && (
-                  <button
-                    onClick={() => setEditRole(u.id)}
-                    disabled={working === u.id}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-bg-border text-ink-tertiary hover:text-ink-primary hover:border-bg-hover text-xs transition-colors disabled:opacity-40"
-                  >
-                    <Crown size={12} /> Роль
-                  </button>
-                )}
-                {isAdmin && u.id !== currentUser?.id && (
-                  <button
-                    onClick={() => onDeactivate(u.id)}
-                    disabled={working === u.id}
-                    className="p-1.5 rounded-lg hover:bg-red-500/10 text-ink-tertiary hover:text-red-400 transition-colors disabled:opacity-40"
-                  >
-                    <UserX size={15} />
-                  </button>
-                )}
-              </>
-            )}
+      {blocked && blocked.length > 0 && (
+        <div>
+          <h3 className="text-xs font-semibold text-red-400/70 uppercase tracking-wide mb-3 flex items-center gap-2">
+            <UserX size={13} /> Заблокированные ({blocked.length})
+          </h3>
+          <div className="space-y-2">
+            {blocked.map((u: UserRow) => (
+              <UserRow3 key={u.id} u={u} working={working} currentUser={currentUser} isAdmin={isAdmin}
+                assignable={assignable} onRestore={onRestore} isBlocked />
+            ))}
           </div>
         </div>
-      ))}
+      )}
     </div>
   );
 }

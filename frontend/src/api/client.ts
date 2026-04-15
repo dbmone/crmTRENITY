@@ -224,4 +224,9 @@ export async function getPreApproved() {
   return data;
 }
 
+export async function restoreUser(id: string) {
+  const { data } = await api.post(`/users/${id}/restore`);
+  return data;
+}
+
 export default api;
