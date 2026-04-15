@@ -8,7 +8,10 @@ dotenv.config();
 
 const bot = new Bot(process.env.BOT_TOKEN || "");
 const prisma = new PrismaClient();
-
+// Экранирование спецсимволов Markdown
+function esc(text: string): string {
+  return text.replace(/([_*`\[\]])/g, '\\$1');
+}
 // ==================== АНТИСПАМ ====================
 // Health-check сервер для Render
 const PORT = process.env.PORT || 3001;
