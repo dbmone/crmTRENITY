@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Clock, Paperclip, Download, Trash2, UserPlus, Upload, Send, MessageSquare, FileText, Edit2, Check, Calendar, ArchiveRestore } from "lucide-react";
-import { Order, STAGE_LABELS, StageName, User, OrderComment, OrderFile } from "../../types";
+import { X, Clock, Paperclip, Download, Trash2, Upload, Send, MessageSquare, FileText, Edit2, Check, Calendar, ArchiveRestore, RotateCcw, Plus, ChevronDown, ChevronRight } from "lucide-react";
+import { Order, STAGE_LABELS, StageName, User, OrderComment, OrderFile, OrderStage } from "../../types";
 import StageProgress from "../order/StageProgress";
 import { useAuthStore } from "../../store/auth.store";
 import { useOrdersStore } from "../../store/orders.store";
@@ -49,6 +49,19 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   const [reportText,   setReportText]   = useState("");
   const [sendingReport,setSendingReport]= useState(false);
 
+  // Edit file attach
+  const [editUploadingFile,    setEditUploadingFile]    = useState(false);
+  const [editSelectedFileType, setEditSelectedFileType] = useState("tz");
+  const editFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleEditFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    setEditUploadingFile(true);
+    try { await api.uploadFile(o.id, file, editSelectedFileType); await loadOrder(); }
+    catch (err: any) { alert(err.response?.data?.error || "Ошибка загрузки"); }
+    setEditUploadingFile(false); e.target.value = "";
+  };
+
   useEffect(() => {
     if (!order) return;
     loadOrder(); loadUsers(); loadComments();
@@ -66,9 +79,10 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   if (!order) return null;
   const o = fullOrder || order;
 
-  const isMarketer    = ["MARKETER","HEAD_MARKETER","ADMIN"].includes(user?.role ?? "");
+  const isMarketer    = user?.permissions?.create_order ?? ["MARKETER","HEAD_MARKETER","ADMIN","HEAD_CREATOR"].includes(user?.role ?? "");
   const isLeadCreator = user?.role === "LEAD_CREATOR";
-  const canApprove    = isMarketer || isLeadCreator;
+  const canApprove    = user?.permissions?.approve_review ?? (isMarketer || isLeadCreator);
+  const canSubmitReport = user?.permissions?.submit_report ?? ["CREATOR","LEAD_CREATOR","HEAD_CREATOR","ADMIN"].includes(user?.role ?? "");
   const isParticipant = isMarketer || o.creators?.some((c) => c.creatorId === user?.id);
   const canEdit       = isMarketer && o.marketerId === user?.id;
 
@@ -211,6 +225,24 @@ export default function OrderDetailModal({ order, onClose }: Props) {
             <div className="space-y-2 mb-3">
               <textarea value={editDesc} onChange={(e) => setEditDesc(e.target.value)}
                 placeholder="ТЗ / описание..." rows={3} className={`${inputCls} resize-none`} />
+              {/* File attach in edit mode */}
+              <div className="flex items-center gap-2">
+                <select value={editSelectedFileType} onChange={(e) => setEditSelectedFileType(e.target.value)}
+                  className="text-xs px-2.5 py-1.5 rounded-lg border border-bg-border bg-bg-raised text-ink-secondary outline-none">
+                  <option value="tz">ТЗ</option>
+                  <option value="contract">Договор</option>
+                  <option value="storyboard">Раскадровка</option>
+                  <option value="other">Другое</option>
+                </select>
+                <button onClick={() => editFileInputRef.current?.click()} disabled={editUploadingFile}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-dashed border-bg-border text-ink-tertiary hover:border-green-500/40 hover:text-green-400 disabled:opacity-50 transition-colors">
+                  {editUploadingFile
+                    ? <div className="w-3 h-3 border-2 border-green-500/30 border-t-green-500 rounded-full animate-spin" />
+                    : <Paperclip size={12} />}
+                  {editUploadingFile ? "Загружаю..." : "Прикрепить файл"}
+                </button>
+                <input ref={editFileInputRef} type="file" className="hidden" onChange={handleEditFileUpload} />
+              </div>
               <div className="flex items-center gap-2">
                 <input type="date" value={editDL} onChange={(e) => setEditDL(e.target.value)}
                   className={`${inputCls} flex-1`} style={{ colorScheme: "dark" }} />
@@ -283,72 +315,19 @@ export default function OrderDetailModal({ order, onClose }: Props) {
 
           {/* STAGES */}
           {tab === "stages" && (
-            <div className="space-y-2">
-              {STAGE_ORDER.map((name) => {
-                const stage = o.stages?.find((s) => s.name === name);
-                if (!stage) return null;
-                return (
-                  <div key={stage.id} className="flex items-center justify-between p-3 rounded-lg bg-bg-raised border border-bg-border">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                        stage.status === "DONE" ? "bg-green-500" : stage.status === "IN_PROGRESS" ? "bg-amber-400 pulse-green" : "bg-bg-border"
-                      }`} />
-                      <div className="min-w-0">
-                        <span className="text-sm text-ink-primary">{STAGE_LABELS[stage.name]}</span>
-                        {/* Stage dates */}
-                        <div className="flex items-center gap-2 mt-0.5">
-                          {stage.startedAt && (
-                            <span className="flex items-center gap-1 text-[10px] text-ink-tertiary">
-                              <Calendar size={9} /> Нач.: {new Date(stage.startedAt).toLocaleString("ru-RU", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit", timeZone:"Europe/Moscow" })} МСК
-                            </span>
-                          )}
-                          {stage.completedAt && (
-                            <span className="flex items-center gap-1 text-[10px] text-green-400">
-                              <Check size={9} /> {new Date(stage.completedAt).toLocaleString("ru-RU", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit", timeZone:"Europe/Moscow" })} МСК
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-1.5 flex-shrink-0">
-                      {stage.status === "PENDING" && (
-                        <button onClick={() => handleStageUpdate(stage.id, "IN_PROGRESS")} disabled={loading}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-amber-400/10 text-amber-400 border border-amber-400/20 hover:bg-amber-400/20 font-medium transition-colors disabled:opacity-40">
-                          Начать
-                        </button>
-                      )}
-                      {stage.status === "IN_PROGRESS" && (
-                        <button onClick={() => handleStageUpdate(stage.id, "DONE")}
-                          disabled={loading || (stage.name === "REVIEW" && !canApprove)}
-                          title={stage.name === "REVIEW" && !canApprove ? "Только маркетолог или лид-креатор" : undefined}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20 font-medium transition-colors disabled:opacity-40">
-                          {stage.name === "REVIEW" ? "Утвердить" : "Готово"}
-                        </button>
-                      )}
-                      {stage.status === "DONE" && (
-                        <span className="text-xs text-green-400 font-medium px-2">✓</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Remove creators */}
-              {o.creators && o.creators.filter((c) => isMarketer || c.addedById === user?.id).length > 0 && (
-                <div className="mt-4 pt-4 border-t border-bg-border">
-                  <p className="text-[10px] text-ink-tertiary uppercase tracking-wide mb-2">Управление командой</p>
-                  {o.creators.filter((c) => isMarketer || c.addedById === user?.id).map((c) => (
-                    <div key={c.id} className="flex items-center justify-between py-1.5">
-                      <UserProfileCard userId={c.creatorId} trigger={
-                        <span className="text-sm text-ink-secondary hover:text-ink-primary cursor-pointer transition-colors">{c.creator.displayName}</span>
-                      } />
-                      <button onClick={() => handleRemoveCreator(c.creatorId)} className="text-xs text-ink-tertiary hover:text-red-400 transition-colors">Убрать</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <StagesTab
+              order={o}
+              user={user}
+              loading={loading}
+              canApprove={canApprove}
+              canSubmitReport={canSubmitReport}
+              isParticipant={isParticipant}
+              isMarketer={isMarketer}
+              onStageUpdate={handleStageUpdate}
+              onRemoveCreator={handleRemoveCreator}
+              onSwitchToReports={() => setTab("reports")}
+              onReload={loadOrder}
+            />
           )}
 
           {/* FILES */}
@@ -397,7 +376,7 @@ export default function OrderDetailModal({ order, onClose }: Props) {
           {/* REPORTS */}
           {tab === "reports" && (
             <div>
-              {!isMarketer && isParticipant && (
+              {canSubmitReport && isParticipant && (
                 <div className="mb-4 p-3.5 bg-bg-raised border border-bg-border rounded-lg">
                   <p className="text-[10px] font-semibold text-ink-tertiary uppercase tracking-wide mb-2">Отправить отчёт</p>
                   <textarea value={reportText} onChange={(e) => setReportText(e.target.value)}
@@ -490,25 +469,285 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   );
 }
 
+// ─── StagesTab: multi-round stage view with sub-stages ───────────────────────
+
+const STAGE_ORDER_LIST: StageName[] = ["STORYBOARD", "ANIMATION", "EDITING", "REVIEW", "COMPLETED"];
+const SUB_STAGE_NAMES: Partial<Record<StageName, boolean>> = { STORYBOARD: true, ANIMATION: true };
+
+interface StagesTabProps {
+  order: Order;
+  user: User | null;
+  loading: boolean;
+  canApprove: boolean;
+  canSubmitReport: boolean;
+  isParticipant: boolean;
+  isMarketer: boolean;
+  onStageUpdate: (stageId: string, status: string) => void;
+  onRemoveCreator: (creatorId: string) => void;
+  onSwitchToReports: () => void;
+  onReload: () => void;
+}
+
+function StagesTab({ order, user, loading, canApprove, canSubmitReport, isParticipant, isMarketer, onStageUpdate, onRemoveCreator, onSwitchToReports, onReload }: StagesTabProps) {
+  const [clientApprovalLoading, setClientApprovalLoading] = useState<string | null>(null);
+  const [revisionLoading,       setRevisionLoading]       = useState(false);
+
+  const stages = order.stages || [];
+  const maxRound = stages.length > 0 ? Math.max(...stages.map((s) => s.revisionRound ?? 0)) : 0;
+
+  // Group by revisionRound
+  const rounds: OrderStage[][] = [];
+  for (let r = 0; r <= maxRound; r++) {
+    const roundStages = stages.filter((s) => (s.revisionRound ?? 0) === r);
+    if (roundStages.length > 0) rounds.push(roundStages);
+  }
+
+  // Current round is done when COMPLETED stage in max round is DONE
+  const maxRoundStages = stages.filter((s) => (s.revisionRound ?? 0) === maxRound);
+  const currentRoundDone = maxRoundStages.every((s) => s.status === "DONE");
+
+  const handleClientApproval = async (stageId: string, action: "request" | "approve" | "skip") => {
+    setClientApprovalLoading(stageId + action);
+    try { await api.toggleClientApproval(order.id, stageId, action); onReload(); }
+    catch (err: any) { alert(err.response?.data?.error || "Ошибка"); }
+    setClientApprovalLoading(null);
+  };
+
+  const handleStartRevision = async () => {
+    setRevisionLoading(true);
+    try { await api.startRevisionRound(order.id); onReload(); }
+    catch (err: any) { alert(err.response?.data?.error || "Ошибка"); }
+    setRevisionLoading(false);
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Quick report shortcut */}
+      {canSubmitReport && isParticipant && (
+        <div className="p-3 bg-green-500/5 border border-green-500/20 rounded-lg flex items-center justify-between">
+          <div>
+            <p className="text-xs font-medium text-green-400">Ежедневный отчёт</p>
+            <p className="text-[10px] text-ink-tertiary">Отправьте отчёт о проделанной работе</p>
+          </div>
+          <button onClick={onSwitchToReports}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-green-500 text-black font-bold hover:bg-green-400 transition-colors flex-shrink-0">
+            <FileText size={12} /> Добавить
+          </button>
+        </div>
+      )}
+
+      {/* Rounds */}
+      {rounds.map((roundStages, idx) => {
+        const round = roundStages[0]?.revisionRound ?? idx;
+        const isCurrentRound = round === maxRound;
+        const isDoneRound = roundStages.every((s) => s.status === "DONE");
+        const isOldRound = !isCurrentRound;
+
+        return (
+          <div key={round} className={`rounded-xl border overflow-hidden transition-all ${
+            isOldRound ? "border-bg-border/30 opacity-30" : "border-bg-border"
+          }`}>
+            {/* Round header */}
+            <div className={`px-3 py-2 flex items-center gap-2 ${
+              isOldRound ? "bg-bg-raised/30" : "bg-bg-raised border-b border-bg-border"
+            }`}>
+              {round === 0 ? (
+                <span className="text-[10px] font-semibold text-ink-tertiary uppercase tracking-wider">
+                  Основной раунд
+                </span>
+              ) : (
+                <span className="text-[10px] font-semibold text-purple-400 uppercase tracking-wider">
+                  Правка #{round}
+                </span>
+              )}
+              {isDoneRound && <span className="text-[10px] text-green-400">✓ Завершён</span>}
+            </div>
+
+            {/* Stages in this round */}
+            <div className={`p-2 space-y-1.5 ${isOldRound ? "pointer-events-none" : ""}`}>
+              {STAGE_ORDER_LIST.map((name) => {
+                const stage = roundStages.find((s) => s.name === name);
+                if (!stage) return null;
+                const hasSubStage = SUB_STAGE_NAMES[name] && stage.status === "IN_PROGRESS";
+
+                return (
+                  <div key={stage.id}>
+                    <div className="flex items-center justify-between p-2.5 rounded-lg bg-bg-surface border border-bg-border/60">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                          stage.status === "DONE" ? "bg-green-500"
+                          : stage.status === "IN_PROGRESS" ? "bg-amber-400 pulse-green"
+                          : "bg-bg-border"
+                        }`} />
+                        <div className="min-w-0">
+                          <span className="text-sm text-ink-primary">{STAGE_LABELS[stage.name]}</span>
+                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                            {stage.startedAt && (
+                              <span className="flex items-center gap-1 text-[10px] text-ink-tertiary">
+                                <Calendar size={9} /> {new Date(stage.startedAt).toLocaleString("ru-RU", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit", timeZone:"Europe/Moscow" })} МСК
+                              </span>
+                            )}
+                            {stage.completedAt && (
+                              <span className="flex items-center gap-1 text-[10px] text-green-400">
+                                <Check size={9} /> {new Date(stage.completedAt).toLocaleString("ru-RU", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit", timeZone:"Europe/Moscow" })} МСК
+                              </span>
+                            )}
+                            {stage.awaitingClientApproval && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+                                ⏳ Ожидание апрува
+                              </span>
+                            )}
+                            {stage.clientApprovedAt && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
+                                ✓ Клиент одобрил
+                              </span>
+                            )}
+                            {stage.clientApprovalSkipped && (
+                              <span className="text-[10px] text-ink-muted">пропущено</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-1 flex-shrink-0">
+                        {isCurrentRound && stage.status === "PENDING" && (
+                          <button onClick={() => onStageUpdate(stage.id, "IN_PROGRESS")} disabled={loading}
+                            className="text-xs px-2.5 py-1 rounded-lg bg-amber-400/10 text-amber-400 border border-amber-400/20 hover:bg-amber-400/20 font-medium transition-colors disabled:opacity-40">
+                            Начать
+                          </button>
+                        )}
+                        {isCurrentRound && stage.status === "IN_PROGRESS" && (
+                          <button onClick={() => onStageUpdate(stage.id, "DONE")}
+                            disabled={loading || (stage.awaitingClientApproval) || (stage.name === "REVIEW" && !canApprove)}
+                            title={stage.awaitingClientApproval ? "Ожидается апрув клиента" : stage.name === "REVIEW" && !canApprove ? "Только маркетолог или лид-креатор" : undefined}
+                            className="text-xs px-2.5 py-1 rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20 font-medium transition-colors disabled:opacity-40">
+                            {stage.name === "REVIEW" ? "Утвердить" : "Готово"}
+                          </button>
+                        )}
+                        {isCurrentRound && stage.status === "DONE" && isMarketer && (
+                          <button onClick={() => onStageUpdate(stage.id, "PENDING")} disabled={loading}
+                            title="Откатить этап"
+                            className="p-1 rounded-lg text-ink-muted hover:text-amber-400 hover:bg-amber-400/10 transition-colors disabled:opacity-40">
+                            <RotateCcw size={12} />
+                          </button>
+                        )}
+                        {stage.status === "DONE" && !isMarketer && (
+                          <span className="text-xs text-green-400 font-medium px-1">✓</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Sub-stage: waiting for client approval */}
+                    {hasSubStage && isCurrentRound && (
+                      <div className="ml-6 mt-1 p-2 rounded-lg bg-yellow-500/5 border border-yellow-500/15">
+                        <p className="text-[10px] font-medium text-yellow-400 mb-1.5">Подэтап: апрув от клиента</p>
+                        {!stage.awaitingClientApproval && !stage.clientApprovedAt && !stage.clientApprovalSkipped && (
+                          <div className="flex gap-1.5">
+                            <button
+                              onClick={() => handleClientApproval(stage.id, "request")}
+                              disabled={!!clientApprovalLoading}
+                              className="text-[10px] px-2 py-1 rounded-lg bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 hover:bg-yellow-500/20 transition-colors disabled:opacity-40">
+                              Отправить на апрув
+                            </button>
+                            <button
+                              onClick={() => handleClientApproval(stage.id, "skip")}
+                              disabled={!!clientApprovalLoading}
+                              className="text-[10px] px-2 py-1 rounded-lg text-ink-tertiary border border-bg-border hover:bg-bg-raised transition-colors disabled:opacity-40">
+                              Пропустить
+                            </button>
+                          </div>
+                        )}
+                        {stage.awaitingClientApproval && canApprove && (
+                          <button
+                            onClick={() => handleClientApproval(stage.id, "approve")}
+                            disabled={!!clientApprovalLoading}
+                            className="text-[10px] px-2 py-1 rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20 transition-colors disabled:opacity-40">
+                            ✓ Клиент одобрил
+                          </button>
+                        )}
+                        {stage.awaitingClientApproval && !canApprove && (
+                          <p className="text-[10px] text-ink-tertiary">Ждём ответа от клиента...</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Start revision round button */}
+      {isMarketer && currentRoundDone && (
+        <button onClick={handleStartRevision} disabled={revisionLoading}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-purple-500/30 text-purple-400 text-sm hover:border-purple-500/60 hover:bg-purple-500/5 transition-colors disabled:opacity-40">
+          {revisionLoading
+            ? <div className="w-4 h-4 border-2 border-purple-400/30 border-t-purple-400 rounded-full animate-spin" />
+            : <Plus size={14} />}
+          Клиент дал правки — новый раунд
+        </button>
+      )}
+
+      {/* Team management */}
+      {order.creators && order.creators.filter((c) => isMarketer || c.addedById === user?.id).length > 0 && (
+        <div className="mt-2 pt-3 border-t border-bg-border">
+          <p className="text-[10px] text-ink-tertiary uppercase tracking-wide mb-2">Управление командой</p>
+          {order.creators.filter((c) => isMarketer || c.addedById === user?.id).map((c) => (
+            <div key={c.id} className="flex items-center justify-between py-1.5">
+              <UserProfileCard userId={c.creatorId} trigger={
+                <span className="text-sm text-ink-secondary hover:text-ink-primary cursor-pointer transition-colors">{c.creator.displayName}</span>
+              } />
+              <button onClick={() => onRemoveCreator(c.creatorId)} className="text-xs text-ink-tertiary hover:text-red-400 transition-colors">Убрать</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FileRow({ file, canDelete, onDeleted }: { file: OrderFile; canDelete: boolean; onDeleted: (id: string) => void }) {
   const [dl,  setDl]  = useState(false);
   const [del, setDel] = useState(false);
+  const [tgOk, setTgOk] = useState(false);
+
+  const isTgFile = !!file.telegramFileId;
+
   const handleDl = async () => {
     setDl(true);
-    try { const url = await api.getDownloadUrl(file.id); window.open(url, "_blank"); } catch {}
+    try {
+      if (isTgFile) {
+        // TG-файл: отправить в Telegram
+        const res = await api.sendFileToTelegram(file.id);
+        setTgOk(true);
+        setTimeout(() => setTgOk(false), 3000);
+      } else {
+        const url = await api.getDownloadUrl(file.id);
+        window.open(url, "_blank");
+      }
+    } catch (e: any) {
+      alert(e.response?.data?.error || e.response?.data?.message || "Ошибка");
+    }
     setDl(false);
   };
+
   const handleDel = async () => {
     if (!confirm(`Удалить файл «${file.fileName}»?`)) return;
     setDel(true);
     try { await api.deleteFile(file.id); onDeleted(file.id); } catch (e: any) { alert(e.response?.data?.error || "Ошибка"); }
     setDel(false);
   };
+
   const size = file.fileSize > 1048576 ? `${(file.fileSize / 1048576).toFixed(1)} МБ` : `${Math.round(file.fileSize / 1024)} КБ`;
+
   return (
     <div className="flex items-center justify-between p-3 rounded-lg bg-bg-raised border border-bg-border hover:border-bg-hover transition-colors">
       <div className="flex items-center gap-2.5 min-w-0">
-        <Paperclip size={13} className="text-ink-tertiary flex-shrink-0" />
+        {isTgFile
+          ? <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" className="text-[#229ED9] flex-shrink-0"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+          : <Paperclip size={13} className="text-ink-tertiary flex-shrink-0" />
+        }
         <div className="min-w-0">
           <p className="text-sm text-ink-primary truncate">{file.fileName}</p>
           <div className="flex items-center gap-1.5 mt-0.5">
@@ -516,14 +755,30 @@ function FileRow({ file, canDelete, onDeleted }: { file: OrderFile; canDelete: b
               {FILE_TYPE_LABELS[file.fileType] || file.fileType}
             </span>
             <span className="text-[10px] text-ink-tertiary">{size}</span>
+            {isTgFile && <span className="text-[10px] text-[#229ED9]">TG</span>}
             {file.uploadedBy && <span className="text-[10px] text-ink-tertiary">· {file.uploadedBy.displayName}</span>}
           </div>
         </div>
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
-        <button onClick={handleDl} disabled={dl} title="Скачать" className="p-1.5 rounded-lg hover:bg-bg-hover text-ink-tertiary hover:text-ink-primary transition-colors disabled:opacity-40">
-          <Download size={14} />
-        </button>
+        {tgOk ? (
+          <span className="text-[10px] text-green-400 px-2">✓ Отправлено!</span>
+        ) : (
+          <button onClick={handleDl} disabled={dl}
+            title={isTgFile ? "Получить в Telegram" : "Скачать"}
+            className={`p-1.5 rounded-lg transition-colors disabled:opacity-40 ${
+              isTgFile
+                ? "hover:bg-[#229ED9]/10 text-[#229ED9]/60 hover:text-[#229ED9]"
+                : "hover:bg-bg-hover text-ink-tertiary hover:text-ink-primary"
+            }`}>
+            {dl
+              ? <div className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+              : isTgFile
+                ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
+                : <Download size={14} />
+            }
+          </button>
+        )}
         {canDelete && (
           <button onClick={handleDel} disabled={del} title="Удалить файл" className="p-1.5 rounded-lg hover:bg-red-500/10 text-ink-tertiary hover:text-red-400 transition-colors disabled:opacity-40">
             <Trash2 size={14} />

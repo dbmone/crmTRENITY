@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, ExternalLink, Briefcase, ChevronLeft } from "lucide-react";
 import { UserProfile } from "../types";
 import * as api from "../api/client";
@@ -14,6 +15,8 @@ const ROLE_COLORS: Record<string, string> = {
   LEAD_CREATOR: "text-amber-400 bg-amber-400/10", CREATOR: "text-green-400 bg-green-400/10",
 };
 
+interface PopupPos { top: number; left: number; }
+
 interface Props { userId: string; trigger: React.ReactNode; }
 
 export default function UserProfileCard({ userId, trigger }: Props) {
@@ -22,29 +25,46 @@ export default function UserProfileCard({ userId, trigger }: Props) {
   const [loading,     setLoading]     = useState(false);
   const [leadProfile, setLeadProfile] = useState<UserProfile | null>(null);
   const [showLead,    setShowLead]    = useState(false);
-  const [side,        setSide]        = useState<"left" | "right">("right");
-  const containerRef  = useRef<HTMLDivElement>(null);
-  const popupRef      = useRef<HTMLDivElement>(null);
+  const [pos,         setPos]         = useState<PopupPos>({ top: 0, left: 0 });
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const popupRef   = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     load(userId);
   }, [open, userId]);
 
-  // Detect overflow: if card goes off the right edge, flip to left-aligned
+  // Position popup using fixed coords from trigger's bounding rect
   useEffect(() => {
-    if (!open || !popupRef.current || !containerRef.current) return;
-    const rect = popupRef.current.getBoundingClientRect();
-    if (rect.right > window.innerWidth - 8) {
-      setSide("left");
-    } else {
-      setSide("right");
+    if (!open || !triggerRef.current) return;
+
+    const rect = triggerRef.current.getBoundingClientRect();
+    const POPUP_W = 256;
+    const POPUP_H = 240; // approx
+
+    let left = rect.left;
+    let top  = rect.bottom + 6;
+
+    // Don't go off right edge
+    if (left + POPUP_W > window.innerWidth - 8) {
+      left = rect.right - POPUP_W;
     }
+    // Don't go off left edge
+    if (left < 8) left = 8;
+
+    // Don't go off bottom
+    if (top + POPUP_H > window.innerHeight - 8) {
+      top = rect.top - POPUP_H - 6;
+    }
+
+    setPos({ top, left });
   }, [open, profile]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const trig = triggerRef.current;
+      const pop  = popupRef.current;
+      if (trig && !trig.contains(e.target as Node) && pop && !pop.contains(e.target as Node)) {
         setOpen(false);
         setShowLead(false);
       }
@@ -67,35 +87,36 @@ export default function UserProfileCard({ userId, trigger }: Props) {
 
   const displayed = showLead ? leadProfile : profile;
 
+  const popup = open ? (
+    <div
+      ref={popupRef}
+      className="fixed z-[9999] w-64 bg-bg-surface border border-bg-border rounded-modal shadow-modal overflow-hidden animate-modal"
+      style={{ top: pos.top, left: pos.left }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {showLead && (
+        <button onClick={() => setShowLead(false)}
+          className="flex items-center gap-1 px-3 pt-2.5 text-xs text-ink-tertiary hover:text-ink-primary transition-colors">
+          <ChevronLeft size={12} /> Назад
+        </button>
+      )}
+
+      {loading && !displayed ? (
+        <div className="flex items-center justify-center h-32">
+          <div className="w-5 h-5 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : displayed ? (
+        <CardContent profile={displayed} onLeadClick={openLead} onClose={() => { setOpen(false); setShowLead(false); }} />
+      ) : null}
+    </div>
+  ) : null;
+
   return (
-    <div className="relative inline-block" ref={containerRef}>
-      <div onClick={(e) => { e.stopPropagation(); setSide("right"); setOpen(!open); }}>
+    <div className="relative inline-block" ref={triggerRef}>
+      <div onClick={(e) => { e.stopPropagation(); setOpen(!open); }}>
         {trigger}
       </div>
-
-      {open && (
-        <div
-          ref={popupRef}
-          className="absolute z-50 mt-2 w-64 bg-bg-surface border border-bg-border rounded-modal shadow-modal overflow-hidden animate-modal"
-          style={side === "right" ? { left: 0 } : { right: 0 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {showLead && (
-            <button onClick={() => setShowLead(false)}
-              className="flex items-center gap-1 px-3 pt-2.5 text-xs text-ink-tertiary hover:text-ink-primary transition-colors">
-              <ChevronLeft size={12} /> Назад
-            </button>
-          )}
-
-          {loading && !displayed ? (
-            <div className="flex items-center justify-center h-32">
-              <div className="w-5 h-5 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : displayed ? (
-            <CardContent profile={displayed} onLeadClick={openLead} onClose={() => { setOpen(false); setShowLead(false); }} />
-          ) : null}
-        </div>
-      )}
+      {createPortal(popup, document.body)}
     </div>
   );
 }

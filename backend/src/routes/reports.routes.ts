@@ -1,6 +1,6 @@
 import { FastifyInstance } from "fastify";
-import { PrismaClient, UserRole } from "@prisma/client";
-import { requireRole } from "../middleware/role.middleware";
+import { PrismaClient } from "@prisma/client";
+import { requirePermission } from "../middleware/role.middleware";
 import { createNotification } from "../services/notification.service";
 import { NotificationType } from "@prisma/client";
 
@@ -24,7 +24,7 @@ export async function reportsRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { orderId: string }; Body: { reportText: string; reportDate?: string } }>(
     "/",
-    { preHandler: [requireRole(UserRole.CREATOR, UserRole.LEAD_CREATOR, UserRole.ADMIN)] },
+    { preHandler: [requirePermission("submit_report")] },
     async (req, reply) => {
       const { orderId } = req.params;
       const { reportText, reportDate } = req.body;

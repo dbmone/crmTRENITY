@@ -1,32 +1,70 @@
 import { PrismaClient, FileType, UserRole } from "@prisma/client";
-import * as Minio from "minio";
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  CreateBucketCommand,
+} from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { config } from "../config";
 import { randomUUID } from "crypto";
+import { uploadFileToStorage, forwardFileToUser } from "./telegram.service";
 
 const prisma = new PrismaClient();
-let minioClient: Minio.Client;
 
-export function getMinioClient(): Minio.Client {
-  if (!minioClient) {
-    minioClient = new Minio.Client({
-      endPoint: config.minio.endPoint,
-      port: config.minio.port,
-      useSSL: config.minio.useSSL,
-      accessKey: config.minio.accessKey,
-      secretKey: config.minio.secretKey,
+// ─── S3/MinIO client ─────────────────────────────────────────────────────────
+
+let s3Client: S3Client | null = null;
+
+function buildEndpoint(): string {
+  const raw = config.minio.endPoint.trim();
+  if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+  const proto = config.minio.useSSL ? "https" : "http";
+  return `${proto}://${raw}:${config.minio.port}`;
+}
+
+function getS3Client(): S3Client {
+  if (!s3Client) {
+    const endpoint = buildEndpoint();
+    const isSupabase = endpoint.includes("supabase.co");
+    const region = isSupabase ? "auto" : (config.minio.region || "us-east-1");
+
+    s3Client = new S3Client({
+      endpoint,
+      region,
+      credentials: {
+        accessKeyId:     config.minio.accessKey,
+        secretAccessKey: config.minio.secretKey,
+      },
+      forcePathStyle: true,
     });
   }
-  return minioClient;
+  return s3Client;
 }
 
 export async function initBucket() {
-  const client = getMinioClient();
-  const exists = await client.bucketExists(config.minio.bucket);
-  if (!exists) {
-    await client.makeBucket(config.minio.bucket);
-    console.log(`✅ MinIO bucket "${config.minio.bucket}" created`);
+  if (config.bot.useAsTFileStorage) {
+    console.log("📱 Using Telegram as file storage — S3 bucket init skipped");
+    return;
+  }
+  const client = getS3Client();
+  const bucket  = config.minio.bucket;
+
+  try {
+    await client.send(new HeadBucketCommand({ Bucket: bucket }));
+  } catch (err: any) {
+    if (err.name === "NoSuchBucket" || err.$metadata?.httpStatusCode === 404) {
+      await client.send(new CreateBucketCommand({ Bucket: bucket }));
+      console.log(`✅ S3 bucket "${bucket}" created`);
+    } else {
+      console.warn(`⚠️  Bucket check skipped: ${err.message}`);
+    }
   }
 }
+
+// ─── UPLOAD ─────────────────────────────────────────────────────────────────
 
 export async function uploadFile(
   orderId: string,
@@ -36,14 +74,66 @@ export async function uploadFile(
   fileBuffer: Buffer,
   mimeType: string
 ) {
-  const client = getMinioClient();
+  // Используем Telegram как хранилище если настроено
+  if (config.bot.useAsTFileStorage && config.bot.storageChatId) {
+    return uploadFileViaTelegram(orderId, uploadedById, fileType, fileName, fileBuffer, mimeType);
+  }
+  return uploadFileViaS3(orderId, uploadedById, fileType, fileName, fileBuffer, mimeType);
+}
+
+async function uploadFileViaTelegram(
+  orderId: string,
+  uploadedById: string,
+  fileType: FileType,
+  fileName: string,
+  fileBuffer: Buffer,
+  mimeType: string
+) {
+  if (fileBuffer.length > 50 * 1024 * 1024) {
+    throw { statusCode: 413, message: "Telegram поддерживает файлы до 50 МБ через сайт. Загрузите файл через Telegram-бот." };
+  }
+
+  const caption = `📁 ${fileName}\n🗂 Заказ: ${orderId}\n👤 ${uploadedById}`;
+  const tg = await uploadFileToStorage(fileBuffer, fileName, mimeType, caption);
+
+  return prisma.orderFile.create({
+    data: {
+      orderId,
+      uploadedById,
+      fileType,
+      fileName,
+      fileSize:       BigInt(fileBuffer.length),
+      mimeType,
+      storagePath:    "",            // пустой — файл в TG
+      telegramFileId: tg.fileId,
+      telegramChatId: tg.chatId,
+      telegramMsgId:  tg.messageId,
+    },
+    include: {
+      uploadedBy: { select: { id: true, displayName: true, telegramUsername: true } },
+    },
+  });
+}
+
+async function uploadFileViaS3(
+  orderId: string,
+  uploadedById: string,
+  fileType: FileType,
+  fileName: string,
+  fileBuffer: Buffer,
+  mimeType: string
+) {
+  const client = getS3Client();
   const ext = fileName.split(".").pop() || "bin";
   const storagePath = `orders/${orderId}/${randomUUID()}.${ext}`;
 
-  await client.putObject(config.minio.bucket, storagePath, fileBuffer, fileBuffer.length, {
-    "Content-Type": mimeType,
-    "X-Original-Name": encodeURIComponent(fileName),
-  });
+  await client.send(new PutObjectCommand({
+    Bucket: config.minio.bucket,
+    Key:    storagePath,
+    Body:   fileBuffer,
+    ContentType: mimeType,
+    Metadata: { "original-name": encodeURIComponent(fileName) },
+  }));
 
   return prisma.orderFile.create({
     data: { orderId, uploadedById, fileType, fileName, fileSize: BigInt(fileBuffer.length), mimeType, storagePath },
@@ -53,12 +143,48 @@ export async function uploadFile(
   });
 }
 
+// ─── DOWNLOAD / SEND ─────────────────────────────────────────────────────────
+
 export async function getDownloadUrl(fileId: string): Promise<string> {
   const file = await prisma.orderFile.findUnique({ where: { id: fileId } });
   if (!file) throw { statusCode: 404, message: "Файл не найден" };
-  const client = getMinioClient();
-  return client.presignedGetObject(config.minio.bucket, file.storagePath, 3600);
+  if (file.telegramFileId) throw { statusCode: 400, message: "TG_FILE" }; // нужна sendToTelegram
+
+  const client = getS3Client();
+  const command = new GetObjectCommand({ Bucket: config.minio.bucket, Key: file.storagePath });
+  return getSignedUrl(client, command, { expiresIn: 3600 });
 }
+
+// Отправить файл пользователю в Telegram
+export async function sendFileToUserTelegram(fileId: string, userId: string): Promise<void> {
+  const file = await prisma.orderFile.findUnique({ where: { id: fileId } });
+  if (!file) throw { statusCode: 404, message: "Файл не найден" };
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user?.chatId) {
+    throw { statusCode: 400, message: "Чат с ботом не найден. Напишите боту /start." };
+  }
+
+  if (file.telegramChatId && file.telegramMsgId) {
+    // Файл в TG-хранилище — пересылаем
+    await forwardFileToUser(user.chatId.toString(), file.telegramChatId, file.telegramMsgId);
+  } else if (file.storagePath) {
+    // Файл в S3 — скачиваем и отправляем в TG
+    const client = getS3Client();
+    const command = new GetObjectCommand({ Bucket: config.minio.bucket, Key: file.storagePath });
+    const presigned = await getSignedUrl(client, command, { expiresIn: 300 });
+    // Отправим ссылку в TG если не можем скачать
+    const { sendMessageToUser } = await import("./telegram.service");
+    await sendMessageToUser(
+      user.chatId.toString(),
+      `📎 *${file.fileName}*\n\nСкачать: [ссылка](${presigned})\n_Ссылка действует 5 минут_`
+    );
+  } else {
+    throw { statusCode: 500, message: "Файл недоступен" };
+  }
+}
+
+// ─── DELETE ──────────────────────────────────────────────────────────────────
 
 export async function deleteFile(fileId: string, userId: string, userRole: UserRole) {
   const file = await prisma.orderFile.findUnique({ where: { id: fileId } });
@@ -66,9 +192,14 @@ export async function deleteFile(fileId: string, userId: string, userRole: UserR
   if (userRole !== UserRole.ADMIN && file.uploadedById !== userId) {
     throw { statusCode: 403, message: "Вы можете удалять только свои файлы" };
   }
-  const client = getMinioClient();
-  await client.removeObject(config.minio.bucket, file.storagePath);
-  await prisma.orderFile.delete({ where: { id: fileId } });
+
+  // Удаляем из S3 только если файл там хранится
+  if (file.storagePath && !file.telegramFileId) {
+    const client = getS3Client();
+    await client.send(new DeleteObjectCommand({ Bucket: config.minio.bucket, Key: file.storagePath }));
+  }
+
+  await prisma.orderFile.delete({ where: { id: file.id } });
   return { success: true };
 }
 
@@ -80,38 +211,60 @@ export async function getOrderFiles(orderId: string) {
   });
 }
 
-// Удаляет файлы из MinIO для заказов, заархивированных 90+ дней назад
+// Создать запись файла из TG (бот загрузил напрямую)
+export async function createTelegramFile(
+  orderId: string,
+  uploadedById: string,
+  fileType: FileType,
+  fileName: string,
+  fileSize: number,
+  mimeType: string,
+  telegramFileId: string,
+  telegramChatId: string,
+  telegramMsgId: number
+) {
+  return prisma.orderFile.create({
+    data: {
+      orderId, uploadedById, fileType, fileName,
+      fileSize: BigInt(fileSize), mimeType, storagePath: "",
+      telegramFileId, telegramChatId, telegramMsgId,
+    },
+    include: {
+      uploadedBy: { select: { id: true, displayName: true, telegramUsername: true } },
+    },
+  });
+}
+
 export async function cleanupArchivedFiles(): Promise<{ deleted: number; freedBytes: bigint }> {
   const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-
   const archivedOrders = await prisma.order.findMany({
     where: { status: "ARCHIVED", updatedAt: { lt: cutoff } },
     select: { id: true },
   });
-
   if (archivedOrders.length === 0) return { deleted: 0, freedBytes: BigInt(0) };
 
   const orderIds = archivedOrders.map((o) => o.id);
   const files = await prisma.orderFile.findMany({
     where: { orderId: { in: orderIds } },
-    select: { id: true, storagePath: true, fileSize: true },
+    select: { id: true, storagePath: true, fileSize: true, telegramFileId: true },
   });
-
   if (files.length === 0) return { deleted: 0, freedBytes: BigInt(0) };
 
-  const client = getMinioClient();
+  const client = getS3Client();
   let deleted = 0;
   let freedBytes = BigInt(0);
 
   for (const file of files) {
     try {
-      await client.removeObject(config.minio.bucket, file.storagePath);
+      // Удаляем из S3 только если не TG-файл
+      if (file.storagePath && !file.telegramFileId) {
+        await client.send(new DeleteObjectCommand({ Bucket: config.minio.bucket, Key: file.storagePath }));
+      }
       await prisma.orderFile.delete({ where: { id: file.id } });
       deleted++;
       freedBytes += file.fileSize;
     } catch (err: any) {
-      // Если объект уже удалён — всё равно чистим запись в БД
-      if (err.code === "NoSuchKey" || err.code === "NotFound") {
+      if (err.name === "NoSuchKey" || err.$metadata?.httpStatusCode === 404) {
         await prisma.orderFile.delete({ where: { id: file.id } });
         deleted++;
       } else {

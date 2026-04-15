@@ -1,4 +1,4 @@
-import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, DragOverlay } from "@dnd-kit/core";
+import { DndContext, DragEndEvent, PointerSensor, TouchSensor, useSensor, useSensors, DragOverlay } from "@dnd-kit/core";
 import { Order, KANBAN_COLUMNS, OrderStatus } from "../../types";
 import { useOrdersStore } from "../../store/orders.store";
 import KanbanColumn from "./KanbanColumn";
@@ -15,7 +15,8 @@ export default function KanbanBoard({ orders, onCardClick }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor,   { activationConstraint: { delay: 200, tolerance: 8 } })
   );
 
   const handleDragEnd = (event: DragEndEvent) => {

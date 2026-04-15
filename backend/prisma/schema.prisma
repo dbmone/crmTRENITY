@@ -124,17 +124,22 @@ enum StageStatus {
 }
 
 model OrderStage {
-  id          String      @id @default(uuid())
-  orderId     String      @map("order_id")
-  name        StageName
-  status      StageStatus @default(PENDING)
-  startedAt   DateTime?   @map("started_at")
-  completedAt DateTime?   @map("completed_at")
-  sortOrder   Int         @map("sort_order")
+  id                     String      @id @default(uuid())
+  orderId                String      @map("order_id")
+  name                   StageName
+  status                 StageStatus @default(PENDING)
+  startedAt              DateTime?   @map("started_at")
+  completedAt            DateTime?   @map("completed_at")
+  sortOrder              Int         @map("sort_order")
+  revisionRound          Int         @default(0) @map("revision_round")
+  // Sub-stage: "ожидание апрува от клиента" (for STORYBOARD and ANIMATION)
+  awaitingClientApproval Boolean     @default(false) @map("awaiting_client_approval")
+  clientApprovalSkipped  Boolean     @default(false) @map("client_approval_skipped")
+  clientApprovedAt       DateTime?   @map("client_approved_at")
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  @@unique([orderId, name])
+  @@unique([orderId, name, revisionRound])
   @@map("order_stages")
 }
 
@@ -150,15 +155,19 @@ enum FileType {
 }
 
 model OrderFile {
-  id           String   @id @default(uuid())
-  orderId      String   @map("order_id")
-  uploadedById String   @map("uploaded_by_id")
-  fileType     FileType @map("file_type")
-  fileName     String   @map("file_name")
-  fileSize     BigInt   @map("file_size")
-  mimeType     String   @map("mime_type")
-  storagePath  String   @map("storage_path")
-  uploadedAt   DateTime @default(now()) @map("uploaded_at")
+  id              String   @id @default(uuid())
+  orderId         String   @map("order_id")
+  uploadedById    String   @map("uploaded_by_id")
+  fileType        FileType @map("file_type")
+  fileName        String   @map("file_name")
+  fileSize        BigInt   @map("file_size")
+  mimeType        String   @map("mime_type")
+  storagePath     String   @default("") @map("storage_path")  // "" для TG-файлов
+  // Telegram storage (альтернатива S3)
+  telegramFileId  String?  @map("telegram_file_id")
+  telegramChatId  String?  @map("telegram_chat_id")
+  telegramMsgId   Int?     @map("telegram_msg_id")
+  uploadedAt      DateTime @default(now()) @map("uploaded_at")
 
   order      Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
   uploadedBy User  @relation(fields: [uploadedById], references: [id])

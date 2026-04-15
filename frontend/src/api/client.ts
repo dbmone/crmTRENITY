@@ -97,6 +97,21 @@ export async function updateStage(orderId: string, stageId: string, status: stri
   return data;
 }
 
+export async function startRevisionRound(orderId: string) {
+  const { data } = await api.post(`/orders/${orderId}/stages/revisions`);
+  return data;
+}
+
+export async function toggleClientApproval(orderId: string, stageId: string, action: "request" | "approve" | "skip") {
+  const { data } = await api.post(`/orders/${orderId}/stages/${stageId}/client-approval`, { action });
+  return data;
+}
+
+export async function rollbackStage(orderId: string, stageId: string) {
+  const { data } = await api.post(`/orders/${orderId}/stages/${stageId}/rollback`);
+  return data;
+}
+
 // ==================== FILES ====================
 
 export async function uploadFile(orderId: string, file: File, fileType: string) {
@@ -112,6 +127,11 @@ export async function uploadFile(orderId: string, file: File, fileType: string) 
 export async function getDownloadUrl(fileId: string) {
   const { data } = await api.get(`/files/${fileId}/download`);
   return data.url;
+}
+
+export async function sendFileToTelegram(fileId: string) {
+  const { data } = await api.post(`/files/${fileId}/send-to-tg`);
+  return data as { success: boolean; message: string };
 }
 
 export async function deleteFile(fileId: string) {

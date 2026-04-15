@@ -35,9 +35,13 @@ export default function OrderCard({ order, onClick, dim }: Props) {
   const isOverdue = daysLeft !== null && daysLeft < 0;
   const isUrgent  = daysLeft !== null && daysLeft >= 0 && daysLeft <= 2;
 
-  const doneStages  = order.stages?.filter((s) => s.status === "DONE").length ?? 0;
-  const totalStages = order.stages?.length ?? 5;
-  const activeStage = order.stages?.find((s) => s.status === "IN_PROGRESS");
+  // Only look at the current (latest) revision round for progress
+  const allStages   = order.stages ?? [];
+  const maxRound    = allStages.length > 0 ? Math.max(...allStages.map((s) => s.revisionRound ?? 0)) : 0;
+  const curStages   = allStages.filter((s) => (s.revisionRound ?? 0) === maxRound);
+  const doneStages  = curStages.filter((s) => s.status === "DONE").length;
+  const totalStages = curStages.length || 5;
+  const activeStage = curStages.find((s) => s.status === "IN_PROGRESS");
   const pct         = totalStages > 0 ? Math.round((doneStages / totalStages) * 100) : 0;
 
   const commentCount = (order._count as any)?.comments ?? 0;
@@ -70,11 +74,11 @@ export default function OrderCard({ order, onClick, dim }: Props) {
       </p>
 
       {/* Stage progress bar */}
-      {order.stages && order.stages.length > 0 && (
+      {curStages.length > 0 && (
         <div className="mb-2.5">
           <div className="flex gap-0.5 mb-1">
             {STAGE_ORDER.map((name) => {
-              const st = order.stages!.find((s) => s.name === name);
+              const st = curStages.find((s) => s.name === name);
               if (!st) return null;
               return (
                 <div

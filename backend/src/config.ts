@@ -15,16 +15,21 @@ export const config = {
   },
 
   minio: {
-    endPoint: process.env.MINIO_ENDPOINT || "localhost",
-    port: parseInt(process.env.MINIO_PORT || "9000"),
+    endPoint:  process.env.MINIO_ENDPOINT || "localhost",
+    port:      parseInt(process.env.MINIO_PORT || "9000"),
     accessKey: process.env.MINIO_USER || "minioadmin",
     secretKey: process.env.MINIO_PASSWORD || "minioadmin",
-    bucket: process.env.MINIO_BUCKET || "crm-files",
-    useSSL: false,
+    bucket:    process.env.MINIO_BUCKET || "crm-files",
+    region:    process.env.MINIO_REGION || "us-east-1",
+    useSSL:    false,
   },
 
   bot: {
     token: process.env.BOT_TOKEN || "",
+    // ID приватного канала/группы-хранилища для файлов
+    storageChatId: process.env.TELEGRAM_STORAGE_CHAT_ID || "",
+    // Если true — файлы хранятся в Telegram вместо S3
+    useAsTFileStorage: process.env.USE_TELEGRAM_STORAGE === "true",
   },
 
   admin: {

@@ -27,6 +27,10 @@ export interface OrderStage {
   startedAt: string | null;
   completedAt: string | null;
   sortOrder: number;
+  revisionRound: number;
+  awaitingClientApproval: boolean;
+  clientApprovalSkipped: boolean;
+  clientApprovedAt: string | null;
 }
 
 export interface OrderCreator {
@@ -46,6 +50,9 @@ export interface OrderFile {
   fileSize: number;
   uploadedAt: string;
   uploadedBy?: User;
+  telegramFileId?: string | null;
+  telegramChatId?: string | null;
+  telegramMsgId?: number | null;
 }
 
 export interface DailyReport {

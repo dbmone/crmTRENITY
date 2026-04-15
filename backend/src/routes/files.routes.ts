@@ -1,6 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { FileType, UserRole } from "@prisma/client";
-import { uploadFile, getDownloadUrl, deleteFile, getOrderFiles } from "../services/file.service";
+import { uploadFile, getDownloadUrl, deleteFile, getOrderFiles, sendFileToUserTelegram } from "../services/file.service";
+import { config } from "../config";
 
 export async function filesRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
@@ -22,8 +23,13 @@ export async function filesRoutes(app: FastifyInstance) {
     for await (const chunk of data.file) chunks.push(chunk);
     const buffer = Buffer.concat(chunks);
 
-    if (buffer.length > 100 * 1024 * 1024) {
-      return reply.status(413).send({ error: "Макс. 100 МБ" });
+    const maxSize = config.bot.useAsTFileStorage ? 50 * 1024 * 1024 : 100 * 1024 * 1024;
+    if (buffer.length > maxSize) {
+      return reply.status(413).send({
+        error: config.bot.useAsTFileStorage
+          ? "Максимальный размер файла через сайт — 50 МБ. Большие файлы загружайте через Telegram-бот."
+          : "Макс. 100 МБ"
+      });
     }
 
     try {
@@ -36,9 +42,25 @@ export async function filesRoutes(app: FastifyInstance) {
 export async function filesGlobalRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
 
+  // Получить ссылку для скачивания (S3)
   app.get<{ Params: { fileId: string } }>("/:fileId/download", async (req, reply) => {
-    try { return { url: await getDownloadUrl(req.params.fileId) }; }
-    catch (err: any) { return reply.status(err.statusCode || 500).send({ error: err.message }); }
+    try {
+      const url = await getDownloadUrl(req.params.fileId);
+      return { url };
+    } catch (err: any) {
+      if (err.message === "TG_FILE") {
+        return reply.status(400).send({ error: "TG_FILE", message: "Этот файл хранится в Telegram. Используйте кнопку отправки в TG." });
+      }
+      return reply.status(err.statusCode || 500).send({ error: err.message });
+    }
+  });
+
+  // Отправить файл пользователю в Telegram
+  app.post<{ Params: { fileId: string } }>("/:fileId/send-to-tg", async (req, reply) => {
+    try {
+      await sendFileToUserTelegram(req.params.fileId, req.currentUser.id);
+      return { success: true, message: "Файл отправлен в ваш Telegram!" };
+    } catch (err: any) { return reply.status(err.statusCode || 500).send({ error: err.message }); }
   });
 
   app.delete<{ Params: { fileId: string } }>("/:fileId", async (req, reply) => {
