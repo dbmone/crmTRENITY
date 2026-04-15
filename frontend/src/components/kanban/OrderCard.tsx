@@ -2,6 +2,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Order, STAGE_LABELS, StageName } from "../../types";
 import { Clock, AlertTriangle, MessageSquare, Paperclip, FileText } from "lucide-react";
+import UserProfileCard from "../UserProfileCard";
 
 interface Props {
   order: Order;
@@ -10,6 +11,12 @@ interface Props {
 }
 
 const STAGE_ORDER: StageName[] = ["STORYBOARD", "ANIMATION", "EDITING", "REVIEW", "COMPLETED"];
+
+function shortName(displayName: string): string {
+  const parts = displayName.trim().split(" ");
+  const first = parts[0] || "";
+  return first.length > 8 ? first.slice(0, 7) + "…" : first;
+}
 
 export default function OrderCard({ order, onClick, dim }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -96,46 +103,67 @@ export default function OrderCard({ order, onClick, dim }: Props) {
       )}
 
       {/* People row */}
-      <div className="flex items-center gap-1.5 mb-2.5">
-        {/* Marketer avatar */}
-        <div
-          title={`Маркетолог: ${order.marketer?.displayName}`}
-          className="w-5 h-5 rounded-full bg-blue-500/20 border border-blue-500/30 flex items-center justify-center flex-shrink-0"
-        >
-          {order.marketer?.avatarUrl
-            ? <img src={order.marketer.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
-            : <span className="text-[8px] font-bold text-blue-400">
-                {order.marketer?.displayName?.[0]?.toUpperCase()}
-              </span>
-          }
-        </div>
-
-        {order.creators && order.creators.length > 0 && (
-          <>
-            <div className="w-px h-3 bg-bg-border" />
-            <div className="flex -space-x-1.5">
-              {order.creators.slice(0, 5).map((c) => (
-                <div
-                  key={c.id}
-                  title={c.creator.displayName + (c.isLead ? " ★" : "")}
-                  className={`w-5 h-5 rounded-full flex items-center justify-center border ${
-                    c.isLead
-                      ? "bg-amber-500/20 border-amber-500/40"
-                      : "bg-green-500/15 border-green-500/30"
-                  }`}
-                >
-                  {c.creator.avatarUrl
-                    ? <img src={c.creator.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
-                    : <span className={`text-[8px] font-bold ${c.isLead ? "text-amber-400" : "text-green-400"}`}>
-                        {c.creator.displayName?.[0]?.toUpperCase()}
-                      </span>
+      <div className="flex items-center gap-1.5 mb-2.5 flex-wrap">
+        {/* Marketer */}
+        {order.marketer && (
+          <UserProfileCard
+            userId={order.marketer.id}
+            trigger={
+              <span
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/20 hover:border-blue-500/40 transition-colors cursor-pointer"
+              >
+                <div className="w-4 h-4 rounded-full bg-blue-500/20 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {order.marketer.avatarUrl
+                    ? <img src={order.marketer.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
+                    : <span className="text-[8px] font-bold text-blue-400">{order.marketer.displayName?.[0]?.toUpperCase()}</span>
                   }
                 </div>
+                <span className="text-[10px] text-blue-300 font-medium">{shortName(order.marketer.displayName)}</span>
+              </span>
+            }
+          />
+        )}
+
+        {/* Creators */}
+        {order.creators && order.creators.length > 0 && (
+          <>
+            <div className="w-px h-3 bg-bg-border flex-shrink-0" />
+            <div className="flex flex-wrap gap-1">
+              {order.creators.slice(0, 3).map((c) => (
+                <UserProfileCard
+                  key={c.id}
+                  userId={c.creatorId}
+                  trigger={
+                    <span
+                      onClick={(e) => e.stopPropagation()}
+                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border transition-colors cursor-pointer ${
+                        c.isLead
+                          ? "bg-amber-500/15 border-amber-500/20 hover:border-amber-500/40"
+                          : "bg-green-500/10 border-green-500/20 hover:border-green-500/40"
+                      }`}
+                    >
+                      <div className={`w-4 h-4 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0 ${
+                        c.isLead ? "bg-amber-500/20" : "bg-green-500/15"
+                      }`}>
+                        {c.creator.avatarUrl
+                          ? <img src={c.creator.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
+                          : <span className={`text-[8px] font-bold ${c.isLead ? "text-amber-400" : "text-green-400"}`}>
+                              {c.creator.displayName?.[0]?.toUpperCase()}
+                            </span>
+                        }
+                      </div>
+                      <span className={`text-[10px] font-medium ${c.isLead ? "text-amber-300" : "text-green-300"}`}>
+                        {shortName(c.creator.displayName)}{c.isLead ? " ★" : ""}
+                      </span>
+                    </span>
+                  }
+                />
               ))}
-              {order.creators.length > 5 && (
-                <div className="w-5 h-5 rounded-full bg-bg-border flex items-center justify-center">
-                  <span className="text-[8px] text-ink-tertiary">+{order.creators.length - 5}</span>
-                </div>
+              {order.creators.length > 3 && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-bg-border text-[10px] text-ink-tertiary">
+                  +{order.creators.length - 3}
+                </span>
               )}
             </div>
           </>

@@ -466,7 +466,7 @@ bot.on("message:text", async (ctx) => {
 
 // ==================== ADMIN PANEL ====================
 
-const ADMIN_ROLES = [UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.HEAD_CREATOR];
+const ADMIN_ROLES: UserRole[] = [UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.HEAD_CREATOR];
 
 function adminMenuKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
