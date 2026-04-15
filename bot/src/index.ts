@@ -425,11 +425,11 @@ bot.callbackQuery("edit_name", async (ctx) => {
 
 // ==================== ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ ====================
 
-bot.on("message:text", async (ctx) => {
+bot.on("message:text", async (ctx, next) => {
   const userId = ctx.from!.id;
 
-  // Пропускаем команды — они обрабатываются отдельными bot.command()
-  if (ctx.message.text.startsWith("/")) return;
+  // Пропускаем команды — передаём управление следующему хендлеру (bot.command)
+  if (ctx.message.text.startsWith("/")) return next();
 
   // Смена имени
   if (waitingForName.has(userId)) {
