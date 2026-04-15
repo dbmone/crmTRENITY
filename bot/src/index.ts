@@ -419,6 +419,9 @@ bot.callbackQuery("edit_name", async (ctx) => {
 bot.on("message:text", async (ctx) => {
   const userId = ctx.from!.id;
 
+  // Пропускаем команды — они обрабатываются отдельными bot.command()
+  if (ctx.message.text.startsWith("/")) return;
+
   // Смена имени
   if (waitingForName.has(userId)) {
     waitingForName.delete(userId);
@@ -481,7 +484,9 @@ bot.command("admin", async (ctx) => {
     await ctx.reply("❌ Нет доступа.");
     return;
   }
-  const pending = await prisma.user.count({ where: { status: "PENDING" } });
+  // Фильтруем заявки по роли администратора
+  const roleFilter = getRoleFilter(user.role);
+  const pending = await prisma.user.count({ where: { status: "PENDING", ...roleFilter } });
   await ctx.reply(
     `⚙️ *Панель администратора*\n\n` +
     `Заявок на апрув: *${pending}*\n` +
@@ -490,14 +495,30 @@ bot.command("admin", async (ctx) => {
   );
 });
 
+// Хелпер: фильтр ролей по иерархии
+function getRoleFilter(adminRole: UserRole): { role?: { in: UserRole[] } } {
+  if (adminRole === UserRole.ADMIN) return {};
+  if (adminRole === UserRole.HEAD_CREATOR) return { role: { in: [UserRole.CREATOR, UserRole.LEAD_CREATOR] } };
+  if (adminRole === UserRole.HEAD_MARKETER) return { role: { in: [UserRole.MARKETER] } };
+  return { role: { in: [UserRole.CREATOR] } };
+}
+
+function canAdminApprove(adminRole: UserRole, targetRole: UserRole): boolean {
+  if (adminRole === UserRole.ADMIN) return true;
+  if (adminRole === UserRole.HEAD_CREATOR) return [UserRole.CREATOR, UserRole.LEAD_CREATOR].includes(targetRole);
+  if (adminRole === UserRole.HEAD_MARKETER) return targetRole === UserRole.MARKETER;
+  return false;
+}
+
 // Список заявок
 bot.callbackQuery("adm_pending", async (ctx) => {
   const admin = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
   if (!admin || !ADMIN_ROLES.includes(admin.role)) { await ctx.answerCallbackQuery("Нет доступа"); return; }
   await ctx.answerCallbackQuery();
 
+  const roleFilter = getRoleFilter(admin.role);
   const pending = await prisma.user.findMany({
-    where: { status: "PENDING" },
+    where: { status: "PENDING", ...roleFilter },
     orderBy: { createdAt: "asc" },
     take: 10,
   });
@@ -510,8 +531,7 @@ bot.callbackQuery("adm_pending", async (ctx) => {
   for (const u of pending) {
     const kb = new InlineKeyboard()
       .text("✅ Одобрить", `adm_approve_${u.id}`)
-      .text("❌ Отклонить", `adm_reject_${u.id}`).row()
-      .text("👑 Сменить роль", `adm_role_${u.id}`);
+      .text("❌ Отклонить", `adm_reject_${u.id}`);
 
     await ctx.reply(
       `👤 *${u.displayName}*\n` +
@@ -532,6 +552,12 @@ bot.callbackQuery(/^adm_approve_(.+)$/, async (ctx) => {
   const target = await prisma.user.findUnique({ where: { id: targetId } });
   if (!target) { await ctx.answerCallbackQuery("Не найден"); return; }
 
+  // Проверяем иерархию
+  if (!canAdminApprove(admin.role, target.role)) {
+    await ctx.answerCallbackQuery("Нет прав одобрять эту роль");
+    return;
+  }
+
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
   let pin = "";
   for (let i = 0; i < 4; i++) pin += chars[crypto.randomInt(0, chars.length)];
@@ -548,8 +574,7 @@ bot.callbackQuery(/^adm_approve_(.+)$/, async (ctx) => {
         target.chatId.toString(),
         `✅ *Ваша заявка одобрена!*\n\n` +
         `Роль: ${formatRole(target.role)}\n` +
-        `🔑 PIN для входа на сайт: \`${pin}\`\n\n` +
-        `Сайт: ваш домен/login`,
+        `🔑 PIN для входа на сайт: \`${pin}\``,
         { parse_mode: "Markdown" }
       );
     } catch {}

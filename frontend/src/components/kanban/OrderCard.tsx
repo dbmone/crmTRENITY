@@ -110,7 +110,6 @@ export default function OrderCard({ order, onClick, dim }: Props) {
             userId={order.marketer.id}
             trigger={
               <span
-                onClick={(e) => e.stopPropagation()}
                 className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/20 hover:border-blue-500/40 transition-colors cursor-pointer"
               >
                 <div className="w-4 h-4 rounded-full bg-blue-500/20 flex items-center justify-center overflow-hidden flex-shrink-0">
@@ -136,7 +135,6 @@ export default function OrderCard({ order, onClick, dim }: Props) {
                   userId={c.creatorId}
                   trigger={
                     <span
-                      onClick={(e) => e.stopPropagation()}
                       className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border transition-colors cursor-pointer ${
                         c.isLead
                           ? "bg-amber-500/15 border-amber-500/20 hover:border-amber-500/40"
