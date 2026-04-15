@@ -5,7 +5,11 @@
  */
 import { config } from "../config";
 
-const TG = `https://api.telegram.org/bot${config.bot.token}`;
+function getTG(): string {
+  const token = config.bot.token;
+  if (!token) throw new Error("BOT_TOKEN не задан в переменных окружения бэкенда");
+  return `https://api.telegram.org/bot${token}`;
+}
 
 export interface TgUploadResult {
   fileId:    string;
@@ -32,7 +36,7 @@ export async function uploadFileToStorage(
   );
   if (caption) formData.append("caption", caption);
 
-  const res  = await fetch(`${TG}/sendDocument`, { method: "POST", body: formData });
+  const res  = await fetch(`${getTG()}/sendDocument`, { method: "POST", body: formData });
   const data: any = await res.json();
   if (!data.ok) throw new Error(`Telegram API error: ${data.description}`);
 
@@ -50,7 +54,7 @@ export async function forwardFileToUser(
   fromChatId: string,       // откуда (хранилище)
   messageId: number
 ): Promise<void> {
-  const res = await fetch(`${TG}/copyMessage`, {
+  const res = await fetch(`${getTG()}/copyMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -65,7 +69,7 @@ export async function forwardFileToUser(
 
 // Отправить текстовое уведомление пользователю
 export async function sendMessageToUser(chatId: string, text: string): Promise<void> {
-  await fetch(`${TG}/sendMessage`, {
+  await fetch(`${getTG()}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: "Markdown" }),
