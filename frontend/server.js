@@ -7,9 +7,10 @@ const PORT = process.env.PORT || 5173;
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
 
 // Проксируем /api на backend
-app.use('/api', createProxyMiddleware({
+app.use(createProxyMiddleware({
   target: BACKEND_URL,
   changeOrigin: true,
+  pathFilter: '/api',
 }));
 
 // Раздаём статику
