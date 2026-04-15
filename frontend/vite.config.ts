@@ -1,24 +1,18 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vitejs.dev
+// Docker: BACKEND_URL=http://backend:3000 (задаётся в Dockerfile)
+// Локально без Docker: не задаётся → http://localhost:3000
+const backendUrl = process.env.BACKEND_URL || 'http://localhost:3000';
+
 export default defineConfig({
   plugins: [react()],
   server: {
-    // Разрешаем доступ извне контейнера
     host: '0.0.0.0',
     port: 5173,
-    strictPort: true,
-    // Настройка для работы через прокси Railway
-    allowedHosts: true, 
-    // Запасной вариант для старых версий Vite
-    hmr: {
-      clientPort: 443
-    },
-    // Прокси для запросов к бэкенду
     proxy: {
       '/api': {
-        target: 'http://backend:3000',
+        target: backendUrl,
         changeOrigin: true,
       },
     },

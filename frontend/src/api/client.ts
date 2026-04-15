@@ -114,6 +114,11 @@ export async function getDownloadUrl(fileId: string) {
   return data.url;
 }
 
+export async function deleteFile(fileId: string) {
+  const { data } = await api.delete(`/files/${fileId}`);
+  return data;
+}
+
 // ==================== REPORTS ====================
 
 export async function submitReport(orderId: string, reportText: string) {
@@ -163,8 +168,18 @@ export async function deactivateUser(id: string) {
   return data;
 }
 
+export async function setTeamLead(userId: string, teamLeadId: string | null) {
+  const { data } = await api.put(`/users/${userId}/team-lead`, { teamLeadId });
+  return data;
+}
+
 export async function getDashboard() {
   const { data } = await api.get("/dashboard/stats");
+  return data;
+}
+
+export async function runCleanup() {
+  const { data } = await api.post("/dashboard/cleanup");
   return data;
 }
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "../store/auth.store";
 import Header from "../components/layout/Header";
-import { Check, X, Shield, RefreshCw, UserX, Crown } from "lucide-react";
+import { Check, X, Shield, RefreshCw, UserX, Crown, Users, ChevronRight, Trash2 } from "lucide-react";
 import * as api from "../api/client";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -19,8 +19,9 @@ const ROLE_COLORS: Record<string, string> = {
 interface UserRow {
   id: string; displayName: string; telegramUsername: string | null;
   role: string; status: string; createdAt: string;
-  teamLead?: { displayName: string } | null;
-  _count?: { assignments: number };
+  teamLeadId?: string | null;
+  teamLead?: { id: string; displayName: string } | null;
+  _count?: { assignments: number; subordinates?: number };
 }
 
 export default function AdminPage() {
@@ -31,15 +32,17 @@ export default function AdminPage() {
   const [users,    setUsers]    = useState<UserRow[]>([]);
   const [pending,  setPending]  = useState<UserRow[]>([]);
   const [loading,  setLoading]  = useState(true);
-  const [tab,      setTab]      = useState<"users" | "pending">(
+  const [tab,      setTab]      = useState<"users" | "pending" | "team">(
     searchParams.get("tab") === "pending" ? "pending" : "users"
   );
   const [working,  setWorking]  = useState<string | null>(null);
+  const [cleaning, setCleaning] = useState(false);
 
   const isAdmin    = user?.role === "ADMIN";
   const isHeadMark = user?.role === "HEAD_MARKETER" || isAdmin;
+  const isHeadCreator = user?.role === "HEAD_CREATOR" || isAdmin;
   const isLead     = user?.role === "LEAD_CREATOR"  || isAdmin;
-  const canAccess  = isAdmin || isHeadMark || isLead;
+  const canAccess  = isAdmin || isHeadMark || isHeadCreator || isLead;
 
   const load = async () => {
     setLoading(true);
@@ -95,7 +98,32 @@ export default function AdminPage() {
     setWorking(null);
   };
 
+  const cleanup = async () => {
+    if (!confirm("Удалить файлы из заказов в архиве 90+ дней?")) return;
+    setCleaning(true);
+    try {
+      const r = await (api as any).runCleanup();
+      alert(`Очистка завершена: удалено ${r.deleted} файлов, освобождено ${r.freedMb} МБ`);
+    } catch (e: any) { alert(e.response?.data?.error || "Ошибка"); }
+    setCleaning(false);
+  };
+
+  const assignTeamLead = async (userId: string, teamLeadId: string | null) => {
+    setWorking(userId);
+    try {
+      await (api as any).setTeamLead(userId, teamLeadId);
+      await load();
+    } catch (e: any) { alert(e.response?.data?.error || "Ошибка"); }
+    setWorking(null);
+  };
+
   if (!canAccess) return null;
+
+  const TABS: { id: "users" | "pending" | "team"; label: string }[] = [
+    { id: "users",   label: "Пользователи" },
+    { id: "pending", label: pending.length > 0 ? `Заявки (${pending.length})` : "Заявки" },
+    { id: "team",    label: "Иерархия" },
+  ];
 
   return (
     <div className="min-h-screen bg-bg-base">
@@ -110,15 +138,25 @@ export default function AdminPage() {
             </h1>
             <p className="text-sm text-ink-tertiary mt-1">Заявки, роли и доступ</p>
           </div>
-          <button onClick={load} className="p-2 rounded-lg border border-bg-border hover:bg-bg-raised text-ink-tertiary hover:text-ink-primary transition-colors">
-            <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
-          </button>
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <button onClick={cleanup} disabled={cleaning}
+                title="Очистить файлы архивных заказов (90+ дней)"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-500/20 text-red-400/70 hover:text-red-400 hover:bg-red-500/10 text-xs transition-colors disabled:opacity-40">
+                <Trash2 size={13} />
+                {cleaning ? "Чистим..." : "Очистка файлов"}
+              </button>
+            )}
+            <button onClick={load} className="p-2 rounded-lg border border-bg-border hover:bg-bg-raised text-ink-tertiary hover:text-ink-primary transition-colors">
+              <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-bg-border mb-6">
-          {([["users", "Пользователи"], ["pending", `Заявки ${pending.length > 0 ? `(${pending.length})` : ""}`]] as const).map(([id, label]) => (
-            <button key={id} onClick={() => setTab(id as any)}
+          {TABS.map(({ id, label }) => (
+            <button key={id} onClick={() => setTab(id)}
               className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
                 tab === id ? "border-green-500 text-green-400" : "border-transparent text-ink-tertiary hover:text-ink-primary"
               }`}
@@ -134,6 +172,15 @@ export default function AdminPage() {
           </div>
         ) : tab === "pending" ? (
           <PendingList rows={pending} onApprove={approve} onReject={reject} working={working} isAdmin={isAdmin} isHeadMark={isHeadMark} />
+        ) : tab === "team" ? (
+          <TeamHierarchy
+            users={users}
+            isAdmin={isAdmin}
+            isHeadCreator={isHeadCreator}
+            isHeadMark={isHeadMark}
+            working={working}
+            onAssignTeamLead={assignTeamLead}
+          />
         ) : (
           <UsersList rows={users} onChangeRole={changeRole} onDeactivate={deactivate} working={working} currentUser={user} isAdmin={isAdmin} />
         )}
@@ -141,6 +188,269 @@ export default function AdminPage() {
     </div>
   );
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Team Hierarchy Tab
+// ──────────────────────────────────────────────────────────────────────────────
+
+function AssignSelect({ value, options, disabled, placeholder, onChange }: {
+  value: string; options: UserRow[]; disabled: boolean;
+  placeholder: string; onChange: (v: string | null) => void;
+}) {
+  return (
+    <select
+      value={value}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value || null)}
+      className="ml-auto text-xs px-2 py-1 rounded-lg bg-bg-raised border border-bg-border text-ink-tertiary outline-none hover:border-green-500/40 transition-colors cursor-pointer"
+    >
+      <option value="">{placeholder}</option>
+      {options.map((o) => <option key={o.id} value={o.id}>{o.displayName}</option>)}
+    </select>
+  );
+}
+
+function UserRow2({ user, indent = 0, badge, assign }: {
+  user: UserRow; indent?: number; badge?: string;
+  assign?: React.ReactNode;
+}) {
+  const initials = user.displayName.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+  return (
+    <div className="flex items-center gap-2 py-1.5" style={{ paddingLeft: indent * 20 }}>
+      {indent > 0 && <ChevronRight size={12} className="text-ink-tertiary flex-shrink-0 -ml-2" />}
+      <div className="w-7 h-7 rounded-full bg-bg-raised border border-bg-border flex items-center justify-center flex-shrink-0">
+        <span className="text-[10px] font-bold text-ink-tertiary">{initials}</span>
+      </div>
+      <span className="text-sm text-ink-primary">{user.displayName}</span>
+      {user.telegramUsername && (
+        <a href={`https://t.me/${user.telegramUsername}`} target="_blank" rel="noreferrer"
+          className="text-xs text-ink-tertiary hover:text-green-400 transition-colors">
+          @{user.telegramUsername}
+        </a>
+      )}
+      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${ROLE_COLORS[user.role] || ""}`}>
+        {badge || ROLE_LABELS[user.role] || user.role}
+      </span>
+      {assign}
+    </div>
+  );
+}
+
+function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, working, onAssignTeamLead }: {
+  users: UserRow[];
+  isAdmin: boolean;
+  isHeadCreator: boolean;
+  isHeadMark: boolean;
+  working: string | null;
+  onAssignTeamLead: (userId: string, teamLeadId: string | null) => void;
+}) {
+  const byRole = (role: string) => users.filter((u) => u.role === role);
+  const childrenOf = (parentId: string) => users.filter((u) => u.teamLeadId === parentId);
+
+  const headCreators  = byRole("HEAD_CREATOR");
+  const headMarketers = byRole("HEAD_MARKETER");
+  const leadCreators  = byRole("LEAD_CREATOR");
+  const marketers     = byRole("MARKETER");
+  const creators      = byRole("CREATOR");
+
+  const canMgCreators  = isAdmin || isHeadCreator;
+  const canMgMarketers = isAdmin || isHeadMark;
+
+  // Creators not assigned to any lead
+  const orphanCreators = creators.filter((c) => !c.teamLeadId || !leadCreators.some((l) => l.id === c.teamLeadId));
+  // Lead creators not assigned to any head
+  const orphanLeads    = leadCreators.filter((l) => !l.teamLeadId || !headCreators.some((h) => h.id === l.teamLeadId));
+  // Marketers not assigned to any head
+  const orphanMkts     = marketers.filter((m) => !m.teamLeadId || !headMarketers.some((h) => h.id === m.teamLeadId));
+
+  return (
+    <div className="space-y-5">
+
+      {/* ── CREATOR TREE ── */}
+      <div className="bg-bg-surface border border-bg-border rounded-card p-5">
+        <h3 className="text-sm font-semibold text-ink-primary flex items-center gap-2 mb-3">
+          <Users size={14} className="text-orange-400" /> Команда креаторов
+        </h3>
+
+        {headCreators.length === 0 && leadCreators.length === 0 && creators.length === 0 && (
+          <p className="text-xs text-ink-tertiary py-3">Нет пользователей</p>
+        )}
+
+        {/* Each HEAD_CREATOR → their LEAD_CREATORs → their CREATORs */}
+        {headCreators.map((hc) => {
+          const myLeads = childrenOf(hc.id).filter((u) => u.role === "LEAD_CREATOR");
+          return (
+            <div key={hc.id} className="mb-3 last:mb-0">
+              <UserRow2 user={hc} />
+              {myLeads.map((lc) => {
+                const myCreators = childrenOf(lc.id).filter((u) => u.role === "CREATOR");
+                return (
+                  <div key={lc.id}>
+                    <UserRow2
+                      user={lc}
+                      indent={1}
+                      assign={canMgCreators ? (
+                        <AssignSelect
+                          value={lc.teamLeadId || ""}
+                          options={headCreators}
+                          disabled={working === lc.id}
+                          placeholder="Без гл. креатора"
+                          onChange={(v) => onAssignTeamLead(lc.id, v)}
+                        />
+                      ) : undefined}
+                    />
+                    {myCreators.map((cr) => (
+                      <UserRow2
+                        key={cr.id}
+                        user={cr}
+                        indent={2}
+                        assign={canMgCreators ? (
+                          <AssignSelect
+                            value={cr.teamLeadId || ""}
+                            options={leadCreators}
+                            disabled={working === cr.id}
+                            placeholder="Без тимлида"
+                            onChange={(v) => onAssignTeamLead(cr.id, v)}
+                          />
+                        ) : undefined}
+                      />
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+
+        {/* Orphan lead creators (no HEAD_CREATOR assigned) */}
+        {orphanLeads.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-bg-border/60">
+            <p className="text-[10px] text-ink-tertiary uppercase tracking-wide mb-2">Тимлиды без главного</p>
+            {orphanLeads.map((lc) => {
+              const myCreators = childrenOf(lc.id).filter((u) => u.role === "CREATOR");
+              return (
+                <div key={lc.id}>
+                  <UserRow2
+                    user={lc}
+                    indent={1}
+                    assign={canMgCreators && headCreators.length > 0 ? (
+                      <AssignSelect
+                        value={lc.teamLeadId || ""}
+                        options={headCreators}
+                        disabled={working === lc.id}
+                        placeholder="Назначить гл. креатора..."
+                        onChange={(v) => onAssignTeamLead(lc.id, v)}
+                      />
+                    ) : undefined}
+                  />
+                  {myCreators.map((cr) => (
+                    <UserRow2
+                      key={cr.id}
+                      user={cr}
+                      indent={2}
+                      assign={canMgCreators ? (
+                        <AssignSelect
+                          value={cr.teamLeadId || ""}
+                          options={leadCreators}
+                          disabled={working === cr.id}
+                          placeholder="Без тимлида"
+                          onChange={(v) => onAssignTeamLead(cr.id, v)}
+                        />
+                      ) : undefined}
+                    />
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Orphan creators (no lead assigned) */}
+        {orphanCreators.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-bg-border/60">
+            <p className="text-[10px] text-ink-tertiary uppercase tracking-wide mb-2">Креаторы без тимлида</p>
+            {orphanCreators.map((cr) => (
+              <UserRow2
+                key={cr.id}
+                user={cr}
+                indent={1}
+                assign={canMgCreators && leadCreators.length > 0 ? (
+                  <AssignSelect
+                    value={cr.teamLeadId || ""}
+                    options={leadCreators}
+                    disabled={working === cr.id}
+                    placeholder="Назначить тимлида..."
+                    onChange={(v) => onAssignTeamLead(cr.id, v)}
+                  />
+                ) : undefined}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── MARKETER TREE ── */}
+      <div className="bg-bg-surface border border-bg-border rounded-card p-5">
+        <h3 className="text-sm font-semibold text-ink-primary flex items-center gap-2 mb-3">
+          <Users size={14} className="text-blue-400" /> Команда маркетологов
+        </h3>
+
+        {headMarketers.length === 0 && marketers.length === 0 && (
+          <p className="text-xs text-ink-tertiary py-3">Нет пользователей</p>
+        )}
+
+        {headMarketers.map((hm) => {
+          const myMkts = childrenOf(hm.id).filter((u) => u.role === "MARKETER");
+          return (
+            <div key={hm.id} className="mb-3 last:mb-0">
+              <UserRow2 user={hm} />
+              {myMkts.map((m) => (
+                <UserRow2
+                  key={m.id}
+                  user={m}
+                  indent={1}
+                  assign={canMgMarketers ? (
+                    <AssignSelect
+                      value={m.teamLeadId || ""}
+                      options={headMarketers}
+                      disabled={working === m.id}
+                      placeholder="Без гл. маркетолога"
+                      onChange={(v) => onAssignTeamLead(m.id, v)}
+                    />
+                  ) : undefined}
+                />
+              ))}
+            </div>
+          );
+        })}
+
+        {orphanMkts.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-bg-border/60">
+            <p className="text-[10px] text-ink-tertiary uppercase tracking-wide mb-2">Маркетологи без группы</p>
+            {orphanMkts.map((m) => (
+              <UserRow2
+                key={m.id}
+                user={m}
+                indent={1}
+                assign={canMgMarketers && headMarketers.length > 0 ? (
+                  <AssignSelect
+                    value={m.teamLeadId || ""}
+                    options={headMarketers}
+                    disabled={working === m.id}
+                    placeholder="Назначить в группу..."
+                    onChange={(v) => onAssignTeamLead(m.id, v)}
+                  />
+                ) : undefined}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 
 function PendingList({ rows, onApprove, onReject, working, isAdmin, isHeadMark }: any) {
   if (rows.length === 0) return (
@@ -165,7 +475,6 @@ function PendingList({ rows, onApprove, onReject, working, isAdmin, isHeadMark }
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Approve as creator (lead can do it) */}
             <button
               onClick={() => onApprove(u.id, "CREATOR")}
               disabled={working === u.id}

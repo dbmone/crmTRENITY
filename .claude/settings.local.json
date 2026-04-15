@@ -5,7 +5,10 @@
       "Bash(npx vite:*)",
       "Bash(node_modules/.bin/vite build:*)",
       "Bash(npx prisma:*)",
-      "Bash(node -e ':*)"
+      "Bash(node -e ':*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm i:*)",
+      "Bash(node -e 'require\\('\\\\''dotenv'\\\\''\\).config\\(\\); const { PrismaClient } = require\\('\\\\''@prisma/client'\\\\''\\); const p = new PrismaClient\\(\\); p.$connect\\(\\).then\\(\\(\\) => { console.log\\('\\\\''DB OK'\\\\''\\); p.$disconnect\\(\\); }\\).catch\\(e => console.error\\('\\\\''DB ERROR:'\\\\'', e.message\\)\\);')"
     ]
   }
 }

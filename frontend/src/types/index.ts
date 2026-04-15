@@ -70,10 +70,11 @@ export interface Order {
 
 // Колонки канбана
 export const KANBAN_COLUMNS: { status: OrderStatus; label: string; color: string }[] = [
-  { status: "NEW", label: "Новые", color: "brand" },
-  { status: "IN_PROGRESS", label: "В работе", color: "blue" },
-  { status: "ON_REVIEW", label: "На правках", color: "amber" },
-  { status: "DONE", label: "Готово", color: "green" },
+  { status: "NEW",         label: "Новые",      color: "blue" },
+  { status: "IN_PROGRESS", label: "В работе",   color: "amber" },
+  { status: "ON_REVIEW",   label: "На правках", color: "purple" },
+  { status: "DONE",        label: "Готово",     color: "green" },
+  { status: "ARCHIVED",    label: "Архив",      color: "muted" },
 ];
 
 export const STAGE_LABELS: Record<StageName, string> = {

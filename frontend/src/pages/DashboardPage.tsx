@@ -1,49 +1,58 @@
 import { useEffect, useState } from "react";
-import { LayoutDashboard, TrendingUp, Clock, CheckCircle, Users, AlertTriangle } from "lucide-react";
+import { LayoutDashboard, TrendingUp, Clock, CheckCircle, Users, AlertTriangle, FileText } from "lucide-react";
 import Header from "../components/layout/Header";
 import * as api from "../api/client";
 
-interface Stats {
-  total: number; byStatus: Record<string, number>;
-  overdue: number; avgDays: number; activeCreators: number; totalMarketers: number;
+interface DashboardData {
+  orders: {
+    total: number;
+    new: number;
+    inProgress: number;
+    onReview: number;
+    done: number;
+    archived: number;
+    overdue: number;
+  };
+  users: {
+    total: number;
+    ADMIN?: number;
+    HEAD_MARKETER?: number;
+    MARKETER?: number;
+    HEAD_CREATOR?: number;
+    LEAD_CREATOR?: number;
+    CREATOR?: number;
+  };
+  reportsLastWeek: number;
+  avgCompletionDays: string | null;
 }
 
 export default function DashboardPage() {
-  const [stats,   setStats]   = useState<Stats | null>(null);
+  const [data,    setData]    = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
-        const data = await (api as any).getDashboard();
-        setStats(data);
+        const d = await (api as any).getDashboard();
+        setData(d);
       } catch {
-        // Fallback — собираем сами из /api/orders
-        try {
-          const r = await api.getOrders({} as any);
-          const orders = Array.isArray(r) ? r : (r.orders ?? []);
-          const now = Date.now();
-          setStats({
-            total: orders.length,
-            byStatus: orders.reduce((a: any, o: any) => { a[o.status] = (a[o.status] || 0) + 1; return a; }, {}),
-            overdue: orders.filter((o: any) => o.deadline && new Date(o.deadline).getTime() < now && o.status !== "DONE").length,
-            avgDays: 0,
-            activeCreators: [...new Set(orders.flatMap((o: any) => o.creators?.map((c: any) => c.creatorId) ?? []))].length,
-            totalMarketers: [...new Set(orders.map((o: any) => o.marketerId))].length,
-          });
-        } catch {}
+        setError(true);
       }
       setLoading(false);
     })();
   }, []);
 
-  const STATUS_LABELS: Record<string, { label: string; color: string; bg: string }> = {
-    NEW:         { label: "Новые",       color: "text-blue-400",   bg: "bg-blue-400" },
-    IN_PROGRESS: { label: "В работе",    color: "text-amber-400",  bg: "bg-amber-400" },
-    ON_REVIEW:   { label: "На правках",  color: "text-purple-400", bg: "bg-purple-400" },
-    DONE:        { label: "Готово",      color: "text-green-400",  bg: "bg-green-400" },
-    ARCHIVED:    { label: "Архив",       color: "text-ink-tertiary",bg:"bg-ink-tertiary" },
-  };
+  const STATUS_BARS = [
+    { key: "new",        label: "Новые",      color: "text-blue-400",    bg: "bg-blue-400" },
+    { key: "inProgress", label: "В работе",   color: "text-amber-400",   bg: "bg-amber-400" },
+    { key: "onReview",   label: "На правках", color: "text-purple-400",  bg: "bg-purple-400" },
+    { key: "done",       label: "Готово",     color: "text-green-400",   bg: "bg-green-400" },
+    { key: "archived",   label: "Архив",      color: "text-ink-tertiary",bg: "bg-ink-tertiary" },
+  ] as const;
+
+  const o = data?.orders;
+  const totalNonArchived = o ? o.total - (o.archived || 0) : 0;
 
   return (
     <div className="min-h-screen bg-bg-base">
@@ -62,14 +71,16 @@ export default function DashboardPage() {
           <div className="flex justify-center py-16">
             <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : stats ? (
+        ) : error || !data ? (
+          <div className="text-center py-16 text-ink-tertiary">Не удалось загрузить данные</div>
+        ) : (
           <div className="space-y-6">
             {/* KPI cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <KPICard icon={<TrendingUp size={16} className="text-green-400" />} label="Всего заказов" value={stats.total} accent="green" />
-              <KPICard icon={<Clock size={16} className="text-amber-400" />} label="В работе" value={stats.byStatus?.IN_PROGRESS ?? 0} accent="amber" />
-              <KPICard icon={<AlertTriangle size={16} className="text-red-400" />} label="Просрочено" value={stats.overdue} accent="red" />
-              <KPICard icon={<CheckCircle size={16} className="text-green-400" />} label="Завершено" value={stats.byStatus?.DONE ?? 0} accent="green" />
+              <KPICard icon={<TrendingUp size={16} className="text-green-400" />}    label="Всего заказов" value={o!.total}      accent="green" />
+              <KPICard icon={<Clock size={16} className="text-amber-400" />}         label="В работе"      value={o!.inProgress}  accent="amber" />
+              <KPICard icon={<AlertTriangle size={16} className="text-red-400" />}   label="Просрочено"    value={o!.overdue}     accent="red" />
+              <KPICard icon={<CheckCircle size={16} className="text-green-400" />}   label="Завершено"     value={o!.done}        accent="green" />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -77,20 +88,17 @@ export default function DashboardPage() {
               <div className="bg-bg-surface border border-bg-border rounded-card p-5">
                 <h3 className="text-sm font-semibold text-ink-primary mb-4">По статусам</h3>
                 <div className="space-y-3">
-                  {Object.entries(STATUS_LABELS).map(([status, meta]) => {
-                    const count = stats.byStatus?.[status] ?? 0;
-                    const pct   = stats.total ? Math.round((count / stats.total) * 100) : 0;
+                  {STATUS_BARS.map(({ key, label, color, bg }) => {
+                    const count = o![key] ?? 0;
+                    const pct   = o!.total ? Math.round((count / o!.total) * 100) : 0;
                     return (
-                      <div key={status}>
+                      <div key={key}>
                         <div className="flex items-center justify-between mb-1">
-                          <span className={`text-xs font-medium ${meta.color}`}>{meta.label}</span>
+                          <span className={`text-xs font-medium ${color}`}>{label}</span>
                           <span className="text-xs text-ink-tertiary">{count} ({pct}%)</span>
                         </div>
                         <div className="h-1.5 bg-bg-raised rounded-full overflow-hidden">
-                          <div
-                            className={`h-full ${meta.bg} rounded-full transition-all`}
-                            style={{ width: `${pct}%` }}
-                          />
+                          <div className={`h-full ${bg} rounded-full transition-all`} style={{ width: `${pct}%` }} />
                         </div>
                       </div>
                     );
@@ -98,37 +106,53 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Team */}
-              <div className="bg-bg-surface border border-bg-border rounded-card p-5">
-                <h3 className="text-sm font-semibold text-ink-primary mb-4">Команда</h3>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 bg-bg-raised rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <Users size={14} className="text-blue-400" />
-                      <span className="text-sm text-ink-secondary">Маркетологов</span>
-                    </div>
-                    <span className="text-sm font-semibold text-ink-primary">{stats.totalMarketers}</span>
+              {/* Right panel */}
+              <div className="space-y-4">
+                {/* Team */}
+                <div className="bg-bg-surface border border-bg-border rounded-card p-5">
+                  <h3 className="text-sm font-semibold text-ink-primary mb-3">Команда</h3>
+                  <div className="space-y-2">
+                    {[
+                      { label: "Маркетологов", value: (data.users.MARKETER ?? 0) + (data.users.HEAD_MARKETER ?? 0), color: "text-blue-400" },
+                      { label: "Креаторов",    value: (data.users.CREATOR ?? 0) + (data.users.LEAD_CREATOR ?? 0) + (data.users.HEAD_CREATOR ?? 0), color: "text-green-400" },
+                      { label: "Всего польз.", value: data.users.total, color: "text-ink-secondary" },
+                    ].map(({ label, value, color }) => (
+                      <div key={label} className="flex items-center justify-between p-2.5 bg-bg-raised rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <Users size={13} className={color} />
+                          <span className="text-sm text-ink-secondary">{label}</span>
+                        </div>
+                        <span className="text-sm font-semibold text-ink-primary">{value}</span>
+                      </div>
+                    ))}
                   </div>
-                  <div className="flex items-center justify-between p-3 bg-bg-raised rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <Users size={14} className="text-green-400" />
-                      <span className="text-sm text-ink-secondary">Активных креаторов</span>
+                </div>
+
+                {/* Extra stats */}
+                <div className="bg-bg-surface border border-bg-border rounded-card p-5">
+                  <h3 className="text-sm font-semibold text-ink-primary mb-3">Активность</h3>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between p-2.5 bg-bg-raised rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <FileText size={13} className="text-amber-400" />
+                        <span className="text-sm text-ink-secondary">Отчётов за неделю</span>
+                      </div>
+                      <span className="text-sm font-semibold text-ink-primary">{data.reportsLastWeek}</span>
                     </div>
-                    <span className="text-sm font-semibold text-ink-primary">{stats.activeCreators}</span>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-bg-raised rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <TrendingUp size={14} className="text-amber-400" />
-                      <span className="text-sm text-ink-secondary">На правках</span>
-                    </div>
-                    <span className="text-sm font-semibold text-ink-primary">{stats.byStatus?.ON_REVIEW ?? 0}</span>
+                    {data.avgCompletionDays && (
+                      <div className="flex items-center justify-between p-2.5 bg-bg-raised rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <Clock size={13} className="text-purple-400" />
+                          <span className="text-sm text-ink-secondary">Ср. время выполнения</span>
+                        </div>
+                        <span className="text-sm font-semibold text-ink-primary">{data.avgCompletionDays} дн.</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        ) : (
-          <div className="text-center py-16 text-ink-tertiary">Не удалось загрузить данные</div>
         )}
       </div>
     </div>

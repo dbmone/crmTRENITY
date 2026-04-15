@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Clock, Paperclip, Download, Trash2, UserPlus, Upload, Send, MessageSquare, FileText, Edit2, Check, Calendar } from "lucide-react";
+import { X, Clock, Paperclip, Download, Trash2, UserPlus, Upload, Send, MessageSquare, FileText, Edit2, Check, Calendar, ArchiveRestore } from "lucide-react";
 import { Order, STAGE_LABELS, StageName, User, OrderComment, OrderFile } from "../../types";
 import StageProgress from "../order/StageProgress";
 import { useAuthStore } from "../../store/auth.store";
@@ -94,8 +94,20 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   };
 
   const handleDelete = async () => {
-    if (!confirm("Удалить заказ?")) return;
-    await useOrdersStore.getState().removeOrder(o.id); onClose();
+    if (!confirm("Переместить заказ в архив?")) return;
+    try {
+      await api.updateOrderStatus(o.id, "ARCHIVED");
+      await fetchOrders();
+      onClose();
+    } catch (err: any) { alert(err.response?.data?.error || "Ошибка"); }
+  };
+
+  const handleUnarchive = async () => {
+    try {
+      await api.updateOrderStatus(o.id, "DONE");
+      await fetchOrders();
+      onClose();
+    } catch (err: any) { alert(err.response?.data?.error || "Ошибка"); }
   };
 
   const handleSaveEdit = async () => {
@@ -171,14 +183,20 @@ export default function OrderDetailModal({ order, onClose }: Props) {
             </div>
 
             <div className="flex items-center gap-1 flex-shrink-0">
-              {canEdit && !editing && (
+              {o.status === "ARCHIVED" && isMarketer && (
+                <button onClick={handleUnarchive} title="Восстановить из архива"
+                  className="p-1.5 rounded-lg hover:bg-green-500/10 text-ink-tertiary hover:text-green-400 transition-colors">
+                  <ArchiveRestore size={15} />
+                </button>
+              )}
+              {canEdit && o.status !== "ARCHIVED" && !editing && (
                 <button onClick={() => { setEditing(true); setEditTitle(o.title); setEditDesc(o.description ?? ""); setEditDL(o.deadline ? o.deadline.split("T")[0] : ""); }}
                   className="p-1.5 rounded-lg hover:bg-bg-raised text-ink-tertiary hover:text-ink-primary transition-colors">
                   <Edit2 size={15} />
                 </button>
               )}
-              {canEdit && o.marketerId === user?.id && !editing && (
-                <button onClick={handleDelete} className="p-1.5 rounded-lg hover:bg-red-400/10 text-ink-tertiary hover:text-red-400 transition-colors">
+              {canEdit && o.marketerId === user?.id && o.status !== "ARCHIVED" && !editing && (
+                <button onClick={handleDelete} title="В архив" className="p-1.5 rounded-lg hover:bg-red-400/10 text-ink-tertiary hover:text-red-400 transition-colors">
                   <Trash2 size={15} />
                 </button>
               )}
@@ -281,12 +299,12 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                         <div className="flex items-center gap-2 mt-0.5">
                           {stage.startedAt && (
                             <span className="flex items-center gap-1 text-[10px] text-ink-tertiary">
-                              <Calendar size={9} /> Нач.: {new Date(stage.startedAt).toLocaleDateString("ru-RU", { day:"numeric", month:"short" })}
+                              <Calendar size={9} /> Нач.: {new Date(stage.startedAt).toLocaleString("ru-RU", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit", timeZone:"Europe/Moscow" })} МСК
                             </span>
                           )}
                           {stage.completedAt && (
                             <span className="flex items-center gap-1 text-[10px] text-green-400">
-                              <Check size={9} /> {new Date(stage.completedAt).toLocaleDateString("ru-RU", { day:"numeric", month:"short" })}
+                              <Check size={9} /> {new Date(stage.completedAt).toLocaleString("ru-RU", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit", timeZone:"Europe/Moscow" })} МСК
                             </span>
                           )}
                         </div>
@@ -356,7 +374,19 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {o.files.map((f) => <FileRow key={f.id} file={f} />)}
+                  {o.files.map((f) => (
+                    <FileRow
+                      key={f.id}
+                      file={f}
+                      canDelete={isMarketer || (f.uploadedBy?.id === user?.id)}
+                      onDeleted={(id) => {
+                        setFullOrder((prev) => prev
+                          ? { ...prev, files: prev.files.filter((x) => x.id !== id) }
+                          : prev
+                        );
+                      }}
+                    />
+                  ))}
                 </div>
               )}
             </div>
@@ -458,10 +488,21 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   );
 }
 
-function FileRow({ file }: { file: OrderFile }) {
-  const [dl, setDl] = useState(false);
-  const handleDl = async () => { setDl(true); try { const url = await api.getDownloadUrl(file.id); window.open(url,"_blank"); } catch {} setDl(false); };
-  const size = file.fileSize > 1048576 ? `${(file.fileSize/1048576).toFixed(1)} МБ` : `${Math.round(file.fileSize/1024)} КБ`;
+function FileRow({ file, canDelete, onDeleted }: { file: OrderFile; canDelete: boolean; onDeleted: (id: string) => void }) {
+  const [dl,  setDl]  = useState(false);
+  const [del, setDel] = useState(false);
+  const handleDl = async () => {
+    setDl(true);
+    try { const url = await api.getDownloadUrl(file.id); window.open(url, "_blank"); } catch {}
+    setDl(false);
+  };
+  const handleDel = async () => {
+    if (!confirm(`Удалить файл «${file.fileName}»?`)) return;
+    setDel(true);
+    try { await api.deleteFile(file.id); onDeleted(file.id); } catch (e: any) { alert(e.response?.data?.error || "Ошибка"); }
+    setDel(false);
+  };
+  const size = file.fileSize > 1048576 ? `${(file.fileSize / 1048576).toFixed(1)} МБ` : `${Math.round(file.fileSize / 1024)} КБ`;
   return (
     <div className="flex items-center justify-between p-3 rounded-lg bg-bg-raised border border-bg-border hover:border-bg-hover transition-colors">
       <div className="flex items-center gap-2.5 min-w-0">
@@ -473,12 +514,20 @@ function FileRow({ file }: { file: OrderFile }) {
               {FILE_TYPE_LABELS[file.fileType] || file.fileType}
             </span>
             <span className="text-[10px] text-ink-tertiary">{size}</span>
+            {file.uploadedBy && <span className="text-[10px] text-ink-tertiary">· {file.uploadedBy.displayName}</span>}
           </div>
         </div>
       </div>
-      <button onClick={handleDl} disabled={dl} className="p-1.5 rounded-lg hover:bg-bg-hover text-ink-tertiary hover:text-ink-primary transition-colors disabled:opacity-40 flex-shrink-0">
-        <Download size={14} />
-      </button>
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <button onClick={handleDl} disabled={dl} title="Скачать" className="p-1.5 rounded-lg hover:bg-bg-hover text-ink-tertiary hover:text-ink-primary transition-colors disabled:opacity-40">
+          <Download size={14} />
+        </button>
+        {canDelete && (
+          <button onClick={handleDel} disabled={del} title="Удалить файл" className="p-1.5 rounded-lg hover:bg-red-500/10 text-ink-tertiary hover:text-red-400 transition-colors disabled:opacity-40">
+            <Trash2 size={14} />
+          </button>
+        )}
+      </div>
     </div>
   );
 }

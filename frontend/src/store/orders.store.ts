@@ -28,12 +28,11 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
   fetchOrders: async () => {
     set({ isLoading: true });
     try {
-      const params: Record<string, string> = {};
+      const params: Record<string, string> = { includeArchived: "true" };
       const filter = get().filter;
       if (filter?.creatorId) params.creatorId = filter.creatorId;
       if (filter?.marketerId) params.marketerId = filter.marketerId;
       const data = await api.getOrders(params);
-      // Бэкенд возвращает { orders: [...], total, page } или массив
       const orders = Array.isArray(data) ? data : (data.orders ?? []);
       set({ orders, isLoading: false, error: null });
     } catch (err: any) {

@@ -6,11 +6,12 @@ import { Clock, AlertTriangle, MessageSquare, Paperclip, FileText } from "lucide
 interface Props {
   order: Order;
   onClick: (order: Order) => void;
+  dim?: boolean;
 }
 
 const STAGE_ORDER: StageName[] = ["STORYBOARD", "ANIMATION", "EDITING", "REVIEW", "COMPLETED"];
 
-export default function OrderCard({ order, onClick }: Props) {
+export default function OrderCard({ order, onClick, dim }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: order.id });
 
@@ -49,7 +50,7 @@ export default function OrderCard({ order, onClick }: Props) {
           : isOverdue
           ? "border-red-500/25 hover:border-red-500/40"
           : "border-bg-border hover:border-bg-hover hover:bg-[#1E1E1E]"
-      }`}
+      } ${dim ? "opacity-60 grayscale-[0.4]" : ""}`}
     >
       {/* Overdue indicator */}
       {isOverdue && (
