@@ -212,4 +212,16 @@ export async function markAllNotificationsRead() {
   return data;
 }
 
+// ==================== PRE-APPROVE ====================
+
+export async function preApproveUser(telegramUsername: string, role: string) {
+  const { data } = await api.post("/users/pre-approve", { telegramUsername, role });
+  return data;
+}
+
+export async function getPreApproved() {
+  const { data } = await api.get("/users/pre-approved");
+  return data;
+}
+
 export default api;

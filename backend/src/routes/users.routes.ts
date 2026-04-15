@@ -161,4 +161,59 @@ export async function usersRoutes(app: FastifyInstance) {
       data: { status: UserStatus.BLOCKED, isActive: false },
     });
   });
+
+  // POST /api/users/pre-approve — создать пре-одобренного пользователя по TG username
+  app.post<{ Body: { telegramUsername: string; role: UserRole } }>("/pre-approve", {
+    preHandler: [requireRole(UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.HEAD_CREATOR)],
+  }, async (request, reply) => {
+    const { telegramUsername, role } = request.body;
+    const username = telegramUsername.replace(/^@/, "").trim();
+    if (!username) return reply.status(400).send({ error: "Укажите TG username" });
+
+    const managerRole = request.currentUser.role as UserRole;
+    const allowed = assignableRoles(managerRole);
+    if (!allowed.includes(role)) {
+      return reply.status(403).send({ error: `Нельзя назначить роль ${role}` });
+    }
+
+    // Проверить, нет ли уже такого пользователя
+    const existing = await prisma.user.findFirst({ where: { telegramUsername: username } });
+    if (existing) {
+      return reply.status(409).send({ error: `Пользователь @${username} уже существует` });
+    }
+
+    const pin = await generateUniquePin(prisma);
+    // Используем отрицательный telegramId как заглушку (заменится при первом /start в боте)
+    const fakeTgId = BigInt(Date.now()) * BigInt(-1) - BigInt(Math.floor(Math.random() * 1000));
+
+    const user = await prisma.user.create({
+      data: {
+        telegramId: fakeTgId,
+        telegramUsername: username,
+        displayName: "@" + username,
+        role,
+        status: UserStatus.APPROVED,
+        pinCode: pin,
+        approvedById: request.currentUser.id,
+      },
+      select: { id: true, displayName: true, telegramUsername: true, role: true, status: true, pinCode: true },
+    });
+
+    return reply.status(201).send(user);
+  });
+
+  // GET /api/users/pre-approved — список пре-одобренных (без реального TG аккаунта)
+  app.get("/pre-approved", {
+    preHandler: [requireRole(UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.HEAD_CREATOR)],
+  }, async () => {
+    // Пре-одобренные — APPROVED пользователи с отрицательным telegramId (fake)
+    return prisma.user.findMany({
+      where: {
+        status: UserStatus.APPROVED,
+        telegramId: { lt: BigInt(0) },
+      },
+      select: { id: true, displayName: true, telegramUsername: true, role: true, pinCode: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+    });
+  });
 }

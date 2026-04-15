@@ -73,7 +73,7 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   const canEdit       = isMarketer && o.marketerId === user?.id;
 
   const daysLeft = o.deadline ? Math.ceil((new Date(o.deadline).getTime() - Date.now()) / 86400000) : null;
-  const availableCreators = users.filter((u) => (u.role === "CREATOR" || u.role === "LEAD_CREATOR") && !o.creators?.some((c) => c.creatorId === u.id));
+  const availableCreators = users.filter((u) => ["CREATOR", "LEAD_CREATOR", "HEAD_CREATOR"].includes(u.role) && !o.creators?.some((c) => c.creatorId === u.id));
 
   // ── handlers ──
   const handleStageUpdate = async (stageId: string, status: string) => {
@@ -151,10 +151,10 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-10 pb-6 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-end sm:justify-center sm:pt-10 sm:pb-6 sm:overflow-y-auto">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative bg-bg-surface border border-bg-border rounded-modal shadow-modal w-full max-w-2xl mx-4 overflow-hidden animate-modal">
+      <div className="relative bg-bg-surface border border-t border-bg-border rounded-t-2xl sm:rounded-modal shadow-modal w-full sm:max-w-2xl sm:mx-4 max-h-[92vh] overflow-y-auto animate-modal">
 
         {/* ── Header ── */}
         <div className="p-5 pb-0">

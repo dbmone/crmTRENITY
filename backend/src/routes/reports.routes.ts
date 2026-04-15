@@ -1,6 +1,8 @@
 import { FastifyInstance } from "fastify";
 import { PrismaClient, UserRole } from "@prisma/client";
 import { requireRole } from "../middleware/role.middleware";
+import { createNotification } from "../services/notification.service";
+import { NotificationType } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -45,6 +47,22 @@ export async function reportsRoutes(app: FastifyInstance) {
           create: { orderId, creatorId: req.currentUser.id, reportText: reportText.trim(), reportDate: date },
           include: { creator: { select: { id: true, displayName: true, telegramUsername: true, avatarUrl: true } } },
         });
+        // Уведомить маркетолога который добавил заказ
+        try {
+          const order = await prisma.order.findUnique({
+            where: { id: orderId },
+            select: { marketerId: true, title: true },
+          });
+          if (order && order.marketerId !== req.currentUser.id) {
+            await createNotification(
+              order.marketerId,
+              NotificationType.STAGE_CHANGED,
+              `📝 ${report.creator.displayName} прислал отчёт по заказу «${order.title}»`,
+              orderId
+            );
+          }
+        } catch {}
+
         return reply.status(201).send(report);
       } catch (err: any) { return reply.status(500).send({ error: err.message }); }
     }

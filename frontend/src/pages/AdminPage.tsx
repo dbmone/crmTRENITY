@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "../store/auth.store";
 import Header from "../components/layout/Header";
-import { Check, X, Shield, RefreshCw, UserX, Crown, Users, ChevronRight, Trash2 } from "lucide-react";
+import { Check, X, Shield, RefreshCw, UserX, Crown, Users, ChevronRight, Trash2, UserPlus } from "lucide-react";
 import * as api from "../api/client";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -32,7 +32,7 @@ export default function AdminPage() {
   const [users,    setUsers]    = useState<UserRow[]>([]);
   const [pending,  setPending]  = useState<UserRow[]>([]);
   const [loading,  setLoading]  = useState(true);
-  const [tab,      setTab]      = useState<"users" | "pending" | "team">(
+  const [tab,      setTab]      = useState<"users" | "pending" | "team" | "access">(
     searchParams.get("tab") === "pending" ? "pending" : "users"
   );
   const [working,  setWorking]  = useState<string | null>(null);
@@ -119,10 +119,11 @@ export default function AdminPage() {
 
   if (!canAccess) return null;
 
-  const TABS: { id: "users" | "pending" | "team"; label: string }[] = [
+  const TABS: { id: "users" | "pending" | "team" | "access"; label: string }[] = [
     { id: "users",   label: "Пользователи" },
     { id: "pending", label: pending.length > 0 ? `Заявки (${pending.length})` : "Заявки" },
     { id: "team",    label: "Иерархия" },
+    { id: "access",  label: "Доступ" },
   ];
 
   return (
@@ -181,6 +182,8 @@ export default function AdminPage() {
             working={working}
             onAssignTeamLead={assignTeamLead}
           />
+        ) : tab === "access" ? (
+          <PreApproveTab isAdmin={isAdmin} isHeadMark={isHeadMark} isHeadCreator={isHeadCreator} />
         ) : (
           <UsersList rows={users} onChangeRole={changeRole} onDeactivate={deactivate} working={working} currentUser={user} isAdmin={isAdmin} />
         )}
@@ -592,6 +595,144 @@ function UsersList({ rows, onChangeRole, onDeactivate, working, currentUser, isA
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Pre-Approve Tab
+// ──────────────────────────────────────────────────────────────────────────────
+
+const ALL_ROLES_LIST = [
+  { value: "CREATOR",      label: "Креатор" },
+  { value: "LEAD_CREATOR", label: "Лид-креатор" },
+  { value: "HEAD_CREATOR", label: "Гл. креатор" },
+  { value: "MARKETER",     label: "Маркетолог" },
+  { value: "HEAD_MARKETER",label: "Гл. маркетолог" },
+  { value: "ADMIN",        label: "Админ" },
+];
+
+interface PreApproved {
+  id: string; displayName: string; telegramUsername: string | null;
+  role: string; pinCode: string | null; createdAt: string;
+}
+
+function PreApproveTab({ isAdmin, isHeadMark, isHeadCreator }: { isAdmin: boolean; isHeadMark: boolean; isHeadCreator: boolean }) {
+  const [input,    setInput]    = useState("");
+  const [role,     setRole]     = useState("CREATOR");
+  const [saving,   setSaving]   = useState(false);
+  const [list,     setList]     = useState<PreApproved[]>([]);
+  const [loadingL, setLoadingL] = useState(true);
+  const [results,  setResults]  = useState<{ username: string; pin?: string; error?: string }[]>([]);
+
+  const availableRoles = ALL_ROLES_LIST.filter((r) => {
+    if (isAdmin) return true;
+    if (isHeadMark) return ["MARKETER", "CREATOR", "LEAD_CREATOR"].includes(r.value);
+    if (isHeadCreator) return ["CREATOR", "LEAD_CREATOR"].includes(r.value);
+    return false;
+  });
+
+  const loadList = async () => {
+    setLoadingL(true);
+    try { const d = await (api as any).getPreApproved(); setList(d); } catch {}
+    setLoadingL(false);
+  };
+
+  useEffect(() => { loadList(); }, []);
+
+  const submit = async () => {
+    const usernames = input.split(/[\n,]+/).map((s) => s.trim().replace(/^@/, "")).filter(Boolean);
+    if (!usernames.length) return;
+    setSaving(true);
+    const res: { username: string; pin?: string; error?: string }[] = [];
+    for (const username of usernames) {
+      try {
+        const u = await (api as any).preApproveUser(username, role);
+        res.push({ username, pin: u.pinCode });
+      } catch (e: any) {
+        res.push({ username, error: e.response?.data?.error || "Ошибка" });
+      }
+    }
+    setResults(res);
+    setInput("");
+    setSaving(false);
+    loadList();
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-bg-surface border border-bg-border rounded-xl p-5">
+        <h2 className="text-sm font-semibold text-ink-primary mb-1 flex items-center gap-2">
+          <UserPlus size={15} className="text-green-400" />
+          Заранее выдать доступ по TG нику
+        </h2>
+        <p className="text-xs text-ink-tertiary mb-4">
+          Введи TG никнеймы (по одному в строке или через запятую). Когда эти люди напишут боту — сразу получат PIN без ручного апрува.
+        </p>
+
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder={"@username1\n@username2\nusername3"}
+          rows={4}
+          className="w-full px-3.5 py-2.5 rounded-lg border border-bg-border bg-bg-raised text-sm text-ink-primary placeholder-ink-tertiary outline-none focus:border-green-500/50 transition-colors resize-none mb-3"
+        />
+
+        <div className="flex items-center gap-3 flex-wrap">
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+            className="text-sm px-3 py-2 rounded-lg border border-bg-border bg-bg-raised text-ink-primary outline-none flex-shrink-0"
+          >
+            {availableRoles.map((r) => (
+              <option key={r.value} value={r.value}>{r.label}</option>
+            ))}
+          </select>
+
+          <button
+            onClick={submit}
+            disabled={saving || !input.trim()}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500 text-black text-sm font-bold hover:bg-green-400 disabled:opacity-50 transition-colors"
+          >
+            {saving ? <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" /> : <UserPlus size={14} />}
+            {saving ? "Добавляю..." : "Выдать доступ"}
+          </button>
+        </div>
+
+        {results.length > 0 && (
+          <div className="mt-4 space-y-1">
+            {results.map((r, i) => (
+              <div key={i} className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm ${r.error ? "bg-red-500/10 text-red-400" : "bg-green-500/10 text-green-400"}`}>
+                <span>@{r.username}</span>
+                {r.pin ? <span className="font-mono font-bold">PIN: {r.pin}</span> : <span>{r.error}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h3 className="text-xs font-semibold text-ink-tertiary uppercase tracking-wide mb-3">Ожидают регистрации через бот</h3>
+        {loadingL ? (
+          <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-green-500 border-t-transparent rounded-full animate-spin" /></div>
+        ) : list.length === 0 ? (
+          <p className="text-sm text-ink-tertiary text-center py-8">Список пуст</p>
+        ) : (
+          <div className="space-y-2">
+            {list.map((u) => (
+              <div key={u.id} className="flex items-center justify-between p-3 rounded-lg bg-bg-surface border border-bg-border">
+                <div>
+                  <span className="text-sm text-ink-primary">@{u.telegramUsername}</span>
+                  <span className="ml-2 text-xs text-ink-tertiary">{ROLE_LABELS[u.role] || u.role}</span>
+                </div>
+                {u.pinCode && (
+                  <span className="text-xs font-mono bg-bg-raised px-2 py-1 rounded text-green-400">PIN: {u.pinCode}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

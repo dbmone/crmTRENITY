@@ -17,21 +17,37 @@ const ROLE_COLORS: Record<string, string> = {
 interface Props { userId: string; trigger: React.ReactNode; }
 
 export default function UserProfileCard({ userId, trigger }: Props) {
-  const [open,          setOpen]          = useState(false);
-  const [profile,       setProfile]       = useState<UserProfile | null>(null);
-  const [loading,       setLoading]       = useState(false);
-  const [leadProfile,   setLeadProfile]   = useState<UserProfile | null>(null);
-  const [showLead,      setShowLead]      = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [open,        setOpen]        = useState(false);
+  const [profile,     setProfile]     = useState<UserProfile | null>(null);
+  const [loading,     setLoading]     = useState(false);
+  const [leadProfile, setLeadProfile] = useState<UserProfile | null>(null);
+  const [showLead,    setShowLead]    = useState(false);
+  const [side,        setSide]        = useState<"left" | "right">("right");
+  const containerRef  = useRef<HTMLDivElement>(null);
+  const popupRef      = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     load(userId);
   }, [open, userId]);
 
+  // Detect overflow: if card goes off the right edge, flip to left-aligned
+  useEffect(() => {
+    if (!open || !popupRef.current || !containerRef.current) return;
+    const rect = popupRef.current.getBoundingClientRect();
+    if (rect.right > window.innerWidth - 8) {
+      setSide("left");
+    } else {
+      setSide("right");
+    }
+  }, [open, profile]);
+
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setShowLead(false); }
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setShowLead(false);
+      }
     };
     if (open) document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -52,12 +68,16 @@ export default function UserProfileCard({ userId, trigger }: Props) {
   const displayed = showLead ? leadProfile : profile;
 
   return (
-    <div className="relative inline-block" ref={ref}>
-      <div onClick={(e) => { e.stopPropagation(); setOpen(!open); }}>{trigger}</div>
+    <div className="relative inline-block" ref={containerRef}>
+      <div onClick={(e) => { e.stopPropagation(); setSide("right"); setOpen(!open); }}>
+        {trigger}
+      </div>
 
       {open && (
-        <div className="absolute z-50 mt-2 w-64 bg-bg-surface border border-bg-border rounded-modal shadow-modal overflow-hidden animate-modal"
-          style={{ left: "50%", transform: "translateX(-50%)" }}
+        <div
+          ref={popupRef}
+          className="absolute z-50 mt-2 w-64 bg-bg-surface border border-bg-border rounded-modal shadow-modal overflow-hidden animate-modal"
+          style={side === "right" ? { left: 0 } : { right: 0 }}
           onClick={(e) => e.stopPropagation()}
         >
           {showLead && (
@@ -92,14 +112,32 @@ function CardContent({ profile, onLeadClick, onClose }: { profile: UserProfile; 
 
       {/* Avatar + name */}
       <div className="flex items-center gap-3 mb-3">
-        <div className="w-11 h-11 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center overflow-hidden flex-shrink-0">
-          {profile.avatarUrl
-            ? <img src={profile.avatarUrl} alt={profile.displayName} className="w-full h-full object-cover" />
-            : <span className="text-sm font-bold text-green-400">{initials}</span>
-          }
-        </div>
+        {profile.telegramUsername ? (
+          <a
+            href={`https://t.me/${profile.telegramUsername}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-11 h-11 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center overflow-hidden flex-shrink-0 hover:border-green-500/50 transition-colors"
+            title="Открыть Telegram"
+          >
+            {profile.avatarUrl
+              ? <img src={profile.avatarUrl} alt={profile.displayName} className="w-full h-full object-cover" />
+              : <span className="text-sm font-bold text-green-400">{initials}</span>
+            }
+          </a>
+        ) : (
+          <div className="w-11 h-11 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center overflow-hidden flex-shrink-0">
+            {profile.avatarUrl
+              ? <img src={profile.avatarUrl} alt={profile.displayName} className="w-full h-full object-cover" />
+              : <span className="text-sm font-bold text-green-400">{initials}</span>
+            }
+          </div>
+        )}
         <div className="min-w-0">
           <div className="font-semibold text-ink-primary text-sm truncate">{profile.displayName}</div>
+          {profile.telegramUsername && (
+            <div className="text-xs text-ink-tertiary mt-0.5">@{profile.telegramUsername}</div>
+          )}
           <span className={`inline-block mt-0.5 text-[10px] font-medium px-2 py-0.5 rounded-full ${ROLE_COLORS[profile.role] || "text-ink-tertiary bg-bg-raised"}`}>
             {ROLE_LABELS[profile.role] || profile.role}
           </span>
@@ -124,7 +162,7 @@ function CardContent({ profile, onLeadClick, onClose }: { profile: UserProfile; 
           <div className="text-[10px] text-ink-tertiary mb-1.5 uppercase tracking-wide">Тимлид</div>
           <button onClick={() => onLeadClick(profile.teamLead!.id)}
             className="flex items-center gap-2 w-full text-left px-2.5 py-2 rounded-lg hover:bg-bg-raised transition-colors">
-            <div className="w-7 h-7 rounded-full bg-amber-400/10 border border-amber-400/20 flex items-center justify-center flex-shrink-0">
+            <div className="w-7 h-7 rounded-full bg-amber-400/10 border border-amber-400/20 flex items-center justify-center flex-shrink-0 overflow-hidden">
               {profile.teamLead.avatarUrl
                 ? <img src={profile.teamLead.avatarUrl} alt="" className="w-full h-full object-cover rounded-full" />
                 : <span className="text-[10px] font-bold text-amber-400">{profile.teamLead.displayName.slice(0, 2).toUpperCase()}</span>

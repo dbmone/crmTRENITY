@@ -17,7 +17,7 @@ export default function BoardPage() {
   const [search,        setSearch]        = useState("");
   const [searchTimer,   setSearchTimer]   = useState<ReturnType<typeof setTimeout> | null>(null);
 
-  const isMarketer = ["MARKETER", "HEAD_MARKETER", "ADMIN"].includes(user?.role ?? "");
+  const isMarketer = ["MARKETER", "HEAD_MARKETER", "ADMIN", "HEAD_CREATOR"].includes(user?.role ?? "");
 
   useEffect(() => { fetchOrders(); }, []);
 
@@ -51,14 +51,14 @@ export default function BoardPage() {
       <Header />
 
       {/* Compact toolbar */}
-      <div className="flex items-center gap-2 px-6 py-2.5 border-b border-bg-border bg-bg-surface flex-shrink-0">
+      <div className="flex items-center gap-2 px-3 sm:px-6 py-2.5 border-b border-bg-border bg-bg-surface flex-shrink-0">
         {/* Search */}
-        <div className="relative w-56">
+        <div className="relative flex-1 sm:flex-none sm:w-48">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-tertiary pointer-events-none" />
           <input
             value={search}
             onChange={(e) => handleSearch(e.target.value)}
-            placeholder="Поиск заказов..."
+            placeholder="Поиск..."
             className="w-full pl-8 pr-7 py-1.5 text-sm bg-bg-raised border border-bg-border rounded-lg text-ink-primary placeholder-ink-tertiary outline-none focus:border-green-500/40 transition-colors"
           />
           {search && (
@@ -86,7 +86,7 @@ export default function BoardPage() {
           }`}
         >
           <SlidersHorizontal size={12} />
-          {activeFilter ? "Мои заказы" : "Все заказы"}
+          <span className="hidden sm:inline">{activeFilter ? "Мои заказы" : "Все заказы"}</span>
         </button>
 
         <div className="ml-auto flex items-center gap-2">
@@ -108,10 +108,10 @@ export default function BoardPage() {
           {isMarketer && (
             <button
               onClick={() => setShowCreate(true)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-green-500 text-black text-xs font-bold hover:bg-green-400 transition-colors"
+              className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-lg bg-green-500 text-black text-xs font-bold hover:bg-green-400 transition-colors"
             >
               <Plus size={13} />
-              Новый заказ
+              <span className="hidden sm:inline">Новый заказ</span>
             </button>
           )}
         </div>

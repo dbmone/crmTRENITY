@@ -130,8 +130,27 @@ bot.command("start", async (ctx) => {
   }
 
   if (existing) {
+    // Если пре-одобренный пользователь (фейковый telegramId) — выдать PIN и обновить данные
+    if (existing.status === "APPROVED" && !existing.pinCode) {
+      const newPin = await generateUniquePin();
+      existing = await prisma.user.update({
+        where: { id: existing.id },
+        data: { pinCode: newPin },
+      });
+    }
+    // Обновляем displayName из Telegram если ещё не заполнен нормально
+    if (existing.displayName.startsWith("@")) {
+      const realName = ctx.from?.first_name + (ctx.from?.last_name ? ` ${ctx.from.last_name}` : "");
+      if (realName) {
+        existing = await prisma.user.update({
+          where: { id: existing.id },
+          data: { displayName: realName },
+        });
+      }
+    }
+
     const statusText = existing.status === "APPROVED"
-      ? "✅ Вы зарегистрированы и одобрены."
+      ? `✅ Вы зарегистрированы и одобрены.\n🔑 PIN для входа на сайт: \`${existing.pinCode}\``
       : existing.status === "PENDING"
       ? "⏳ Ваша заявка на рассмотрении. Дождитесь одобрения."
       : existing.status === "REJECTED"
@@ -140,7 +159,7 @@ bot.command("start", async (ctx) => {
 
     await ctx.reply(
       `👋 ${existing.displayName}!\n\n${statusText}\nРоль: ${formatRole(existing.role)}`,
-      { reply_markup: mainMenuKeyboard(existing.status) }
+      { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(existing.status) }
     );
     return;
   }
@@ -445,6 +464,169 @@ bot.on("message:text", async (ctx) => {
   }
 });
 
+// ==================== ADMIN PANEL ====================
+
+const ADMIN_ROLES = [UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.HEAD_CREATOR];
+
+function adminMenuKeyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text("📋 Заявки на апрув", "adm_pending").row()
+    .text("👥 Пользователи", "adm_users").row()
+    .text("📊 Статистика", "adm_stats");
+}
+
+bot.command("admin", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || !ADMIN_ROLES.includes(user.role)) {
+    await ctx.reply("❌ Нет доступа.");
+    return;
+  }
+  const pending = await prisma.user.count({ where: { status: "PENDING" } });
+  await ctx.reply(
+    `⚙️ *Панель администратора*\n\n` +
+    `Заявок на апрув: *${pending}*\n` +
+    `Ваша роль: ${formatRole(user.role)}`,
+    { parse_mode: "Markdown", reply_markup: adminMenuKeyboard() }
+  );
+});
+
+// Список заявок
+bot.callbackQuery("adm_pending", async (ctx) => {
+  const admin = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!admin || !ADMIN_ROLES.includes(admin.role)) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+  await ctx.answerCallbackQuery();
+
+  const pending = await prisma.user.findMany({
+    where: { status: "PENDING" },
+    orderBy: { createdAt: "asc" },
+    take: 10,
+  });
+
+  if (pending.length === 0) {
+    await ctx.reply("✅ Заявок нет.", { reply_markup: adminMenuKeyboard() });
+    return;
+  }
+
+  for (const u of pending) {
+    const kb = new InlineKeyboard()
+      .text("✅ Одобрить", `adm_approve_${u.id}`)
+      .text("❌ Отклонить", `adm_reject_${u.id}`).row()
+      .text("👑 Сменить роль", `adm_role_${u.id}`);
+
+    await ctx.reply(
+      `👤 *${u.displayName}*\n` +
+      `📱 @${u.telegramUsername || "—"}\n` +
+      `📋 Роль: ${formatRole(u.role)}\n` +
+      `📅 ${u.createdAt.toLocaleDateString("ru-RU")}`,
+      { parse_mode: "Markdown", reply_markup: kb }
+    );
+  }
+});
+
+// Одобрить заявку
+bot.callbackQuery(/^adm_approve_(.+)$/, async (ctx) => {
+  const admin = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!admin || !ADMIN_ROLES.includes(admin.role)) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+
+  const targetId = ctx.match![1];
+  const target = await prisma.user.findUnique({ where: { id: targetId } });
+  if (!target) { await ctx.answerCallbackQuery("Не найден"); return; }
+
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  let pin = "";
+  for (let i = 0; i < 4; i++) pin += chars[crypto.randomInt(0, chars.length)];
+
+  await prisma.user.update({
+    where: { id: targetId },
+    data: { status: "APPROVED", pinCode: pin, approvedById: admin.id },
+  });
+
+  // Уведомить пользователя
+  if (target.chatId) {
+    try {
+      await bot.api.sendMessage(
+        target.chatId.toString(),
+        `✅ *Ваша заявка одобрена!*\n\n` +
+        `Роль: ${formatRole(target.role)}\n` +
+        `🔑 PIN для входа на сайт: \`${pin}\`\n\n` +
+        `Сайт: ваш домен/login`,
+        { parse_mode: "Markdown" }
+      );
+    } catch {}
+  }
+
+  await ctx.answerCallbackQuery("Одобрено!");
+  await ctx.editMessageText(
+    `✅ *${target.displayName}* одобрен!\nPIN: \`${pin}\``,
+    { parse_mode: "Markdown" }
+  );
+});
+
+// Отклонить заявку
+bot.callbackQuery(/^adm_reject_(.+)$/, async (ctx) => {
+  const admin = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!admin || !ADMIN_ROLES.includes(admin.role)) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+
+  const targetId = ctx.match![1];
+  const target = await prisma.user.findUnique({ where: { id: targetId } });
+  if (!target) { await ctx.answerCallbackQuery("Не найден"); return; }
+
+  await prisma.user.update({ where: { id: targetId }, data: { status: "REJECTED" } });
+
+  if (target.chatId) {
+    try {
+      await bot.api.sendMessage(target.chatId.toString(), "❌ Ваша заявка отклонена. Обратитесь к администратору.");
+    } catch {}
+  }
+
+  await ctx.answerCallbackQuery("Отклонено");
+  await ctx.editMessageText(`❌ *${target.displayName}* отклонён.`, { parse_mode: "Markdown" });
+});
+
+// Список пользователей
+bot.callbackQuery("adm_users", async (ctx) => {
+  const admin = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!admin || !ADMIN_ROLES.includes(admin.role)) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+  await ctx.answerCallbackQuery();
+
+  const counts = await prisma.user.groupBy({
+    by: ["role"],
+    where: { status: "APPROVED" },
+    _count: { id: true },
+  });
+
+  let text = `👥 *Пользователи (одобренные)*\n\n`;
+  for (const c of counts) {
+    text += `${formatRole(c.role as UserRole)}: ${c._count.id}\n`;
+  }
+
+  await ctx.reply(text, { parse_mode: "Markdown", reply_markup: adminMenuKeyboard() });
+});
+
+// Статистика
+bot.callbackQuery("adm_stats", async (ctx) => {
+  const admin = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!admin || !ADMIN_ROLES.includes(admin.role)) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+  await ctx.answerCallbackQuery();
+
+  const [orders, users, pending] = await Promise.all([
+    prisma.order.groupBy({ by: ["status"], _count: { id: true } }),
+    prisma.user.count({ where: { status: "APPROVED" } }),
+    prisma.user.count({ where: { status: "PENDING" } }),
+  ]);
+
+  const statusEmoji: Record<string, string> = { NEW: "🆕", IN_PROGRESS: "🔄", ON_REVIEW: "👀", DONE: "✅", ARCHIVED: "📦" };
+  let text = `📊 *Статистика TRENITY CRM*\n\n`;
+  text += `👥 Пользователей: ${users}\n`;
+  text += `⏳ Заявок на апрув: ${pending}\n\n`;
+  text += `📋 *Заказы:*\n`;
+  for (const o of orders) {
+    text += `${statusEmoji[o.status] || "📋"} ${o.status}: ${o._count.id}\n`;
+  }
+
+  await ctx.reply(text, { parse_mode: "Markdown", reply_markup: adminMenuKeyboard() });
+});
+
 // ==================== ТЕКСТОВЫЕ КОМАНДЫ (для удобства) ====================
 
 bot.command("pin", async (ctx) => {
@@ -505,10 +687,32 @@ setInterval(processNotifications, 5000);
 
 bot.catch((err) => console.error("Bot error:", err));
 
+// ==================== ОБЕСПЕЧИТЬ ADMIN @Dbm0ne ====================
+async function ensureDbmAdmin() {
+  try {
+    const ADMIN_TG = process.env.ADMIN_TG_USERNAME || "Dbm0ne";
+    // Найти пользователя с пин-кодом Adm1 или с username ADMIN_TG
+    const byPin = await prisma.user.findUnique({ where: { pinCode: "Adm1" } });
+    if (byPin && byPin.telegramUsername !== ADMIN_TG) {
+      await prisma.user.update({ where: { id: byPin.id }, data: { telegramUsername: ADMIN_TG, displayName: "Dbm" } });
+      console.log(`✅ Admin user linked to @${ADMIN_TG}`);
+    }
+    // Если @Dbm0ne уже есть в БД — убедиться что он ADMIN
+    const byUsername = await prisma.user.findFirst({ where: { telegramUsername: ADMIN_TG } });
+    if (byUsername && byUsername.role !== "ADMIN") {
+      await prisma.user.update({ where: { id: byUsername.id }, data: { role: "ADMIN", status: "APPROVED" } });
+      console.log(`✅ Promoted @${ADMIN_TG} to ADMIN`);
+    }
+  } catch (e) {
+    console.error("Admin setup error:", e);
+  }
+}
+
 bot.start({
-  onStart: () => {
+  onStart: async () => {
     console.log("🤖 TRENITY CRM Bot started");
     console.log("🛡️  Anti-spam: " + RATE_LIMIT + " msg/" + (RATE_WINDOW / 1000) + "s");
     console.log("📨 Notification queue: 5s interval");
+    await ensureDbmAdmin();
   },
 });

@@ -95,10 +95,7 @@ export default function Header() {
       {/* ── Top bar ── */}
       <div className="flex items-center gap-3 px-4 sm:px-6 py-3">
         {/* Logo */}
-        <button onClick={() => navigate("/")} className="flex items-center gap-2.5 flex-shrink-0">
-          <div className="w-8 h-8 rounded-lg bg-green-500/10 border border-green-500/30 flex items-center justify-center">
-            <span className="text-green-400 font-black text-xs">T</span>
-          </div>
+        <button onClick={() => navigate("/")} className="flex items-center flex-shrink-0">
           <span className="font-bold text-ink-primary tracking-tight">
             TRENITY <span className="text-green-500">CRM</span>
           </span>
