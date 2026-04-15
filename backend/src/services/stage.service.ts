@@ -77,7 +77,7 @@ export async function toggleClientApproval(
   });
   if (!stage) throw { statusCode: 404, message: "Этап не найден" };
 
-  const subStageSupported = [StageName.STORYBOARD, StageName.ANIMATION].includes(stage.name);
+  const subStageSupported = (["STORYBOARD", "ANIMATION"] as string[]).includes(stage.name);
   if (!subStageSupported) {
     throw { statusCode: 400, message: "Подэтап доступен только для Раскадровки и Анимации" };
   }
@@ -125,7 +125,7 @@ export async function startRevisionRound(
   if (!order) throw { statusCode: 404, message: "Заказ не найден" };
 
   // Только маркетолог заказа, HEAD_MARKETER или ADMIN
-  const canRevise = [UserRole.ADMIN, UserRole.HEAD_MARKETER];
+  const canRevise: string[] = [UserRole.ADMIN, UserRole.HEAD_MARKETER];
   if (!canRevise.includes(userRole) && order.marketerId !== userId) {
     throw { statusCode: 403, message: "Только маркетолог заказа может создавать раунд правок" };
   }
@@ -173,7 +173,7 @@ export async function rollbackToRevision(
   const order = await prisma.order.findUnique({ where: { id: orderId } });
   if (!order) throw { statusCode: 404, message: "Заказ не найден" };
 
-  const canRevise = [UserRole.ADMIN, UserRole.HEAD_MARKETER];
+  const canRevise: string[] = [UserRole.ADMIN, UserRole.HEAD_MARKETER];
   if (!canRevise.includes(userRole) && order.marketerId !== userId) {
     throw { statusCode: 403, message: "Нет прав для отката" };
   }
