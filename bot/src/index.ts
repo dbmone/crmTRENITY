@@ -2,7 +2,7 @@ import { Bot, InlineKeyboard } from "grammy";
 import { PrismaClient, UserRole, UserStatus, NotificationType } from "@prisma/client";
 import dotenv from "dotenv";
 import crypto from "crypto";
-
+import http from 'http';
 dotenv.config({ path: "../.env" });
 dotenv.config();
 
@@ -10,7 +10,14 @@ const bot = new Bot(process.env.BOT_TOKEN || "");
 const prisma = new PrismaClient();
 
 // ==================== АНТИСПАМ ====================
-
+// Health-check сервер для Render
+const PORT = process.env.PORT || 3001;
+http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end('Bot is running');
+}).listen(PORT, () => {
+  console.log(`Health-check on port ${PORT}`);
+});
 const rateLimits = new Map<number, { count: number; resetAt: number }>();
 const RATE_LIMIT = 20;       // макс сообщений
 const RATE_WINDOW = 60_000;  // за 60 секунд
