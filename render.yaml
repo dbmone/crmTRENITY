@@ -1,0 +1,72 @@
+databases:
+  - name: crm-postgres
+    plan: free
+    databaseName: crm_creators
+    user: crm_user
+
+services:
+  # Backend API
+  - type: web
+    name: crm-backend
+    runtime: docker
+    plan: free
+    rootDir: ./backend
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: crm-postgres
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: PORT
+        value: 3000
+      - key: HOST
+        value: 0.0.0.0
+      - key: NODE_ENV
+        value: production
+      - key: MINIO_ENDPOINT
+        sync: false
+      - key: MINIO_PORT
+        value: "443"
+      - key: MINIO_USER
+        sync: false
+      - key: MINIO_PASSWORD
+        sync: false
+      - key: MINIO_BUCKET
+        value: crm-files
+      - key: MINIO_USE_SSL
+        value: "true"
+      - key: FRONTEND_URL
+        value: https://crm-frontend-XXXX.onrender.com
+
+  # Telegram Bot
+  - type: web
+    name: crm-bot
+    runtime: docker
+    plan: free
+    rootDir: ./bot
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: crm-postgres
+          property: connectionString
+      - key: BOT_TOKEN
+        sync: false
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+
+  # Frontend
+  - type: web
+    name: crm-frontend
+    runtime: docker
+    plan: free
+    rootDir: ./frontend
+    envVars:
+      - key: BACKEND_URL
+        value: https://crm-backend-XXXX.onrender.com
+      - key: PORT
+        value: 5173
