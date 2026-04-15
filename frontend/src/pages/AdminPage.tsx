@@ -130,13 +130,16 @@ export default function AdminPage() {
 
   if (!canAccess) return null;
 
-  const TABS: { id: "users" | "pending" | "team" | "access" | "rights"; label: string; adminOnly?: boolean }[] = [
-    { id: "users",   label: "Пользователи" },
-    { id: "pending", label: pending.length > 0 ? `Заявки (${pending.length})` : "Заявки" },
-    { id: "team",    label: "Иерархия" },
-    { id: "access",  label: "Доступ" },
-    { id: "rights",  label: "Права", adminOnly: true },
-  ].filter((t) => !t.adminOnly || isAdmin);
+  type TabId = "users" | "pending" | "team" | "access" | "rights";
+  const TABS: { id: TabId; label: string }[] = (
+    [
+      { id: "users"   as TabId, label: "Пользователи" },
+      { id: "pending" as TabId, label: pending.length > 0 ? `Заявки (${pending.length})` : "Заявки" },
+      { id: "team"    as TabId, label: "Иерархия" },
+      { id: "access"  as TabId, label: "Доступ" },
+      ...(isAdmin ? [{ id: "rights" as TabId, label: "Права" }] : []),
+    ]
+  );
 
   return (
     <div className="min-h-screen bg-bg-base">
