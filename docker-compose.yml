@@ -34,6 +34,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   bot:
     build: ./bot
@@ -45,7 +51,7 @@ services:
       TELEGRAM_STORAGE_CHAT_ID: ${TELEGRAM_STORAGE_CHAT_ID}
       ADMIN_TG_USERNAME: ${ADMIN_TG_USERNAME}
     depends_on:
-      postgres:
+      backend:
         condition: service_healthy
 
   frontend:

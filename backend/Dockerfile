@@ -16,5 +16,5 @@ COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/prisma ./prisma
 
 EXPOSE 3000
-# ensureSchema() внутри index.ts автоматически применяет миграции при старте
-CMD ["node", "dist/index.js"]
+# prisma db push создаёт таблицы на чистой БД, ensureSchema() применяет доп. миграции
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss && node dist/index.js"]
