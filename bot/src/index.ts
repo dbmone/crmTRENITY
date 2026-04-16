@@ -6,7 +6,14 @@ import http from 'http';
 dotenv.config({ path: "../.env" });
 dotenv.config();
 
-const bot = new Bot(process.env.BOT_TOKEN || "");
+const BOT_TOKEN = process.env.BOT_TOKEN;
+
+if (!BOT_TOKEN) {
+  console.error("BOT_TOKEN is not set");
+  process.exit(1);
+}
+
+const bot = new Bot(BOT_TOKEN);
 const prisma = new PrismaClient();
 // Экранирование спецсимволов Markdown
 function esc(text: string): string {
@@ -15,12 +22,19 @@ function esc(text: string): string {
 // ==================== АНТИСПАМ ====================
 // Health-check сервер для Render
 const PORT = process.env.PORT || 3001;
-http.createServer((req, res) => {
-  res.writeHead(200);
-  res.end('Bot is running');
-}).listen(PORT, () => {
-  console.log(`Health-check on port ${PORT}`);
-});
+let healthServerStarted = false;
+
+function startHealthServer() {
+  if (healthServerStarted) return;
+  healthServerStarted = true;
+
+  http.createServer((req, res) => {
+    res.writeHead(200);
+    res.end('Bot is running');
+  }).listen(PORT, () => {
+    console.log(`Health-check on port ${PORT}`);
+  });
+}
 const rateLimits = new Map<number, { count: number; resetAt: number }>();
 const RATE_LIMIT = 20;       // макс сообщений
 const RATE_WINDOW = 60_000;  // за 60 секунд
@@ -1214,6 +1228,11 @@ setInterval(processNotifications, 5000);
 // ==================== ЗАПУСК ====================
 
 bot.catch((err) => console.error("Bot error:", err));
+process.on("unhandledRejection", (err) => console.error("Unhandled rejection:", err));
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err);
+  process.exit(1);
+});
 
 // ==================== ОБЕСПЕЧИТЬ ADMIN @Dbm0ne ====================
 async function ensureDbmAdmin() {
@@ -1236,7 +1255,7 @@ async function ensureDbmAdmin() {
   }
 }
 
-bot.start({
+if (false) bot.start({
   onStart: async () => {
     console.log("🤖 TRENITY CRM Bot started");
     console.log("🛡️  Anti-spam: " + RATE_LIMIT + " msg/" + (RATE_WINDOW / 1000) + "s");
@@ -1244,3 +1263,27 @@ bot.start({
     await ensureDbmAdmin();
   },
 });
+
+async function startTelegramBot() {
+  try {
+    console.log("Checking Telegram bot token...");
+    const me = await bot.api.getMe();
+    console.log(`Telegram auth OK: @${me.username}`);
+    console.log("Starting Telegram polling...");
+
+    await bot.start({
+      onStart: async () => {
+        startHealthServer();
+        console.log("TRENITY CRM Bot started");
+        console.log("Anti-spam: " + RATE_LIMIT + " msg/" + (RATE_WINDOW / 1000) + "s");
+        console.log("Notification queue: 5s interval");
+        await ensureDbmAdmin();
+      },
+    });
+  } catch (err) {
+    console.error("Failed to start Telegram bot:", err);
+    process.exit(1);
+  }
+}
+
+void startTelegramBot();
