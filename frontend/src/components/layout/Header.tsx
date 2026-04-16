@@ -38,7 +38,7 @@ const ROLE_COLORS: Record<string, string> = {
 const NAV = [
   { path: "/", label: "Доска", icon: LayoutDashboard, tour: "nav-board" },
   { path: "/tasks", label: "Задачи", icon: ListTodo, tour: "nav-tasks" },
-  { path: "/guide", label: "📖 Гайд", icon: BookOpen, tour: "nav-guide", showGuideDot: true },
+  { path: "/guide", label: "Гайд", icon: BookOpen, tour: "nav-guide", showGuideDot: true },
   { path: "/archive", label: "Архив", icon: Archive, tour: "nav-archive" },
   { path: "/dashboard", label: "Аналитика", icon: LayoutDashboard, tour: "nav-dashboard" },
   { path: "/admin", label: "Команда", icon: Users, tour: "nav-admin", adminOnly: true },

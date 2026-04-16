@@ -217,8 +217,8 @@ export default function TourOverlay() {
         </div>
 
         <div className="mb-4 flex items-start gap-3">
-          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-green-500/12 text-2xl">
-            {step.emoji}
+          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-green-500/12 text-sm font-black text-green-300">
+            {String(stepIndex + 1).padStart(2, "0")}
           </div>
           <div className="min-w-0">
             <h3 className="text-lg font-black leading-tight text-ink-primary">{step.title}</h3>

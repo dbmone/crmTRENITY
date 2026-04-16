@@ -82,6 +82,7 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   const [uploadingFile,    setUploadingFile]    = useState(false);
   const [selectedFileType, setSelectedFileType] = useState<"all" | Exclude<FileBucket, "tz">>("all");
   const [uploadFileType,   setUploadFileType]   = useState<Exclude<UploadFileType, "TZ">>("OTHER");
+  const [draggingFiles,    setDraggingFiles]    = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Reports
@@ -97,6 +98,7 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   const [tzText,          setTzText]          = useState("");
   const [addingTzNote,    setAddingTzNote]    = useState(false);
   const [uploadingTzFile, setUploadingTzFile] = useState(false);
+  const [draggingTz,      setDraggingTz]      = useState(false);
   const [recording,       setRecording]       = useState(false);
   const [transcribing,    setTranscribing]    = useState(false);
   const [sendingTzToTg,   setSendingTzToTg]   = useState(false);
@@ -108,11 +110,24 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   const tzAiChunksRef    = useRef<BlobPart[]>([]);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef   = useRef<BlobPart[]>([]);
+  const tzFileInputRef   = useRef<HTMLInputElement>(null);
 
   const handleEditFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
     setEditUploadingFile(true);
-    try { await api.uploadFile(o.id, file, editSelectedFileType); await loadOrder(); }
+    let failed = 0;
+    try {
+      for (const file of files) {
+        try {
+          await api.uploadFile(o.id, file, editSelectedFileType);
+        } catch {
+          failed += 1;
+        }
+      }
+      await loadOrder();
+      if (failed > 0) alert(`Не удалось загрузить ${failed} файл(ов)`);
+    }
     catch (err: any) { alert(err.response?.data?.error || "Ошибка загрузки"); }
     setEditUploadingFile(false); e.target.value = "";
   };
@@ -191,9 +206,21 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
     setUploadingFile(true);
-    try { await api.uploadFile(o.id, file, uploadFileType); await loadOrder(); }
+    let failed = 0;
+    try {
+      for (const file of files) {
+        try {
+          await api.uploadFile(o.id, file, uploadFileType);
+        } catch {
+          failed += 1;
+        }
+      }
+      await loadOrder();
+      if (failed > 0) alert(`Не удалось загрузить ${failed} файл(ов)`);
+    }
     catch (err: any) { alert(err.response?.data?.error || "Ошибка загрузки"); }
     setUploadingFile(false); e.target.value = "";
   };
@@ -483,8 +510,40 @@ export default function OrderDetailModal({ order, onClose }: Props) {
 
               {/* Добавить текстовую заметку */}
               {isParticipant && (
-                <div className="p-3.5 bg-bg-raised border border-bg-border rounded-lg">
+                <div
+                  className={`p-3.5 border rounded-lg transition-colors ${draggingTz ? "bg-green-500/10 border-green-500" : "bg-bg-raised border-bg-border"}`}
+                  onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setDraggingTz(true); }}
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDraggingTz(true); }}
+                  onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDraggingTz(false); }}
+                  onDrop={async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setDraggingTz(false);
+                    const files = Array.from(e.dataTransfer.files || []);
+                    if (!files.length) return;
+                    setUploadingTzFile(true);
+                    let failed = 0;
+                    try {
+                      for (const file of files) {
+                        try {
+                          await api.uploadFile(o.id, file, "TZ");
+                        } catch {
+                          failed += 1;
+                        }
+                      }
+                      await loadOrder();
+                      if (failed > 0) alert(`Не удалось загрузить ${failed} файл(ов)`);
+                    } catch (err: any) {
+                      alert(err.response?.data?.error || "Ошибка загрузки");
+                    } finally {
+                      setUploadingTzFile(false);
+                    }
+                  }}
+                >
                   <p className="text-[10px] font-semibold text-ink-tertiary uppercase tracking-wide mb-2">Добавить к ТЗ</p>
+                  <p className="mb-2 text-xs text-ink-tertiary">
+                    Перетащи файлы прямо в эту область или загрузи их кнопкой. Всё, что попадёт сюда, останется во вкладке ТЗ.
+                  </p>
                   <textarea
                     value={tzText} onChange={(e) => setTzText(e.target.value)}
                     placeholder="Текст дополнения к ТЗ..."
@@ -509,7 +568,7 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                       Добавить
                     </button>
                     <button
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() => tzFileInputRef.current?.click()}
                       disabled={uploadingTzFile}
                       title="Прикрепить файл к ТЗ"
                       className="flex items-center gap-2 px-3 py-2 rounded-lg border border-bg-border text-ink-secondary text-sm hover:bg-bg-hover disabled:opacity-50 transition-colors">
@@ -556,11 +615,23 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                       </button>
                     )}
                     <input
-                      ref={fileInputRef} type="file" className="hidden"
+                      ref={tzFileInputRef} type="file" multiple className="hidden"
                       onChange={async (e) => {
-                        const file = e.target.files?.[0]; if (!file) return;
+                        const files = Array.from(e.target.files || []);
+                        if (!files.length) return;
                         setUploadingTzFile(true);
-                        try { await api.uploadFile(o.id, file, "TZ"); await loadOrder(); }
+                        let failed = 0;
+                        try {
+                          for (const file of files) {
+                            try {
+                              await api.uploadFile(o.id, file, "TZ");
+                            } catch {
+                              failed += 1;
+                            }
+                          }
+                          await loadOrder();
+                          if (failed > 0) alert(`Не удалось загрузить ${failed} файл(ов)`);
+                        }
                         catch (err: any) { alert(err.response?.data?.error || "Ошибка загрузки"); }
                         setUploadingTzFile(false); e.target.value = "";
                       }}
@@ -616,7 +687,36 @@ export default function OrderDetailModal({ order, onClose }: Props) {
 
           {/* FILES */}
           {tab === "files" && (
-            <div>
+            <div
+              className={`rounded-xl border p-3 transition-colors ${draggingFiles ? "border-green-500 bg-green-500/10" : "border-transparent"}`}
+              onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setDraggingFiles(true); }}
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDraggingFiles(true); }}
+              onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDraggingFiles(false); }}
+              onDrop={async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDraggingFiles(false);
+                const files = Array.from(e.dataTransfer.files || []);
+                if (!files.length) return;
+                setUploadingFile(true);
+                let failed = 0;
+                try {
+                  for (const file of files) {
+                    try {
+                      await api.uploadFile(o.id, file, uploadFileType);
+                    } catch {
+                      failed += 1;
+                    }
+                  }
+                  await loadOrder();
+                  if (failed > 0) alert(`Не удалось загрузить ${failed} файл(ов)`);
+                } catch (err: any) {
+                  alert(err.response?.data?.error || "Ошибка загрузки");
+                } finally {
+                  setUploadingFile(false);
+                }
+              }}
+            >
               <div className="flex items-center gap-2 mb-4 flex-wrap">
                 {/* Фильтр по типу */}
                 <select value={selectedFileType} onChange={(e) => setSelectedFileType(e.target.value as "all" | Exclude<FileBucket, "tz">)}
@@ -636,9 +736,13 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                       {uploadingFile ? <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" /> : <Upload size={14} />}
                       {uploadingFile ? "Загружаю..." : "Загрузить"}
                     </button>
-                    <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} />
+                    <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileUpload} />
                   </>
                 )}
+              </div>
+
+              <div className="mb-4 rounded-lg bg-bg-raised px-3 py-2 text-xs text-ink-tertiary">
+                Можно перетащить файлы прямо в эту область. Они загрузятся в выбранный тип без дополнительных окон.
               </div>
 
               {filteredFiles.length === 0 ? (

@@ -138,8 +138,8 @@ export default function GuidePage() {
                 {steps.slice(0, 8).map((step, index) => (
                   <div key={`${step.route}-${step.title}`} className="rounded-2xl border border-white/10 bg-white/5 p-4">
                     <div className="flex items-start gap-3">
-                      <div className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-2xl bg-white/10 text-lg">
-                        {step.emoji}
+                      <div className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-2xl bg-white/10 text-xs font-black text-green-300">
+                        {String(index + 1).padStart(2, "0")}
                       </div>
                       <div className="min-w-0">
                         <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Шаг {index + 1}</div>
