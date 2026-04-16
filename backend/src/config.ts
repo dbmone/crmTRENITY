@@ -31,6 +31,14 @@ export const config = {
     // Если true — файлы хранятся в Telegram вместо S3
     useAsTFileStorage: process.env.USE_TELEGRAM_STORAGE === "true",
     proxyUrl: process.env.TELEGRAM_PROXY_URL || "",
+    username: (process.env.BOT_USERNAME || "").replace(/^@/, ""),
+  },
+
+  telegramUserbot: {
+    apiId: parseInt(process.env.TELEGRAM_USERBOT_API_ID || "0"),
+    apiHash: process.env.TELEGRAM_USERBOT_API_HASH || "",
+    session: process.env.TELEGRAM_USERBOT_SESSION || "",
+    phone: process.env.TELEGRAM_USERBOT_PHONE || "",
   },
 
   admin: {

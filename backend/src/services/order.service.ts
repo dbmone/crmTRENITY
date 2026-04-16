@@ -1,5 +1,6 @@
 import { PrismaClient, OrderStatus, UserRole, StageName } from "@prisma/client";
 import { getRoles } from "./permissions.service";
+import { ensureOrderTelegramGroup, syncOrderTelegramParticipants } from "./order-group.service";
 
 const prisma = new PrismaClient();
 
@@ -133,7 +134,7 @@ export async function createOrder(input: CreateOrderInput, marketerId: string) {
     { name: StageName.COMPLETED, sortOrder: 5 },
   ];
 
-  return prisma.order.create({
+  const order = await prisma.order.create({
     data: {
       title: input.title,
       description: input.description,
@@ -144,6 +145,9 @@ export async function createOrder(input: CreateOrderInput, marketerId: string) {
     },
     include: orderInclude,
   });
+
+  void ensureOrderTelegramGroup(order.id);
+  return order;
 }
 
 // ===================== ОБНОВЛЕНИЕ =====================
@@ -274,6 +278,7 @@ export async function addCreator(
       : []),
   ]);
 
+  void syncOrderTelegramParticipants(orderId);
   return assignment;
 }
 

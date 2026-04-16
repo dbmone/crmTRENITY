@@ -11,6 +11,11 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { config } from "../config";
 import { randomUUID } from "crypto";
 import { uploadFileToStorage, forwardFileToUser } from "./telegram.service";
+import {
+  mirrorBufferFileToOrderGroup,
+  mirrorStoredTelegramMessageToOrderGroup,
+  mirrorTextNoteToOrderGroup,
+} from "./order-group.service";
 
 const prisma = new PrismaClient();
 
@@ -102,7 +107,7 @@ async function uploadFileViaTelegram(
   const caption = `📁 ${fileName}\n🗂 Заказ: ${orderLabel}\n👤 ${uploaderLabel}`;
   const tg = await uploadFileToStorage(fileBuffer, fileName, mimeType, caption);
 
-  return prisma.orderFile.create({
+  const created = await prisma.orderFile.create({
     data: {
       orderId,
       uploadedById,
@@ -119,6 +124,9 @@ async function uploadFileViaTelegram(
       uploadedBy: { select: { id: true, displayName: true, telegramUsername: true } },
     },
   });
+
+  await mirrorStoredTelegramMessageToOrderGroup(orderId, tg.chatId, tg.messageId).catch(() => {});
+  return created;
 }
 
 async function uploadFileViaS3(
@@ -141,12 +149,16 @@ async function uploadFileViaS3(
     Metadata: { "original-name": encodeURIComponent(fileName) },
   }));
 
-  return prisma.orderFile.create({
+  const created = await prisma.orderFile.create({
     data: { orderId, uploadedById, fileType, fileName, fileSize: BigInt(fileBuffer.length), mimeType, storagePath },
     include: {
       uploadedBy: { select: { id: true, displayName: true, telegramUsername: true } },
     },
   });
+
+  const uploaderLabel = created.uploadedBy.displayName || created.uploadedBy.telegramUsername || "Кто-то";
+  await mirrorBufferFileToOrderGroup(orderId, fileBuffer, fileName, mimeType, `Файл от ${uploaderLabel}`).catch(() => {});
+  return created;
 }
 
 // ─── DOWNLOAD / SEND ─────────────────────────────────────────────────────────
@@ -270,7 +282,7 @@ export async function createTelegramFile(
 
 // Добавить текстовую заметку к ТЗ (без TG-хранилища, только в БД)
 export async function addTzTextNote(orderId: string, uploadedById: string, text: string) {
-  return prisma.orderFile.create({
+  const created = await prisma.orderFile.create({
     data: {
       orderId,
       uploadedById,
@@ -284,6 +296,10 @@ export async function addTzTextNote(orderId: string, uploadedById: string, text:
       uploadedBy: { select: { id: true, displayName: true, telegramUsername: true } },
     },
   });
+
+  const authorName = created.uploadedBy.displayName || created.uploadedBy.telegramUsername || "Кто-то";
+  await mirrorTextNoteToOrderGroup(orderId, authorName, text, true).catch(() => {});
+  return created;
 }
 
 // Отправить всё ТЗ заказа пачкой в Telegram пользователя

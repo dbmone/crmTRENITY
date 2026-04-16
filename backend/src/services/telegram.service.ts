@@ -87,10 +87,65 @@ export async function forwardFileToUser(
 }
 
 // Отправить текстовое уведомление пользователю
-export async function sendMessageToUser(chatId: string, text: string): Promise<void> {
-  await tgFetch(`${getTG()}/sendMessage`, {
+export async function copyMessageToChat(
+  telegramChatId: string,
+  fromChatId: string,
+  messageId: number
+): Promise<void> {
+  const res = await tgFetch(`${getTG()}/copyMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: telegramChatId,
+      from_chat_id: fromChatId,
+      message_id: messageId,
+    }),
+  });
+  const data: any = await res.json();
+  if (!data.ok) throw new Error(`Telegram API error: ${data.description}`);
+}
+
+export async function sendTextToChat(chatId: string, text: string): Promise<void> {
+  const res = await tgFetch(`${getTG()}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: "Markdown" }),
   });
+  const data: any = await res.json();
+  if (!data.ok) throw new Error(`Telegram API error: ${data.description}`);
+}
+
+export async function sendBufferToChat(
+  chatId: string,
+  buffer: Buffer,
+  fileName: string,
+  mimeType: string,
+  caption?: string
+): Promise<void> {
+  const method = mimeType.startsWith("image/")
+    ? "sendPhoto"
+    : mimeType.startsWith("video/")
+    ? "sendVideo"
+    : "sendDocument";
+  const field = method === "sendPhoto" ? "photo" : method === "sendVideo" ? "video" : "document";
+
+  const formData = new FormData();
+  formData.append("chat_id", chatId);
+  formData.append(field, buffer, {
+    filename: fileName,
+    contentType: mimeType,
+  });
+  if (caption) formData.append("caption", caption);
+
+  const res = await tgFetch(`${getTG()}/${method}`, {
+    method: "POST",
+    headers: formData.getHeaders() as any,
+    body: formData as any,
+  });
+  const data: any = await res.json();
+  if (!data.ok) throw new Error(`Telegram API error: ${data.description}`);
+}
+
+export async function sendMessageToUser(chatId: string, text: string): Promise<void> {
+  await sendTextToChat(chatId, text);
 }

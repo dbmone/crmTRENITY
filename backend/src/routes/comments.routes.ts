@@ -1,6 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { PrismaClient } from "@prisma/client";
 import { notifyComment } from "../services/notification.service";
+import { mirrorCommentToOrderGroup } from "../services/order-group.service";
 
 const prisma = new PrismaClient();
 
@@ -44,6 +45,8 @@ export async function commentsRoutes(app: FastifyInstance) {
       .filter((id) => id !== req.currentUser.id);
 
     await notifyComment(order.id, order.title, author?.displayName || "Кто-то", [...new Set(recipientIds)], text.trim());
+
+    await mirrorCommentToOrderGroup(order.id, author?.displayName || "Кто-то", text.trim()).catch(() => {});
 
     return reply.status(201).send(comment);
   });

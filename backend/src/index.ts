@@ -24,6 +24,7 @@ import { tasksRoutes } from "./routes/tasks.routes";
 import { settingsRoutes } from "./routes/settings.routes";
 import { loadPermissions } from "./services/permissions.service";
 import { PrismaClient } from "@prisma/client";
+import { startOrderGroupSyncLoop } from "./services/order-group.service";
 
 const prisma = new PrismaClient();
 
@@ -80,6 +81,14 @@ async function ensureSchema() {
       ADD COLUMN IF NOT EXISTS "telegram_file_id" TEXT,
       ADD COLUMN IF NOT EXISTS "telegram_chat_id" TEXT,
       ADD COLUMN IF NOT EXISTS "telegram_msg_id"  INTEGER
+  `);
+
+  await runSql("orders telegram group columns", `
+    ALTER TABLE "orders"
+      ADD COLUMN IF NOT EXISTS "telegram_group_chat_id" BIGINT,
+      ADD COLUMN IF NOT EXISTS "telegram_group_title" TEXT,
+      ADD COLUMN IF NOT EXISTS "telegram_group_invite_link" TEXT,
+      ADD COLUMN IF NOT EXISTS "telegram_group_created_at" TIMESTAMP(3)
   `);
 
   // 5. Default для storage_path
@@ -261,6 +270,7 @@ async function start() {
     }
 
     startScheduler();
+    await startOrderGroupSyncLoop();
     await loadPermissions();
     console.log("✅ Permissions loaded");
 

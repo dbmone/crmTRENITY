@@ -75,6 +75,10 @@ model Order {
   deadline      DateTime?
   reminderDays  Int         @default(2) @map("reminder_days")
   marketerId    String      @map("marketer_id")
+  telegramGroupChatId    BigInt?   @map("telegram_group_chat_id")
+  telegramGroupTitle     String?   @map("telegram_group_title")
+  telegramGroupInviteLink String?  @map("telegram_group_invite_link")
+  telegramGroupCreatedAt DateTime? @map("telegram_group_created_at")
   createdAt     DateTime    @default(now()) @map("created_at")
   updatedAt     DateTime    @updatedAt @map("updated_at")
 
