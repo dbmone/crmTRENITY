@@ -108,6 +108,50 @@ function Mockup({ variant }: { variant?: string }) {
     );
   }
 
+  if (variant === "archive") {
+    return (
+      <div className={`${card} p-5`}>
+        <div className="mb-3 flex items-center justify-between">
+          <div className="h-3 w-28 rounded-full bg-white/15" />
+          <div className="rounded-full bg-slate-600/50 px-3 py-1 text-xs text-slate-300">ARCHIVED</div>
+        </div>
+        <div className="space-y-2">
+          {[0, 1, 2, 3].map((row) => (
+            <div key={row} className="flex items-center gap-3 rounded-2xl bg-white/5 p-3 opacity-60">
+              <div className="h-8 w-8 rounded-xl bg-white/10" />
+              <div className="flex-1">
+                <div className="h-2.5 w-32 rounded-full bg-white/15" />
+                <div className="mt-2 h-2 w-20 rounded-full bg-white/10" />
+              </div>
+              <div className="h-2 w-16 rounded-full bg-white/10" />
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 rounded-2xl border border-dashed border-slate-600/40 bg-white/3 p-3 text-center text-xs text-slate-400">
+          Архив — завершённые заказы
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === "permissions") {
+    return (
+      <div className={`${card} p-5`}>
+        <div className="mb-3 h-3 w-24 rounded-full bg-white/15" />
+        <div className="space-y-2">
+          {[["Создать заказ", true], ["Назначить роль", false], ["Просмотр файлов", true], ["Архивировать", false], ["Управление пользователями", true]].map(([label, active]) => (
+            <div key={String(label)} className="flex items-center justify-between rounded-2xl bg-white/7 px-4 py-3">
+              <span className="text-xs text-slate-300">{String(label)}</span>
+              <div className={`h-5 w-9 rounded-full ${active ? "bg-green-400/70" : "bg-white/15"} relative`}>
+                <div className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${active ? "left-4" : "left-0.5"}`} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   if (variant === "dashboard" || variant === "bot-report") {
     return (
       <div className={`${card} p-5`}>
@@ -202,7 +246,7 @@ export default function GuideTour({ steps, onFinish, onSkip, roleLabel }: Props)
             disabled={busy || index === 0}
             className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Prev
+            Назад
           </button>
           {isLast ? (
             <button
@@ -220,7 +264,7 @@ export default function GuideTour({ steps, onFinish, onSkip, roleLabel }: Props)
               disabled={busy}
               className="rounded-2xl bg-green-400 px-5 py-3 text-sm font-black text-slate-950 transition hover:bg-green-300 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Next
+              Далее
             </button>
           )}
         </div>
