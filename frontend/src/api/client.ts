@@ -353,6 +353,15 @@ export async function deleteSubtask(taskId: string, subtaskId: string): Promise<
   await api.delete(`/tasks/${taskId}/subtasks/${subtaskId}`);
 }
 
+export async function voiceStructureToTz(orderId: string, blob: Blob, ext: string): Promise<{ text: string; rawText: string }> {
+  const form = new FormData();
+  form.append("audio", blob, `voice.${ext}`);
+  const { data } = await api.post(`/orders/${orderId}/files/tz-voice-structure`, form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
 export async function parseVoiceTask(blob: Blob, ext: string): Promise<ParsedTask> {
   const form = new FormData();
   form.append("audio", blob, `voice.${ext}`);

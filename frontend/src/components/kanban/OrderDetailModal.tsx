@@ -94,12 +94,18 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   const editFileInputRef = useRef<HTMLInputElement>(null);
 
   // TZ tab
-  const [tzText,        setTzText]        = useState("");
-  const [addingTzNote,  setAddingTzNote]  = useState(false);
+  const [tzText,          setTzText]          = useState("");
+  const [addingTzNote,    setAddingTzNote]    = useState(false);
   const [uploadingTzFile, setUploadingTzFile] = useState(false);
-  const [recording,    setRecording]    = useState(false);
-  const [transcribing, setTranscribing] = useState(false);
-  const [sendingTzToTg, setSendingTzToTg] = useState(false);
+  const [recording,       setRecording]       = useState(false);
+  const [transcribing,    setTranscribing]    = useState(false);
+  const [sendingTzToTg,   setSendingTzToTg]   = useState(false);
+  // Voice → TZ structuring preview
+  const [tzAiRecording,   setTzAiRecording]   = useState(false);
+  const [tzAiStructuring, setTzAiStructuring] = useState(false);
+  const [tzAiPreview,     setTzAiPreview]     = useState<{ text: string; rawText: string } | null>(null);
+  const tzAiRecorderRef  = useRef<MediaRecorder | null>(null);
+  const tzAiChunksRef    = useRef<BlobPart[]>([]);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef   = useRef<BlobPart[]>([]);
 
@@ -206,6 +212,39 @@ export default function OrderDetailModal({ order, onClose }: Props) {
     try { await api.submitReport(o.id, reportText.trim()); setReportText(""); await loadOrder(); }
     catch (err: any) { alert(err.response?.data?.error || "Ошибка"); }
     setSendingReport(false);
+  };
+
+  const startTzAiRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      tzAiRecorderRef.current = mr;
+      tzAiChunksRef.current = [];
+      mr.ondataavailable = (e) => { if (e.data.size > 0) tzAiChunksRef.current.push(e.data); };
+      mr.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(tzAiChunksRef.current, { type: mr.mimeType });
+        setTzAiStructuring(true);
+        try {
+          const ext = mr.mimeType.includes("webm") ? "webm" : mr.mimeType.includes("ogg") ? "ogg" : "mp4";
+          const result = await api.voiceStructureToTz(o.id, blob, ext);
+          setTzAiPreview(result);
+        } catch (e: any) {
+          alert(e.response?.data?.error || "Ошибка структурирования. Проверьте GROQ_API_KEY.");
+        } finally {
+          setTzAiStructuring(false);
+        }
+      };
+      mr.start();
+      setTzAiRecording(true);
+    } catch {
+      alert("Нет доступа к микрофону.");
+    }
+  };
+
+  const stopTzAiRecording = () => {
+    tzAiRecorderRef.current?.stop();
+    setTzAiRecording(false);
   };
 
   const startRecording = async () => {
@@ -486,6 +525,26 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                         🎙 Голос
                       </button>
                     )}
+                    {/* Голос → Структурированное ТЗ через LLM */}
+                    {tzAiRecording ? (
+                      <button
+                        onClick={stopTzAiRecording}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-purple-500/40 text-purple-400 text-sm bg-purple-500/10 animate-pulse">
+                        ⏹ Стоп
+                      </button>
+                    ) : tzAiStructuring ? (
+                      <button disabled className="flex items-center gap-2 px-3 py-2 rounded-lg border border-purple-500/20 text-purple-400 text-sm opacity-70">
+                        <div className="w-3 h-3 border-2 border-purple-400/30 border-t-purple-400 rounded-full animate-spin" />
+                        AI думает...
+                      </button>
+                    ) : (
+                      <button
+                        onClick={startTzAiRecording}
+                        title="Записать голос — AI структурирует в готовое ТЗ"
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-purple-500/30 text-purple-400 text-sm hover:bg-purple-500/10 transition-colors">
+                        🪄 Голос → ТЗ
+                      </button>
+                    )}
                     <input
                       ref={fileInputRef} type="file" className="hidden"
                       onChange={async (e) => {
@@ -689,6 +748,65 @@ export default function OrderDetailModal({ order, onClose }: Props) {
           )}
         </div>
       </div>
+
+      {/* ── TZ AI Preview Modal ── */}
+      {tzAiPreview && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80" onClick={() => setTzAiPreview(null)} />
+          <div className="relative bg-bg-surface border border-purple-500/30 rounded-2xl shadow-modal w-full max-w-lg max-h-[80vh] flex flex-col">
+            <div className="p-4 border-b border-bg-border flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-ink-primary flex items-center gap-2">
+                  🪄 Структурированное ТЗ
+                </h3>
+                <p className="text-[10px] text-ink-tertiary mt-0.5">Отредактируй если нужно и сохрани</p>
+              </div>
+              <button onClick={() => setTzAiPreview(null)} className="p-1.5 rounded-lg hover:bg-bg-raised text-ink-tertiary">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-4 flex-1 overflow-y-auto">
+              <textarea
+                value={tzAiPreview.text}
+                onChange={(e) => setTzAiPreview({ ...tzAiPreview, text: e.target.value })}
+                rows={14}
+                className="w-full px-3 py-2.5 rounded-lg border border-bg-border bg-bg-raised text-sm text-ink-primary outline-none focus:border-purple-500/50 resize-none transition-colors"
+              />
+              {tzAiPreview.rawText !== tzAiPreview.text && (
+                <details className="mt-2">
+                  <summary className="text-[10px] text-ink-tertiary cursor-pointer hover:text-ink-secondary">Исходная расшифровка</summary>
+                  <p className="text-[11px] text-ink-tertiary mt-1 whitespace-pre-wrap">{tzAiPreview.rawText}</p>
+                </details>
+              )}
+            </div>
+            <div className="p-4 border-t border-bg-border flex justify-end gap-2">
+              <button onClick={() => setTzAiPreview(null)}
+                className="px-4 py-2 rounded-lg border border-bg-border text-sm text-ink-secondary hover:bg-bg-raised transition-colors">
+                Отмена
+              </button>
+              <button
+                onClick={async () => {
+                  if (!tzAiPreview.text.trim()) return;
+                  setAddingTzNote(true);
+                  try {
+                    await api.addTzNote(o.id, tzAiPreview.text.trim());
+                    setTzAiPreview(null);
+                    await loadOrder();
+                  } catch (e: any) { alert(e.response?.data?.error || "Ошибка"); }
+                  setAddingTzNote(false);
+                }}
+                disabled={addingTzNote || !tzAiPreview.text.trim()}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-purple-500 text-white text-sm font-bold hover:bg-purple-400 disabled:opacity-50 transition-colors"
+              >
+                {addingTzNote
+                  ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  : <Plus size={13} />}
+                Сохранить в ТЗ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

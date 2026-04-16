@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { FileType, UserRole } from "@prisma/client";
 import { uploadFile, getDownloadUrl, deleteFile, getOrderFiles, sendFileToUserTelegram, addTzTextNote, sendTzBundleToTelegram } from "../services/file.service";
 import { transcribeAudio } from "../services/stt.service";
+import { structureToTz } from "../services/task.service";
 import { config } from "../config";
 
 const FILE_TYPE_ALIASES: Record<string, FileType> = {
@@ -41,6 +42,22 @@ export async function filesRoutes(app: FastifyInstance) {
       const file = await addTzTextNote(req.params.orderId, req.currentUser.id, text.trim());
       return reply.status(201).send(file);
     } catch (err: any) { return reply.status(err.statusCode || 500).send({ error: err.message }); }
+  });
+
+  // Голос → структурированное ТЗ (STT + LLM)
+  // Возвращает { text, rawText } — text это готовое ТЗ, rawText — исходная расшифровка
+  app.post<{ Params: { orderId: string } }>("/tz-voice-structure", async (req, reply) => {
+    const data = await req.file();
+    if (!data) return reply.status(400).send({ error: "Аудиофайл не прикреплён" });
+    const chunks: Buffer[] = [];
+    for await (const chunk of data.file) chunks.push(chunk);
+    try {
+      const rawText = await transcribeAudio(Buffer.concat(chunks), data.filename || "voice.ogg");
+      const text    = await structureToTz(rawText);
+      return { text, rawText };
+    } catch (err: any) {
+      return reply.status(err.statusCode || 500).send({ error: err.message });
+    }
   });
 
   // Расшифровка голосового → текст (Groq Whisper, бесплатно)

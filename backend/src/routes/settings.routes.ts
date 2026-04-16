@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
-import { getAllSettings, upsertSetting, DEFAULT_TASK_PROMPT } from "../services/settings.service";
+import { getAllSettings, upsertSetting, DEFAULT_TASK_PROMPT, DEFAULT_TZ_PROMPT } from "../services/settings.service";
 
-const ALLOWED_KEYS = ["task_parse_prompt"];
+const ALLOWED_KEYS = ["task_parse_prompt", "tz_structure_prompt"];
 
 export async function settingsRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
@@ -14,7 +14,8 @@ export async function settingsRoutes(app: FastifyInstance) {
     }
     const settings = await getAllSettings();
     return {
-      task_parse_prompt: settings.task_parse_prompt ?? DEFAULT_TASK_PROMPT,
+      task_parse_prompt:  settings.task_parse_prompt  ?? DEFAULT_TASK_PROMPT,
+      tz_structure_prompt: settings.tz_structure_prompt ?? DEFAULT_TZ_PROMPT,
     };
   });
 
@@ -47,7 +48,8 @@ export async function settingsRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Неизвестный ключ настройки" });
     }
     const defaults: Record<string, string> = {
-      task_parse_prompt: DEFAULT_TASK_PROMPT,
+      task_parse_prompt:   DEFAULT_TASK_PROMPT,
+      tz_structure_prompt: DEFAULT_TZ_PROMPT,
     };
     await upsertSetting(req.params.key, defaults[req.params.key], req.currentUser.id);
     return { success: true, value: defaults[req.params.key] };

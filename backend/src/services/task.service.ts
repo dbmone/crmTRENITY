@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { transcribeAudio } from "./stt.service";
-import { getSetting, DEFAULT_TASK_PROMPT } from "./settings.service";
+import { getSetting, DEFAULT_TASK_PROMPT, DEFAULT_TZ_PROMPT } from "./settings.service";
 import { proxyFetch } from "../utils/proxy-fetch";
 
 const prisma = new PrismaClient();
@@ -127,6 +127,64 @@ export async function parseVoiceToTask(buffer: Buffer, filename: string): Promis
 
   // Fallback — просто текст
   return { title: rawText.slice(0, 80), rawText, priority: "MEDIUM", subtasks: [] };
+}
+
+/**
+ * Структурирует расшифрованный текст в ТЗ через LLM.
+ * Возвращает форматированный текст (не JSON).
+ * Если LLM недоступен — возвращает rawText как есть.
+ */
+export async function structureToTz(rawText: string): Promise<string> {
+  const g4fUrl  = process.env.G4F_API_URL?.trim();
+  const groqKey = process.env.GROQ_API_KEY?.trim();
+  if (!g4fUrl && !groqKey) return rawText;
+
+  const template = (await getSetting("tz_structure_prompt")) ?? DEFAULT_TZ_PROMPT;
+  const prompt = template.replace("{{TEXT}}", rawText);
+
+  const sysMsg = "Ты помощник по созданию технических заданий. Отвечай только структурированным текстом, без лишних слов.";
+
+  if (g4fUrl) {
+    try {
+      const res = await fetch(`${g4fUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: process.env.G4F_MODEL?.trim() || "gpt-4o-mini",
+          messages: [{ role: "system", content: sysMsg }, { role: "user", content: prompt }],
+          temperature: 0.3,
+          max_tokens: 1200,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json() as any;
+        return (data.choices[0].message.content as string).trim();
+      }
+      console.warn("G4F TZ failed:", res.status);
+    } catch (e: any) { console.warn("G4F TZ error:", e.message); }
+  }
+
+  if (groqKey) {
+    try {
+      const res = await proxyFetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${groqKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: GROQ_LLM_MODEL,
+          messages: [{ role: "system", content: sysMsg }, { role: "user", content: prompt }],
+          temperature: 0.3,
+          max_tokens: 1200,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json() as any;
+        return (data.choices[0].message.content as string).trim();
+      }
+      console.warn("Groq TZ failed:", res.status);
+    } catch (e: any) { console.warn("Groq TZ error:", e.message); }
+  }
+
+  return rawText; // fallback
 }
 
 export async function getTasksForUser(userId: string) {
