@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import crypto from "crypto";
 import http from 'http';
 import { ProxyAgent } from "proxy-agent";
+const nodeFetch = require("node-fetch") as typeof fetch;
 dotenv.config({ path: "../.env" });
 dotenv.config();
 
@@ -33,7 +34,7 @@ const bot = new Bot(BOT_TOKEN, telegramProxyAgent ? {
     fetch: (
       input: Parameters<typeof fetch>[0],
       init?: Parameters<typeof fetch>[1]
-    ) => fetch(input, { ...init, agent: telegramProxyAgent as any } as any),
+    ) => nodeFetch(input as any, { ...init, agent: telegramProxyAgent as any } as any) as any,
   },
 } : undefined);
 const prisma = new PrismaClient();
