@@ -129,6 +129,65 @@ export async function filesRoutes(app: FastifyInstance) {
 export async function filesGlobalRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
 
+  // ── Streaming endpoint для видео/аудио (без addHook — своя auth через query token) ──
+  app.get<{ Params: { fileId: string }; Querystring: { token?: string } }>(
+    "/:fileId/stream",
+    { preHandler: [] },          // override — не применяем app.authenticate
+    async (req, reply) => {
+      // Аутентификация через query-параметр (нужно для <video src="...">)
+      const token = (req.query as any).token as string | undefined;
+      if (!token) return reply.status(401).send({ error: "Не авторизован" });
+      try {
+        const payload = await (app as any).jwt.verify(token) as { status: string };
+        if (payload.status !== "APPROVED") {
+          return reply.status(403).send({ error: "Доступ запрещён" });
+        }
+      } catch {
+        return reply.status(401).send({ error: "Недействительный токен" });
+      }
+
+      try {
+        const file = await getFileContentStream(req.params.fileId);
+        const totalSize = file.fileSize !== null && file.fileSize !== undefined
+          ? Number(file.fileSize)
+          : null;
+
+        reply.header("Content-Type", file.mimeType);
+        reply.header("Accept-Ranges", "bytes");
+        reply.header("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(file.fileName)}`);
+
+        const rangeHeader = req.headers.range;
+        if (rangeHeader && totalSize) {
+          // Парсим Range: bytes=start-end
+          const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+          if (match) {
+            const start = parseInt(match[1], 10);
+            const end   = match[2] ? parseInt(match[2], 10) : Math.min(start + 1024 * 1024 - 1, totalSize - 1);
+            const chunkSize = end - start + 1;
+
+            reply.status(206);
+            reply.header("Content-Range",  `bytes ${start}-${end}/${totalSize}`);
+            reply.header("Content-Length", String(chunkSize));
+
+            // Для TG файлов нельзя сделать partial — скачиваем весь файл и режем
+            // Для S3 в идеале использовать Range-запрос к S3, но для совместимости делаем так же
+            const chunks: Buffer[] = [];
+            for await (const chunk of file.stream as AsyncIterable<Buffer>) {
+              chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+            }
+            const fullBuffer = Buffer.concat(chunks);
+            return reply.send(fullBuffer.slice(start, end + 1));
+          }
+        }
+
+        if (totalSize) reply.header("Content-Length", String(totalSize));
+        return reply.send(file.stream);
+      } catch (err: any) {
+        return reply.status(err.statusCode || 500).send({ error: err.message });
+      }
+    }
+  );
+
   app.get<{ Params: { fileId: string } }>("/:fileId/content", async (req, reply) => {
     try {
       const file = await getFileContentStream(req.params.fileId);

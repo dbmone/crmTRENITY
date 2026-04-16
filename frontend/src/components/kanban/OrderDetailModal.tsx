@@ -19,6 +19,7 @@ type UploadItem = {
   size: number;
   progress: number;
   state: UploadState;
+  errorMsg?: string;
 };
 
 const FILE_BUCKET_LABELS: Record<FileBucket, string> = {
@@ -52,10 +53,11 @@ const NON_TZ_UPLOAD_OPTIONS: Array<{ value: Exclude<UploadFileType, "TZ">; label
 ];
 
 function getFileBucket(file: Pick<OrderFile, "fileType" | "mimeType">): FileBucket {
-  if (file.fileType === "TZ" || file.mimeType === "text/plain") return "tz";
-  if (file.fileType === "CONTRACT") return "contract";
-  if (file.fileType === "STORYBOARD") return "storyboard";
-  if (file.fileType === "VIDEO_DRAFT" || file.fileType === "VIDEO_FINAL") return "video";
+  const ft = file.fileType?.toUpperCase();
+  if (ft === "TZ" || file.mimeType === "text/plain") return "tz";
+  if (ft === "CONTRACT") return "contract";
+  if (ft === "STORYBOARD") return "storyboard";
+  if (ft === "VIDEO_DRAFT" || ft === "VIDEO_FINAL") return "video";
   return "other";
 }
 
@@ -118,7 +120,7 @@ function UploadProgressList({
                 }
               >
                 {item.state === "error"
-                  ? "Ошибка"
+                  ? (item.errorMsg || "Ошибка")
                   : item.state === "done"
                     ? "Готово"
                     : item.state === "canceled"
@@ -195,12 +197,16 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
   // TZ tab
   const [tzText,          setTzText]          = useState("");
   const [addingTzNote,    setAddingTzNote]    = useState(false);
+  const [tzExtraTexts,    setTzExtraTexts]    = useState<string[]>([]);
+  const [savingTzExtra,   setSavingTzExtra]   = useState<boolean[]>([]);
   const [uploadingTzFile, setUploadingTzFile] = useState(false);
   const [tzUploadProgress, setTzUploadProgress] = useState<number | null>(null);
   const [tzUploadItems, setTzUploadItems] = useState<UploadItem[]>([]);
   const [draggingTz,      setDraggingTz]      = useState(false);
   const [recording,       setRecording]       = useState(false);
   const [transcribing,    setTranscribing]    = useState(false);
+  const [voicePreview,    setVoicePreview]    = useState<string | null>(null);
+  const [savingVoiceNote, setSavingVoiceNote] = useState(false);
   const [sendingTzToTg,   setSendingTzToTg]   = useState(false);
   // Voice → TZ structuring preview
   const [tzAiRecording,   setTzAiRecording]   = useState(false);
@@ -290,9 +296,18 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
     let failed = 0;
     const items = startUploadItems(files, setItems);
 
+    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+
     for (let index = 0; index < files.length; index += 1) {
       const file = files[index];
       const item = items[index];
+
+      if (file.size > MAX_FILE_SIZE) {
+        failed += 1;
+        updateUploadItem(item.key, setItems, { state: "error", errorMsg: "Слишком большой (макс. 50 МБ)" });
+        continue;
+      }
+
       try {
         await api.uploadFile(orderId, file, fileType, {
           signal,
@@ -501,7 +516,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
         try {
           const ext = mr.mimeType.includes("webm") ? "webm" : mr.mimeType.includes("ogg") ? "ogg" : "mp4";
           const { text } = await api.transcribeVoice(o.id, blob, ext);
-          setTzText((prev) => prev ? `${prev}\n${text}` : text);
+          setVoicePreview(text);
         } catch (e: any) {
           alert(e.response?.data?.message || e.response?.data?.error || "Ошибка расшифровки. Проверьте GROQ_API_KEY.");
         } finally {
@@ -768,7 +783,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
                     rows={3}
                     className="w-full text-sm bg-bg-surface border border-bg-border rounded-lg p-2.5 text-ink-primary placeholder-ink-tertiary outline-none focus:border-green-500/50 resize-none transition-colors"
                   />
-                  <div className="flex items-center gap-2 mt-2">
+                  <div className="flex items-center gap-2 mt-2 flex-wrap">
                     <button
                       onClick={async () => {
                         if (!tzText.trim()) return;
@@ -784,6 +799,12 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
                       className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500 text-black text-sm font-bold hover:bg-green-400 disabled:opacity-50 transition-colors">
                       {addingTzNote ? <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" /> : <Plus size={13} />}
                       Добавить
+                    </button>
+                    <button
+                      onClick={() => { setTzExtraTexts((p) => [...p, ""]); setSavingTzExtra((p) => [...p, false]); }}
+                      title="Добавить ещё одно текстовое поле для доп. заметки к ТЗ"
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-bg-border text-ink-secondary text-sm hover:bg-bg-hover transition-colors">
+                      <Plus size={13} /> Доп. поле
                     </button>
                     <button
                       onClick={() => tzFileInputRef.current?.click()}
@@ -843,6 +864,85 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
                       }}
                     />
                   </div>
+                  {/* Голосовой черновик — выбор действия */}
+                  {voicePreview !== null && (
+                    <div className="mt-3 p-3 rounded-lg border border-amber-500/30 bg-amber-500/5">
+                      <p className="text-[10px] text-amber-400 font-medium uppercase tracking-wide mb-2">Расшифровка голоса</p>
+                      <p className="text-sm text-ink-primary whitespace-pre-wrap break-words mb-3">{voicePreview}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          onClick={() => { setTzText((prev) => prev ? `${prev}\n${voicePreview}` : voicePreview!); setVoicePreview(null); }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 text-sm hover:bg-green-500/20 transition-colors">
+                          <Plus size={12} /> В основное поле
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (!voicePreview) return;
+                            setSavingVoiceNote(true);
+                            try {
+                              await api.addTzNote(o.id, voicePreview);
+                              setVoicePreview(null);
+                              await loadOrder();
+                            } catch (e: any) { alert(e.response?.data?.error || "Ошибка"); }
+                            setSavingVoiceNote(false);
+                          }}
+                          disabled={savingVoiceNote}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm hover:bg-blue-500/20 disabled:opacity-50 transition-colors">
+                          {savingVoiceNote ? <div className="w-3.5 h-3.5 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin" /> : <Plus size={12} />}
+                          Доп. заметка
+                        </button>
+                        <button
+                          onClick={() => setVoicePreview(null)}
+                          className="px-3 py-1.5 rounded-lg border border-bg-border text-ink-tertiary text-sm hover:text-red-400 hover:border-red-500/20 transition-colors">
+                          Отмена
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Дополнительные текстовые поля */}
+                  {tzExtraTexts.map((text, i) => (
+                    <div key={i} className="mt-3 p-3 rounded-lg border border-bg-border bg-bg-surface/50">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[10px] text-ink-tertiary font-medium uppercase tracking-wide">Доп. заметка {i + 1}</span>
+                        <button
+                          onClick={() => {
+                            setTzExtraTexts((p) => p.filter((_, j) => j !== i));
+                            setSavingTzExtra((p) => p.filter((_, j) => j !== i));
+                          }}
+                          className="text-ink-tertiary hover:text-red-400 transition-colors p-0.5"
+                          title="Убрать поле"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        </button>
+                      </div>
+                      <textarea
+                        value={text}
+                        onChange={(e) => setTzExtraTexts((p) => p.map((v, j) => j === i ? e.target.value : v))}
+                        placeholder="Текст доп. заметки..."
+                        rows={3}
+                        className="w-full text-sm bg-bg-surface border border-bg-border rounded-lg p-2.5 text-ink-primary placeholder-ink-tertiary outline-none focus:border-blue-500/50 resize-none transition-colors"
+                      />
+                      <button
+                        onClick={async () => {
+                          if (!text.trim()) return;
+                          setSavingTzExtra((p) => p.map((v, j) => j === i ? true : v));
+                          try {
+                            await api.addTzNote(o.id, text.trim());
+                            setTzExtraTexts((p) => p.filter((_, j) => j !== i));
+                            setSavingTzExtra((p) => p.filter((_, j) => j !== i));
+                            await loadOrder();
+                          } catch (e: any) { alert(e.response?.data?.error || "Ошибка"); }
+                          setSavingTzExtra((p) => p.map((v, j) => j === i ? false : v));
+                        }}
+                        disabled={!text.trim() || savingTzExtra[i]}
+                        className="flex items-center gap-2 mt-2 px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm hover:bg-blue-500/20 disabled:opacity-50 transition-colors">
+                        {savingTzExtra[i] ? <div className="w-3.5 h-3.5 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin" /> : <Plus size={12} />}
+                        Сохранить в ТЗ
+                      </button>
+                    </div>
+                  ))}
+
                   <UploadProgressList
                     items={tzUploadItems}
                     title="Загрузка файлов в ТЗ"

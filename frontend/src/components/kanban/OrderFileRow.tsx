@@ -22,10 +22,11 @@ const FILE_BUCKET_COLORS: Record<FileBucket, string> = {
 };
 
 function getFileBucket(file: Pick<OrderFile, "fileType" | "mimeType">): FileBucket {
-  if (file.fileType === "TZ" || file.mimeType === "text/plain") return "tz";
-  if (file.fileType === "CONTRACT") return "contract";
-  if (file.fileType === "STORYBOARD") return "storyboard";
-  if (file.fileType === "VIDEO_DRAFT" || file.fileType === "VIDEO_FINAL") return "video";
+  const ft = file.fileType?.toUpperCase();
+  if (ft === "TZ" || file.mimeType === "text/plain") return "tz";
+  if (ft === "CONTRACT") return "contract";
+  if (ft === "STORYBOARD") return "storyboard";
+  if (ft === "VIDEO_DRAFT" || ft === "VIDEO_FINAL") return "video";
   return "other";
 }
 
@@ -58,8 +59,12 @@ export default function OrderFileRow({
   const isAudioPreview = file.mimeType?.startsWith("audio/");
   const canPreview = isImagePreview || isVideoPreview || isAudioPreview;
 
+  // Видео и аудио используют прямой стриминговый URL (поддерживает Range, нет загрузки в память)
+  const streamUrl = (isVideoPreview || isAudioPreview) ? api.getFileStreamUrl(file.id) : null;
+
+  // Для картинок — blob (как раньше)
   useEffect(() => {
-    if (!previewOpen || previewUrl || !canPreview) return;
+    if (!previewOpen || previewUrl || !isImagePreview) return;
     let disposed = false;
     let objectUrl: string | null = null;
 
@@ -84,7 +89,7 @@ export default function OrderFileRow({
       disposed = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [canPreview, file.id, previewOpen, previewUrl]);
+  }, [isImagePreview, file.id, previewOpen, previewUrl]);
 
   useEffect(() => {
     return () => {
@@ -258,16 +263,26 @@ export default function OrderFileRow({
 
       {previewOpen && canPreview && (
         <div className="mt-3 rounded-lg border border-bg-border bg-bg-base/60 p-2">
-          {previewLoading && !previewUrl ? (
+          {isVideoPreview ? (
+            <video
+              src={streamUrl!}
+              controls
+              preload="metadata"
+              className="w-full max-h-80 rounded-lg bg-black"
+              onError={() => alert("Не удалось воспроизвести видео")}
+            />
+          ) : isAudioPreview ? (
+            <audio
+              src={streamUrl!}
+              controls
+              preload="metadata"
+              className="w-full"
+              onError={() => alert("Не удалось воспроизвести аудио")}
+            />
+          ) : previewLoading && !previewUrl ? (
             <div className="flex items-center justify-center py-8 text-xs text-ink-tertiary">Загружаю превью...</div>
           ) : previewUrl ? (
-            isImagePreview ? (
-              <img src={previewUrl} alt={file.fileName} className="w-full max-h-80 object-contain rounded-lg bg-black/20" />
-            ) : isVideoPreview ? (
-              <video src={previewUrl} controls preload="metadata" className="w-full max-h-80 rounded-lg bg-black" />
-            ) : (
-              <audio src={previewUrl} controls preload="metadata" className="w-full" />
-            )
+            <img src={previewUrl} alt={file.fileName} className="w-full max-h-80 object-contain rounded-lg bg-black/20" />
           ) : null}
         </div>
       )}

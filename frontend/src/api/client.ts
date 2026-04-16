@@ -158,6 +158,13 @@ export async function getFileContent(fileId: string): Promise<Blob> {
   return data;
 }
 
+/** Прямой URL для <video src> / <audio src> — токен в query-параметре, поддерживает Range */
+export function getFileStreamUrl(fileId: string): string {
+  const token = localStorage.getItem("token") ?? "";
+  const base = (api.defaults.baseURL ?? "/api").replace(/\/$/, "");
+  return `${base}/files/${fileId}/stream?token=${encodeURIComponent(token)}`;
+}
+
 export async function sendFileToTelegram(fileId: string) {
   const { data } = await api.post(`/files/${fileId}/send-to-tg`);
   return data as { success: boolean; message: string };

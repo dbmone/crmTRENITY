@@ -1,4 +1,4 @@
-import { Bot, InlineKeyboard } from "grammy";
+import { Bot, InlineKeyboard, Keyboard } from "grammy";
 import { PrismaClient, UserRole, UserStatus, NotificationType } from "@prisma/client";
 import dotenv from "dotenv";
 import crypto from "crypto";
@@ -139,6 +139,23 @@ function formatRole(role: UserRole): string {
 
 const MARKETER_ROLES: UserRole[] = [UserRole.ADMIN, UserRole.HEAD_MARKETER, UserRole.MARKETER];
 const STORAGE_CHAT_ID = process.env.TELEGRAM_STORAGE_CHAT_ID || "";
+const panelMessageIds = new Map<number, number>();
+const replyKeyboardChats = new Set<number>();
+
+const MENU_TEXT = {
+  menu: "📋 Меню",
+  pin: "🔑 Мой PIN",
+  orders: "📋 Мои заказы",
+  profile: "👤 Профиль",
+  report: "📝 Отправить отчёт",
+  notifications: "🔔 Уведомления",
+  tasks: "🗂 Мои задачи",
+  createOrder: "➕ Создать заказ",
+  upload: "📎 Загрузить файл",
+  admin: "⚙️ Панель управления",
+  status: "⏳ Статус заявки",
+  site: "🌐 Открыть сайт",
+} as const;
 
 function mainMenuKeyboard(status: UserStatus, role?: UserRole): InlineKeyboard {
   const kb = new InlineKeyboard();
@@ -165,6 +182,46 @@ function mainMenuKeyboard(status: UserStatus, role?: UserRole): InlineKeyboard {
 function withFrontendLink(kb: InlineKeyboard): InlineKeyboard {
   if (FRONTEND_URL) kb.row().url("🌐 Открыть сайт", FRONTEND_URL);
   return kb;
+}
+
+function mainReplyKeyboard(status: UserStatus, role?: UserRole) {
+  const kb = new Keyboard();
+
+  if (status === "APPROVED") {
+    kb.text(MENU_TEXT.menu).text(MENU_TEXT.orders).row();
+    kb.text(MENU_TEXT.tasks).text(MENU_TEXT.profile).row();
+    kb.text(MENU_TEXT.pin).text(MENU_TEXT.notifications).row();
+    kb.text(MENU_TEXT.report).text(MENU_TEXT.upload).row();
+    if (role && MARKETER_ROLES.includes(role)) {
+      kb.text(MENU_TEXT.createOrder).row();
+    }
+    if (role && ADMIN_ROLES.includes(role)) {
+      kb.text(MENU_TEXT.admin).row();
+    }
+    if (FRONTEND_URL) {
+      kb.text(MENU_TEXT.site).row();
+    }
+    kb.text("/menu").text("/tasks").text("/pin");
+    if (role && ADMIN_ROLES.includes(role)) kb.text("/admin");
+  } else if (status === "PENDING") {
+    kb.text(MENU_TEXT.status);
+    if (FRONTEND_URL) kb.text(MENU_TEXT.site);
+    kb.row().text("/start");
+  } else {
+    kb.text("/start");
+  }
+
+  return kb.resized().persistent();
+}
+
+async function ensureReplyKeyboard(ctx: any, status: UserStatus, role?: UserRole) {
+  if (ctx.chat?.type !== "private") return;
+  const chatId = Number(ctx.chat.id);
+  if (replyKeyboardChats.has(chatId)) return;
+  await ctx.reply("⌨️ Быстрые кнопки включены.", {
+    reply_markup: mainReplyKeyboard(status, role),
+  });
+  replyKeyboardChats.add(chatId);
 }
 
 // ==================== /start — РЕГИСТРАЦИЯ / ВХОД ====================
@@ -232,7 +289,9 @@ bot.command("start", async (ctx) => {
       ? "❌ Ваша заявка была отклонена."
       : "🚫 Ваш аккаунт заблокирован.";
 
-    await ctx.reply(
+    await ensureReplyKeyboard(ctx, existing.status, existing.role);
+    await replyOrEdit(
+      ctx,
       `👋 ${existing.displayName}!\n\n${statusText}\nРоль: ${formatRole(existing.role)}`,
       { parse_mode: "Markdown", reply_markup: withFrontendLink(mainMenuKeyboard(existing.status, existing.role)) }
     );
@@ -244,7 +303,8 @@ bot.command("start", async (ctx) => {
     .text("🎬 Креатор", "reg_CREATOR")
     .text("📋 Маркетолог", "reg_MARKETER");
 
-  await ctx.reply(
+  await replyOrEdit(
+    ctx,
     `👋 Добро пожаловать в *TRENITY CRM*!\n\n` +
     `Для начала работы нужно подать заявку.\n` +
     `Выберите вашу роль:`,
@@ -319,7 +379,7 @@ bot.callbackQuery("show_pin", async (ctx) => {
     return;
   }
   await ctx.answerCallbackQuery();
-  await ctx.reply(`🔑 Ваш PIN-код: \`${user.pinCode}\`\n\nИспользуйте для входа на сайт.`, { parse_mode: "Markdown" });
+  await sendPinPanel(ctx, user);
 });
 
 // Сменить PIN
@@ -334,7 +394,10 @@ bot.callbackQuery("change_pin", async (ctx) => {
   await prisma.user.update({ where: { id: user.id }, data: { pinCode: newPin } });
 
   await ctx.answerCallbackQuery("PIN изменён!");
-  await ctx.reply(`✅ Новый PIN-код: \`${newPin}\``, { parse_mode: "Markdown" });
+  await replyOrEdit(ctx, `✅ Новый PIN-код: \`${newPin}\``, {
+    parse_mode: "Markdown",
+    reply_markup: withFrontendLink(new InlineKeyboard().text("🔙 В меню", "back_menu")),
+  });
 });
 
 // Статус заявки
@@ -343,53 +406,20 @@ bot.callbackQuery("check_status", async (ctx) => {
   await ctx.answerCallbackQuery();
 
   if (!user) {
-    await ctx.reply("Вы не зарегистрированы. Нажмите /start");
+    await replyOrEdit(ctx, "Вы не зарегистрированы. Нажмите /start", {
+      reply_markup: withFrontendLink(new InlineKeyboard().text("🔙 Назад", "back_menu")),
+    });
     return;
   }
-
-  const statusText: Record<string, string> = {
-    PENDING: "⏳ На рассмотрении. Дождитесь одобрения.",
-    APPROVED: "✅ Одобрено! Используйте /start чтобы получить PIN.",
-    REJECTED: "❌ Отклонена. Свяжитесь с администратором.",
-    BLOCKED: "🚫 Заблокирован.",
-  };
-
-  await ctx.reply(statusText[user.status] || user.status);
+  await sendStatusPanel(ctx, user);
 });
 
 // Профиль
 bot.callbackQuery("my_profile", async (ctx) => {
-  const user = await prisma.user.findUnique({
-    where: { telegramId: BigInt(ctx.from!.id) },
-    include: {
-      teamLead: { select: { displayName: true, telegramUsername: true } },
-      _count: { select: { assignments: true, createdOrders: true } },
-    },
-  });
-
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
   if (!user) { await ctx.answerCallbackQuery("Не найден"); return; }
   await ctx.answerCallbackQuery();
-
-  let text = `👤 *Ваш профиль*\n\n` +
-    `Имя: ${user.displayName}\n` +
-    `Telegram: @${user.telegramUsername || "—"}\n` +
-    `Роль: ${formatRole(user.role)}\n` +
-    `Статус: ${user.status}\n`;
-
-  if (user.teamLead) {
-    text += `Тимлид: ${user.teamLead.displayName} (@${user.teamLead.telegramUsername || "—"})\n`;
-  }
-
-  if (user.avatarUrl) {
-    text += `Avatar URL: ${user.avatarUrl}\n`;
-  }
-
-  text += `\nЗаказов создано: ${user._count.createdOrders}\n`;
-  text += `Назначений: ${user._count.assignments}\n`;
-  text += `Зарегистрирован: ${user.createdAt.toLocaleDateString("ru-RU")}`;
-
-  const kb = new InlineKeyboard().text("✏️ Изменить имя", "edit_name").text("🔙 Меню", "back_menu");
-  await replyOrEdit(ctx, text, { parse_mode: "Markdown", reply_markup: kb });
+  await sendProfilePanel(ctx, BigInt(ctx.from!.id));
 });
 
 // Мои заказы
@@ -444,10 +474,7 @@ bot.callbackQuery("tasks_menu", async (ctx) => {
   const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
   if (!user || user.status !== "APPROVED") { await ctx.answerCallbackQuery("Недоступно"); return; }
   await ctx.answerCallbackQuery();
-  await replyOrEdit(ctx, await getTaskMenuText(user.id), {
-    parse_mode: "Markdown",
-    reply_markup: taskMenuKeyboard(),
-  });
+  await sendTaskMenuPanel(ctx, user);
 });
 
 bot.callbackQuery(/^tsk_list_(\d+)$/, async (ctx) => {
@@ -623,28 +650,7 @@ bot.callbackQuery("my_orders", async (ctx) => {
   const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
   if (!user) { await ctx.answerCallbackQuery("Не найден"); return; }
   await ctx.answerCallbackQuery();
-
-  const where = getOrderScopeWhere(user);
-
-  const [total, orders] = await Promise.all([
-    prisma.order.count({ where }),
-    prisma.order.findMany({
-      where,
-      orderBy: { updatedAt: "desc" },
-      take: ORDER_PAGE_SIZE,
-      select: { id: true, title: true, status: true },
-    }),
-  ]);
-
-  if (orders.length === 0) {
-    await ctx.reply("📭 Нет активных заказов.");
-    return;
-  }
-
-  await replyOrEdit(ctx, `📋 *Ваши заказы* (${total})`, {
-    parse_mode: "Markdown",
-    reply_markup: orderListKeyboard(orders, 0, total),
-  });
+  await sendOrdersPanel(ctx, user, 0);
 });
 
 bot.callbackQuery(/^ord_list_(\d+)$/, async (ctx) => {
@@ -798,7 +804,7 @@ bot.callbackQuery(/^ord_fadd_(.+)$/, async (ctx) => {
   const order = await fetchOrderForBot(ctx.match![1]);
   if (!user || !order || !canUploadToOrder(user, order)) { await ctx.answerCallbackQuery("No access"); return; }
   await ctx.answerCallbackQuery();
-  await ctx.reply("Выберите тип файла:", {
+  await replyOrEdit(ctx, "Выберите тип файла:", {
     reply_markup: fileTypePickerKeyboard(order.id, `ord_files_${order.id}`, false),
   });
 });
@@ -832,7 +838,9 @@ bot.callbackQuery(/^ord_tztext_(.+)$/, async (ctx) => {
   if (!user || !order || !canUploadToOrder(user, order)) { await ctx.answerCallbackQuery("No access"); return; }
   waitingForTzNote.set(ctx.from!.id, order.id);
   await ctx.answerCallbackQuery();
-  await ctx.reply(`📝 Пришлите текст для ТЗ по заказу «${order.title}».`);
+  await replyOrEdit(ctx, `📝 Пришлите текст для ТЗ по заказу «${order.title}».`, {
+    reply_markup: new InlineKeyboard().text("🔙 К заказу", `ord_open_${order.id}`),
+  });
 });
 
 bot.callbackQuery(/^ord_tzvoice_(.+)$/, async (ctx) => {
@@ -841,7 +849,9 @@ bot.callbackQuery(/^ord_tzvoice_(.+)$/, async (ctx) => {
   if (!user || !order || !canUploadToOrder(user, order)) { await ctx.answerCallbackQuery("No access"); return; }
   waitingForTzVoice.set(ctx.from!.id, order.id);
   await ctx.answerCallbackQuery();
-  await ctx.reply(`🎙 Отправьте голосовое, и я превращу его в структурированное ТЗ для «${order.title}».`);
+  await replyOrEdit(ctx, `🎙 Отправьте голосовое, и я превращу его в структурированное ТЗ для «${order.title}».`, {
+    reply_markup: new InlineKeyboard().text("🔙 К заказу", `ord_open_${order.id}`),
+  });
 });
 
 bot.callbackQuery("tz_vdraft_ok", async (ctx) => {
@@ -893,7 +903,9 @@ bot.callbackQuery(/^ord_cadd_(.+)$/, async (ctx) => {
   if (!order) { await ctx.answerCallbackQuery("Заказ не найден"); return; }
   waitingForOrderComment.set(ctx.from!.id, order.id);
   await ctx.answerCallbackQuery();
-  await ctx.reply(`✍️ Напишите комментарий к заказу «${order.title}».`);
+  await replyOrEdit(ctx, `✍️ Напишите комментарий к заказу «${order.title}».`, {
+    reply_markup: new InlineKeyboard().text("🔙 К заказу", `ord_open_${order.id}`),
+  });
 });
 
 bot.callbackQuery(/^ord_sstart_(.+)$/, async (ctx) => {
@@ -1061,7 +1073,7 @@ bot.callbackQuery("back_menu", async (ctx) => {
   const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
   await ctx.answerCallbackQuery();
   if (!user) return;
-  await replyOrEdit(ctx, "📋 Главное меню:", { reply_markup: mainMenuKeyboard(user.status, user.role) });
+  await sendHomePanel(ctx, user);
 });
 
 // ==================== УВЕДОМЛЕНИЯ ====================
@@ -1070,32 +1082,7 @@ bot.callbackQuery("my_notifs", async (ctx) => {
   const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
   if (!user || user.status !== "APPROVED") { await ctx.answerCallbackQuery("Недоступно"); return; }
   await ctx.answerCallbackQuery();
-
-  const notifs = await prisma.notification.findMany({
-    where: { userId: user.id },
-    orderBy: { createdAt: "desc" },
-    take: 10,
-  });
-
-  const unread = notifs.filter((n: any) => !n.isRead).length;
-  let text = `🔔 *Уведомления*`;
-  if (unread > 0) text += ` (${unread} новых)`;
-
-  if (!notifs.length) {
-    text += `\n\nУведомлений нет.`;
-  } else {
-    for (const n of notifs) {
-      const dot = n.isRead ? "•" : "🔴";
-      const date = new Date(n.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
-      text += `\n\n${dot} _${date}_\n${esc(n.message)}`;
-    }
-  }
-
-  const kb = new InlineKeyboard();
-  if (unread > 0) kb.text("✅ Прочитать все", "notifs_read_all").row();
-  kb.text("🔙 В меню", "back_menu");
-
-  await replyOrEdit(ctx, text, { parse_mode: "Markdown", reply_markup: kb });
+  await sendNotificationsPanel(ctx, user);
 });
 
 bot.callbackQuery("notifs_read_all", async (ctx) => {
@@ -1284,10 +1271,232 @@ async function replyOrEdit(ctx: any, text: string, extra: Record<string, any>) {
   if (ctx.callbackQuery?.message) {
     try {
       await ctx.editMessageText(text, extra);
+      if (ctx.chat?.type === "private") {
+        panelMessageIds.set(Number(ctx.chat.id), ctx.callbackQuery.message.message_id);
+      }
       return;
     } catch {}
   }
-  await ctx.reply(text, extra);
+
+  if (ctx.chat?.type === "private") {
+    const chatId = Number(ctx.chat.id);
+    const currentPanelId = panelMessageIds.get(chatId);
+    if (currentPanelId) {
+      try {
+        await bot.api.editMessageText(chatId, currentPanelId, text, extra as any);
+        return;
+      } catch {
+        // Редактирование не удалось — удаляем старое сообщение перед отправкой нового
+        try { await bot.api.deleteMessage(chatId, currentPanelId); } catch {}
+        panelMessageIds.delete(chatId);
+      }
+    }
+  }
+
+  const sent = await ctx.reply(text, extra);
+  if (ctx.chat?.type === "private" && sent?.message_id) {
+    panelMessageIds.set(Number(ctx.chat.id), sent.message_id);
+  }
+}
+
+function clearInteractiveState(userId: number) {
+  waitingForReport.delete(userId);
+  waitingForName.delete(userId);
+  waitingForOrderTitle.delete(userId);
+  waitingForTaskTitle.delete(userId);
+  waitingForTaskVoice.delete(userId);
+  waitingForSubtaskForTask.delete(userId);
+  waitingForOrderComment.delete(userId);
+  waitingForTzNote.delete(userId);
+  waitingForTzVoice.delete(userId);
+  taskVoiceDraft.delete(userId);
+  tzVoiceDraft.delete(userId);
+  collectingState.delete(userId);
+}
+
+async function sendHomePanel(ctx: any, user: any) {
+  await ensureReplyKeyboard(ctx, user.status, user.role);
+  await replyOrEdit(ctx, "📋 Главное меню:", {
+    reply_markup: withFrontendLink(mainMenuKeyboard(user.status, user.role)),
+  });
+}
+
+async function sendPinPanel(ctx: any, user: any) {
+  if (!user.pinCode) {
+    await sendHomePanel(ctx, user);
+    return;
+  }
+  await replyOrEdit(ctx, `🔑 Ваш PIN: \`${user.pinCode}\``, {
+    parse_mode: "Markdown",
+    reply_markup: withFrontendLink(new InlineKeyboard().text("🔙 В меню", "back_menu")),
+  });
+}
+
+async function sendStatusPanel(ctx: any, user: any) {
+  const statusText: Record<string, string> = {
+    APPROVED: "✅ Вы одобрены и можете пользоваться CRM.",
+    PENDING: "⏳ Ваша заявка ещё на рассмотрении.",
+    REJECTED: "❌ Заявка отклонена.",
+    BLOCKED: "🚫 Аккаунт заблокирован.",
+  };
+  await replyOrEdit(ctx, statusText[user.status] || user.status, {
+    reply_markup: withFrontendLink(mainMenuKeyboard(user.status, user.role)),
+  });
+}
+
+async function sendProfilePanel(ctx: any, telegramId: bigint) {
+  const user = await prisma.user.findUnique({
+    where: { telegramId },
+    include: {
+      teamLead: { select: { displayName: true, telegramUsername: true } },
+      _count: { select: { assignments: true, createdOrders: true } },
+    },
+  });
+
+  if (!user) return null;
+
+  let text = `👤 *Ваш профиль*\n\n` +
+    `Имя: ${user.displayName}\n` +
+    `Telegram: @${user.telegramUsername || "—"}\n` +
+    `Роль: ${formatRole(user.role)}\n` +
+    `Статус: ${user.status}\n`;
+
+  if (user.teamLead) {
+    text += `Тимлид: ${user.teamLead.displayName} (@${user.teamLead.telegramUsername || "—"})\n`;
+  }
+
+  if (user.avatarUrl) {
+    text += `Avatar URL: ${user.avatarUrl}\n`;
+  }
+
+  text += `\nЗаказов создано: ${user._count.createdOrders}\n`;
+  text += `Назначений: ${user._count.assignments}\n`;
+  text += `Зарегистрирован: ${user.createdAt.toLocaleDateString("ru-RU")}`;
+
+  const kb = new InlineKeyboard().text("✏️ Изменить имя", "edit_name").text("🔙 Меню", "back_menu");
+  await replyOrEdit(ctx, text, { parse_mode: "Markdown", reply_markup: kb });
+  return user;
+}
+
+async function sendTaskMenuPanel(ctx: any, user: any) {
+  await replyOrEdit(ctx, await getTaskMenuText(user.id), {
+    parse_mode: "Markdown",
+    reply_markup: taskMenuKeyboard(),
+  });
+}
+
+async function sendOrdersPanel(ctx: any, user: any, page = 0) {
+  const where = getOrderScopeWhere(user);
+  const [total, orders] = await Promise.all([
+    prisma.order.count({ where }),
+    prisma.order.findMany({
+      where,
+      orderBy: { updatedAt: "desc" },
+      skip: page * ORDER_PAGE_SIZE,
+      take: ORDER_PAGE_SIZE,
+      select: { id: true, title: true, status: true },
+    }),
+  ]);
+
+  if (orders.length === 0) {
+    await replyOrEdit(ctx, "📭 Нет активных заказов.", {
+      reply_markup: withFrontendLink(mainMenuKeyboard(user.status, user.role)),
+    });
+    return;
+  }
+
+  await replyOrEdit(ctx, `📋 *Ваши заказы* (${total})`, {
+    parse_mode: "Markdown",
+    reply_markup: orderListKeyboard(orders, page, total),
+  });
+}
+
+async function sendUploadMenuPanel(ctx: any, user: any) {
+  const isMarketer = MARKETER_ROLES.includes(user.role);
+  const orders = await prisma.order.findMany({
+    where: isMarketer
+      ? { marketerId: user.id, status: { notIn: ["ARCHIVED"] } }
+      : { creators: { some: { creatorId: user.id } }, status: { notIn: ["ARCHIVED"] } },
+    select: { id: true, title: true },
+    orderBy: { updatedAt: "desc" },
+    take: 15,
+  });
+
+  if (orders.length === 0) {
+    await replyOrEdit(ctx, "📭 Нет активных заказов.", {
+      reply_markup: withFrontendLink(mainMenuKeyboard(user.status, user.role)),
+    });
+    return;
+  }
+
+  const kb = new InlineKeyboard();
+  for (const o of orders) kb.text(o.title.slice(0, 40), `upl_ord_${o.id}`).row();
+  kb.text("🔙 Отмена", "back_menu");
+  await replyOrEdit(ctx, "📎 *Загрузить файлы*\n\nВыберите заказ:", {
+    parse_mode: "Markdown",
+    reply_markup: kb,
+  });
+}
+
+async function sendNotificationsPanel(ctx: any, user: any) {
+  const notifs = await prisma.notification.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: "desc" },
+    take: 10,
+  });
+
+  const unread = notifs.filter((n: any) => !n.isRead).length;
+  let text = `🔔 *Уведомления*`;
+  if (unread > 0) text += ` (${unread} новых)`;
+
+  if (!notifs.length) {
+    text += `\n\nУведомлений нет.`;
+  } else {
+    for (const n of notifs) {
+      const dot = n.isRead ? "•" : "🔴";
+      const date = new Date(n.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+      text += `\n\n${dot} _${date}_\n${esc(n.message)}`;
+    }
+  }
+
+  const kb = new InlineKeyboard();
+  if (unread > 0) kb.text("✅ Прочитать все", "notifs_read_all").row();
+  kb.text("🔙 В меню", "back_menu");
+  await replyOrEdit(ctx, text, { parse_mode: "Markdown", reply_markup: kb });
+}
+
+async function sendReportPanel(ctx: any, user: any) {
+  const orders = await prisma.order.findMany({
+    where: { creators: { some: { creatorId: user.id } }, status: { in: ["IN_PROGRESS", "ON_REVIEW"] } },
+    select: { id: true, title: true },
+  });
+
+  if (orders.length === 0) {
+    await replyOrEdit(ctx, "📭 Нет активных заказов для отчёта.", {
+      reply_markup: withFrontendLink(mainMenuKeyboard(user.status, user.role)),
+    });
+    return;
+  }
+
+  if (orders.length === 1) {
+    waitingForReport.set(ctx.from!.id, orders[0].id);
+    await replyOrEdit(ctx, `📝 Отчёт по «${orders[0].title}»\n\nНапишите, что сделали сегодня:`, {
+      reply_markup: new InlineKeyboard().text("🔙 В меню", "back_menu"),
+    });
+    return;
+  }
+
+  const kb = new InlineKeyboard();
+  for (const o of orders) {
+    kb.text(o.title.slice(0, 40), `rpt_${o.id}`).row();
+  }
+  kb.text("🔙 В меню", "back_menu");
+  await replyOrEdit(ctx, "📝 Выберите заказ:", { reply_markup: kb });
+}
+
+async function sendFrontendLinkPanel(ctx: any, _user: any) {
+  const kb = withFrontendLink(new InlineKeyboard().text("🔙 В меню", "back_menu"));
+  await replyOrEdit(ctx, "🌐 Сайт открыт по кнопке ниже.", { reply_markup: kb });
 }
 
 async function getOrderGroupByChatId(chatId: number | string) {
@@ -1677,7 +1886,8 @@ async function sendOrderFileToChat(chatId: number, file: any) {
 async function startOrderFileCollection(ctx: any, orderId: string, targetFileType: string, promptTitle: string) {
   collectingState.set(ctx.from!.id, { mode: "attach_files", orderId, targetFileType, items: [] });
   const order = await prisma.order.findUnique({ where: { id: orderId }, select: { title: true } });
-  await ctx.reply(
+  await replyOrEdit(
+    ctx,
     `${promptTitle}: *${order?.title || orderId}*\n\nОтправляйте файлы, фото, видео, голосовые или текст. Когда закончите — нажмите Готово.`,
     { parse_mode: "Markdown", reply_markup: collectingKeyboard() }
   );
@@ -2060,28 +2270,7 @@ bot.callbackQuery("send_report", async (ctx) => {
   const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
   if (!user || user.status !== "APPROVED") { await ctx.answerCallbackQuery("Недоступно"); return; }
   await ctx.answerCallbackQuery();
-
-  const orders = await prisma.order.findMany({
-    where: { creators: { some: { creatorId: user.id } }, status: { in: ["IN_PROGRESS", "ON_REVIEW"] } },
-    select: { id: true, title: true },
-  });
-
-  if (orders.length === 0) {
-    await ctx.reply("📭 Нет активных заказов для отчёта.");
-    return;
-  }
-
-  if (orders.length === 1) {
-    waitingForReport.set(ctx.from!.id, orders[0].id);
-    await ctx.reply(`📝 Отчёт по «${orders[0].title}»\n\nНапишите, что сделали сегодня:`);
-    return;
-  }
-
-  const kb = new InlineKeyboard();
-  for (const o of orders) {
-    kb.text(o.title.slice(0, 40), `rpt_${o.id}`).row();
-  }
-  await ctx.reply("📝 Выберите заказ:", { reply_markup: kb });
+  await sendReportPanel(ctx, user);
 });
 
 bot.callbackQuery(/^rpt_(.+)$/, async (ctx) => {
@@ -2089,14 +2278,18 @@ bot.callbackQuery(/^rpt_(.+)$/, async (ctx) => {
   waitingForReport.set(ctx.from!.id, orderId);
   const order = await prisma.order.findUnique({ where: { id: orderId }, select: { title: true } });
   await ctx.answerCallbackQuery();
-  await ctx.reply(`📝 Отчёт по «${order?.title}»\n\nНапишите, что сделали:`);
+  await replyOrEdit(ctx, `📝 Отчёт по «${order?.title}»\n\nНапишите, что сделали:`, {
+    reply_markup: new InlineKeyboard().text("🔙 В меню", "back_menu"),
+  });
 });
 
 // Редактирование имени
 bot.callbackQuery("edit_name", async (ctx) => {
   waitingForName.add(ctx.from!.id);
   await ctx.answerCallbackQuery();
-  await ctx.reply("✏️ Введите новое имя:");
+  await replyOrEdit(ctx, "✏️ Введите новое имя:", {
+    reply_markup: new InlineKeyboard().text("🔙 В меню", "back_menu"),
+  });
 });
 
 // ==================== СОЗДАНИЕ ЗАКАЗА ====================
@@ -2109,7 +2302,8 @@ bot.callbackQuery("create_order", async (ctx) => {
   }
   await ctx.answerCallbackQuery();
   waitingForOrderTitle.set(ctx.from!.id, true);
-  await ctx.reply(
+  await replyOrEdit(
+    ctx,
     "➕ *Создание заказа*\n\nВведите название заказа:",
     { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("❌ Отмена", "tz_cancel") }
   );
@@ -2181,18 +2375,18 @@ bot.callbackQuery("tz_done", async (ctx) => {
       ? `✅ Материалы добавлены в ТЗ заказа *${orderTitle}*!`
       : `✅ Файлы типа *${targetTypeLabel}* добавлены к заказу *${orderTitle}*!`;
 
-  await ctx.reply(
+  await replyOrEdit(
+    ctx,
     `${what}\n📎 Прикреплено: ${state.items.length} элем.`,
-    { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(user.status, user.role) }
+    { parse_mode: "Markdown", reply_markup: withFrontendLink(mainMenuKeyboard(user.status, user.role)) }
   );
 });
 
 bot.callbackQuery("tz_cancel", async (ctx) => {
-  collectingState.delete(ctx.from!.id);
-  waitingForOrderTitle.delete(ctx.from!.id);
+  clearInteractiveState(ctx.from!.id);
   await ctx.answerCallbackQuery("Отменено");
   const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
-  if (user) await ctx.reply("📋 Меню:", { reply_markup: mainMenuKeyboard(user.status, user.role) });
+  if (user) await sendHomePanel(ctx, user);
 });
 
 // ==================== ЗАГРУЗКА ФАЙЛА ====================
@@ -2201,26 +2395,7 @@ bot.callbackQuery("upload_file_menu", async (ctx) => {
   const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
   if (!user || user.status !== "APPROVED") { await ctx.answerCallbackQuery("Недоступно"); return; }
   await ctx.answerCallbackQuery();
-
-  const isMarketer = MARKETER_ROLES.includes(user.role);
-  const orders = await prisma.order.findMany({
-    where: isMarketer
-      ? { marketerId: user.id, status: { notIn: ["ARCHIVED"] } }
-      : { creators: { some: { creatorId: user.id } }, status: { notIn: ["ARCHIVED"] } },
-    select: { id: true, title: true },
-    orderBy: { updatedAt: "desc" },
-    take: 15,
-  });
-
-  if (orders.length === 0) {
-    await replyOrEdit(ctx, "📭 Нет активных заказов.", { reply_markup: mainMenuKeyboard(user.status, user.role) });
-    return;
-  }
-
-  const kb = new InlineKeyboard();
-  for (const o of orders) kb.text(o.title.slice(0, 40), `upl_ord_${o.id}`).row();
-  kb.text("🔙 Отмена", "back_menu");
-  await replyOrEdit(ctx, "📎 *Загрузить файлы*\n\nВыберите заказ:", { parse_mode: "Markdown", reply_markup: kb });
+  await sendUploadMenuPanel(ctx, user);
 });
 
 bot.callbackQuery(/^upl_ord_(.+)$/, async (ctx) => {
@@ -2245,6 +2420,66 @@ bot.callbackQuery(/^upl_type_(.+)_(TZ|CONTRACT|STORYBOARD|VIDEO_DRAFT|VIDEO_FINA
     fileType,
     fileType === "TZ" ? "📝 Добавление в ТЗ" : `📎 ${fileTypeLabel(fileType)}`
   );
+});
+
+bot.hears(Object.values(MENU_TEXT), async (ctx) => {
+  if (ctx.chat?.type !== "private") return;
+
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user) {
+    await ctx.reply("Нажмите /start чтобы начать");
+    return;
+  }
+
+  clearInteractiveState(ctx.from!.id);
+  await ensureReplyKeyboard(ctx, user.status, user.role);
+
+  switch (ctx.message?.text) {
+    case MENU_TEXT.menu:
+      await sendHomePanel(ctx, user);
+      return;
+    case MENU_TEXT.pin:
+      await sendPinPanel(ctx, user);
+      return;
+    case MENU_TEXT.orders:
+      if (user.status === "APPROVED") await sendOrdersPanel(ctx, user, 0);
+      return;
+    case MENU_TEXT.profile:
+      if (user.status === "APPROVED") await sendProfilePanel(ctx, BigInt(ctx.from!.id));
+      return;
+    case MENU_TEXT.report:
+      if (user.status === "APPROVED") await sendReportPanel(ctx, user);
+      return;
+    case MENU_TEXT.notifications:
+      if (user.status === "APPROVED") await sendNotificationsPanel(ctx, user);
+      return;
+    case MENU_TEXT.tasks:
+      if (user.status === "APPROVED") await sendTaskMenuPanel(ctx, user);
+      return;
+    case MENU_TEXT.createOrder:
+      if (user.status === "APPROVED" && MARKETER_ROLES.includes(user.role)) {
+        waitingForOrderTitle.set(ctx.from!.id, true);
+        await replyOrEdit(ctx, "➕ *Создание заказа*\n\nВведите название заказа:", {
+          parse_mode: "Markdown",
+          reply_markup: new InlineKeyboard().text("❌ Отмена", "tz_cancel"),
+        });
+      }
+      return;
+    case MENU_TEXT.upload:
+      if (user.status === "APPROVED") await sendUploadMenuPanel(ctx, user);
+      return;
+    case MENU_TEXT.admin:
+      if (user.status === "APPROVED" && ADMIN_ROLES.includes(user.role)) {
+        await sendAdminPanel(ctx, user);
+      }
+      return;
+    case MENU_TEXT.status:
+      await sendStatusPanel(ctx, user);
+      return;
+    case MENU_TEXT.site:
+      await sendFrontendLinkPanel(ctx, user);
+      return;
+  }
 });
 
 bot.on("message:text", async (ctx, next) => {
@@ -2305,7 +2540,7 @@ bot.on("message:text", async (ctx, next) => {
     const text = await getTaskDetailText(task.id, user.id);
     const kb = await taskDetailKeyboard(task.id, user.id);
     if (text && kb) {
-      await ctx.reply(text, { parse_mode: "Markdown", reply_markup: kb });
+      await replyOrEdit(ctx, text, { parse_mode: "Markdown", reply_markup: kb });
     }
     return;
   }
@@ -2342,7 +2577,7 @@ bot.on("message:text", async (ctx, next) => {
     const text = await getTaskDetailText(task.id, user.id);
     const kb = await taskDetailKeyboard(task.id, user.id);
     if (text && kb) {
-      await ctx.reply(text, { parse_mode: "Markdown", reply_markup: kb });
+      await replyOrEdit(ctx, text, { parse_mode: "Markdown", reply_markup: kb });
     }
     return;
   }
@@ -2404,7 +2639,7 @@ bot.on("message:text", async (ctx, next) => {
     const kb = new InlineKeyboard()
       .text("✍️ Написать", `ord_cadd_${refreshedOrder.id}`).row()
       .text("🔙 К заказу", `ord_open_${refreshedOrder.id}`);
-    await ctx.reply(commentsText, { parse_mode: "Markdown", reply_markup: kb });
+    await replyOrEdit(ctx, commentsText, { parse_mode: "Markdown", reply_markup: kb });
     return;
   }
 
@@ -2442,7 +2677,7 @@ bot.on("message:text", async (ctx, next) => {
       return;
     }
     const tzFiles = getTzFiles(order);
-    await ctx.reply(buildOrderFilesText(order, tzFiles, "📋 *ТЗ*", "Материалов ТЗ пока нет."), {
+    await replyOrEdit(ctx, buildOrderFilesText(order, tzFiles, "📋 *ТЗ*", "Материалов ТЗ пока нет."), {
       parse_mode: "Markdown",
       reply_markup: buildOrderFilesKeyboard(
         order.id,
@@ -2463,7 +2698,8 @@ bot.on("message:text", async (ctx, next) => {
     }
     waitingForOrderTitle.delete(userId);
     collectingState.set(userId, { mode: "create_order", title, items: [] });
-    await ctx.reply(
+    await replyOrEdit(
+      ctx,
       `📋 Название: *${title}*\n\n` +
       `Теперь отправляйте всё для ТЗ:\n` +
       `• Текстовые сообщения\n• Файлы, фото, видео\n• Пересланные сообщения\n\n` +
@@ -2490,7 +2726,8 @@ bot.on("message:text", async (ctx, next) => {
         mimeType: "text/plain",
         storageMsgId: fwd.message_id,
       });
-      await ctx.reply(
+      await replyOrEdit(
+        ctx,
         `📩 Добавлено (${state.items.length} эл.). Продолжайте или нажмите Готово:`,
         { reply_markup: collectingKeyboard() }
       );
@@ -2517,7 +2754,7 @@ bot.on("message:text", async (ctx, next) => {
       create: { orderId, creatorId: user.id, reportText: ctx.message.text, reportDate: today },
     });
 
-    await ctx.reply("✅ Отчёт сохранён! 💪", {
+    await replyOrEdit(ctx, "✅ Отчёт сохранён! 💪", {
       reply_markup: new InlineKeyboard().text("🔙 Меню", "back_menu"),
     });
     return;
@@ -2526,7 +2763,7 @@ bot.on("message:text", async (ctx, next) => {
   // Неизвестное сообщение — предлагаем меню
   const user = await prisma.user.findUnique({ where: { telegramId: BigInt(userId) } });
   if (user) {
-    await ctx.reply("Используйте кнопки меню:", { reply_markup: mainMenuKeyboard(user.status, user.role) });
+    await sendHomePanel(ctx, user);
   } else {
     await ctx.reply("Нажмите /start чтобы начать");
   }
@@ -2645,7 +2882,8 @@ async function handleFileMessage(ctx: any, info: FileInfo) {
             fileSize:  0,
             mimeType:  "text/plain",
           });
-          await ctx.reply(
+          await replyOrEdit(
+            ctx,
             `🎙 Голосовое добавлено (${state.items.length - 1} эл.)\n\n📝 Расшифровка:\n_${esc(transcription)}_\n\nПродолжайте или нажмите Готово:`,
             { parse_mode: "Markdown", reply_markup: collectingKeyboard() }
           );
@@ -2654,7 +2892,8 @@ async function handleFileMessage(ctx: any, info: FileInfo) {
       }
 
       const typeLabel = info.mimeType === "audio/ogg" ? "🎙 Голосовое" : "📎 Файл";
-      await ctx.reply(
+      await replyOrEdit(
+        ctx,
         `${typeLabel} добавлен (${state.items.length} эл.). Продолжайте или нажмите Готово:`,
         { reply_markup: collectingKeyboard() }
       );
@@ -2667,9 +2906,10 @@ async function handleFileMessage(ctx: any, info: FileInfo) {
   // Нет активного состояния — подсказываем
   const user = await prisma.user.findUnique({ where: { telegramId: BigInt(userId) } });
   if (user) {
-    await ctx.reply(
+    await replyOrEdit(
+      ctx,
       "Чтобы прикрепить файл к заказу, используйте кнопку 📎 Загрузить файл:",
-      { reply_markup: mainMenuKeyboard(user.status, user.role) }
+      { reply_markup: withFrontendLink(mainMenuKeyboard(user.status, user.role)) }
     );
   }
 }
@@ -2731,7 +2971,7 @@ bot.on("message:voice", async (ctx) => {
     let preview = `🎙 *Черновик ТЗ из голоса*\n\n${esc(draft.text)}`;
     preview += `\n\n*Расшифровка:*\n_${esc(draft.rawText)}_`;
 
-    await ctx.reply(preview, {
+    await replyOrEdit(ctx, preview, {
       parse_mode: "Markdown",
       reply_markup: new InlineKeyboard()
         .text("✅ Сохранить в ТЗ", "tz_vdraft_ok")
@@ -2764,7 +3004,7 @@ bot.on("message:voice", async (ctx) => {
     }
     preview += `\n\n*Расшифровка:*\n_${esc(draft.rawText)}_`;
 
-    await ctx.reply(preview, {
+    await replyOrEdit(ctx, preview, {
       parse_mode: "Markdown",
       reply_markup: new InlineKeyboard()
         .text("✅ Создать", "tsk_voice_ok")
@@ -3235,13 +3475,14 @@ bot.command("pin", async (ctx) => {
     await ctx.reply("PIN не доступен. Используйте /start");
     return;
   }
-  await ctx.reply(`🔑 Ваш PIN: \`${user.pinCode}\``, { parse_mode: "Markdown" });
+  await ensureReplyKeyboard(ctx, user.status, user.role);
+  await sendPinPanel(ctx, user);
 });
 
 bot.command("menu", async (ctx) => {
   const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
   if (!user) { await ctx.reply("Нажмите /start"); return; }
-  await ctx.reply("📋 Меню:", { reply_markup: mainMenuKeyboard(user.status, user.role) });
+  await sendHomePanel(ctx, user);
 });
 
 // ==================== ОТПРАВКА УВЕДОМЛЕНИЙ ИЗ ОЧЕРЕДИ ====================
@@ -3252,10 +3493,29 @@ bot.command("tasks", async (ctx) => {
     await ctx.reply("Нажмите /start чтобы начать");
     return;
   }
-  await ctx.reply(await getTaskMenuText(user.id), {
-    parse_mode: "Markdown",
-    reply_markup: taskMenuKeyboard(),
-  });
+  await ensureReplyKeyboard(ctx, user.status, user.role);
+  await sendTaskMenuPanel(ctx, user);
+});
+
+bot.command("orders", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || user.status !== "APPROVED") { await ctx.reply("Нажмите /start чтобы начать"); return; }
+  await ensureReplyKeyboard(ctx, user.status, user.role);
+  await sendOrdersPanel(ctx, user, 0);
+});
+
+bot.command("report", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || user.status !== "APPROVED") { await ctx.reply("Нажмите /start чтобы начать"); return; }
+  await ensureReplyKeyboard(ctx, user.status, user.role);
+  await sendReportPanel(ctx, user);
+});
+
+bot.command("notifs", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || user.status !== "APPROVED") { await ctx.reply("Нажмите /start чтобы начать"); return; }
+  await ensureReplyKeyboard(ctx, user.status, user.role);
+  await sendNotificationsPanel(ctx, user);
 });
 
 async function processNotifications() {
@@ -3338,6 +3598,16 @@ async function startTelegramBot() {
     BOT_SELF_ID = me.id;
     console.log(`Telegram auth OK: @${me.username}`);
     console.log("Starting Telegram polling...");
+
+    await bot.api.setMyCommands([
+      { command: "start",  description: "Начать / Главное меню" },
+      { command: "menu",   description: "Главное меню" },
+      { command: "orders", description: "Мои заказы" },
+      { command: "tasks",  description: "Мои задачи" },
+      { command: "report", description: "Написать отчёт" },
+      { command: "notifs", description: "Уведомления" },
+      { command: "pin",    description: "Показать PIN для сайта" },
+    ]);
 
     await bot.start({
       onStart: async () => {

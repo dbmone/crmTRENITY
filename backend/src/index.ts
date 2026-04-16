@@ -236,6 +236,15 @@ app.register(jwt, { secret: config.jwt.secret });
 app.decorate("authenticate", authMiddleware);
 app.register(multipart, { limits: { fileSize: 1024 * 1024 * 1024 } });
 
+// Гарантируем charset=utf-8 во всех JSON-ответах
+app.addHook("onSend", (_req, reply, _payload, done) => {
+  const ct = reply.getHeader("content-type") as string | undefined;
+  if (ct && ct.startsWith("application/json") && !ct.includes("charset")) {
+    reply.header("content-type", "application/json; charset=utf-8");
+  }
+  done();
+});
+
 // ==================== РОУТЫ ====================
 
 app.register(authRoutes, { prefix: "/api/auth" });

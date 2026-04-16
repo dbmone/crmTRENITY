@@ -122,10 +122,16 @@ export default function TourOverlay() {
   const steps = useMemo(() => (role ? TOUR_STEPS[role] ?? [] : []), [role]);
   const step = steps[stepIndex];
   const isLast = stepIndex === steps.length - 1;
-  const isMobile = typeof window !== "undefined" ? window.innerWidth < 640 : false;
 
   const [targetRect, setTargetRect] = useState<RectLike | null>(null);
   const [targetFound, setTargetFound] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
+
+  useEffect(() => {
+    const update = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
 
   useEffect(() => {
     if (!active || !step?.route) return;

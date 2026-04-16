@@ -180,7 +180,7 @@ export async function getFileContentStream(fileId: string): Promise<{
   fileSize: bigint | number | null;
 }> {
   const file = await prisma.orderFile.findUnique({ where: { id: fileId } });
-  if (!file) throw { statusCode: 404, message: "Р¤Р°Р№Р» РЅРµ РЅР°Р№РґРµРЅ" };
+  if (!file) throw { statusCode: 404, message: "Файл не найден" };
 
   if (file.telegramFileId) {
     const result = await getTelegramFileStream(file.telegramFileId);
@@ -193,13 +193,13 @@ export async function getFileContentStream(fileId: string): Promise<{
   }
 
   if (!file.storagePath) {
-    throw { statusCode: 404, message: "Р¤Р°Р№Р» РЅРµРґРѕСЃС‚СѓРїРµРЅ" };
+    throw { statusCode: 404, message: "Файл недоступен" };
   }
 
   const client = getS3Client();
   const object = await client.send(new GetObjectCommand({ Bucket: config.minio.bucket, Key: file.storagePath }));
   if (!object.Body) {
-    throw { statusCode: 404, message: "Р¤Р°Р№Р» РЅРµРґРѕСЃС‚СѓРїРµРЅ" };
+    throw { statusCode: 404, message: "Файл недоступен" };
   }
 
   return {
