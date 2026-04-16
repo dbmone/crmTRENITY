@@ -76,6 +76,11 @@ export default function OrderCard({ order, onClick, dim }: Props) {
       {/* Stage progress bar */}
       {curStages.length > 0 && (
         <div className="mb-2.5">
+          {maxRound > 0 && (
+            <div className="text-[9px] font-semibold text-amber-400/80 uppercase tracking-wider mb-1">
+              Правка {maxRound}
+            </div>
+          )}
           <div className="flex gap-0.5 mb-1">
             {STAGE_ORDER.map((name) => {
               const st = curStages.find((s) => s.name === name);
