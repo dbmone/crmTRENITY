@@ -134,6 +134,11 @@ export async function sendFileToTelegram(fileId: string) {
   return data as { success: boolean; message: string };
 }
 
+export async function addTzNote(orderId: string, text: string) {
+  const { data } = await api.post(`/orders/${orderId}/files/tz-note`, { text });
+  return data;
+}
+
 export async function deleteFile(fileId: string) {
   const { data } = await api.delete(`/files/${fileId}`);
   return data;

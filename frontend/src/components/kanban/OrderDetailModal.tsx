@@ -12,7 +12,7 @@ const STAGE_ORDER: StageName[] = ["STORYBOARD", "ANIMATION", "EDITING", "REVIEW"
 const FILE_TYPE_LABELS: Record<string, string> = { tz: "ТЗ", contract: "Договор", storyboard: "Раскадровка", video: "Видео", other: "Другое" };
 const FILE_TYPE_COLORS: Record<string, string> = { tz: "text-blue-400 bg-blue-400/10", contract: "text-purple-400 bg-purple-400/10", storyboard: "text-amber-400 bg-amber-400/10", video: "text-green-400 bg-green-400/10", other: "text-ink-tertiary bg-bg-raised" };
 
-type Tab = "stages" | "files" | "reports" | "comments";
+type Tab = "stages" | "tz" | "files" | "reports" | "comments";
 
 const inputCls = "w-full px-3.5 py-2.5 rounded-lg border border-bg-border bg-bg-raised text-sm text-ink-primary placeholder-ink-tertiary outline-none focus:border-green-500/50 transition-colors";
 
@@ -54,6 +54,14 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   const [editSelectedFileType, setEditSelectedFileType] = useState("tz");
   const editFileInputRef = useRef<HTMLInputElement>(null);
 
+  // TZ tab
+  const [tzText,        setTzText]        = useState("");
+  const [addingTzNote,  setAddingTzNote]  = useState(false);
+  const [tzFileInput,   setTzFileInput]   = useState<HTMLInputElement | null>(null);
+  const [uploadingTzFile, setUploadingTzFile] = useState(false);
+  // STT placeholder state
+  const [recording,    setRecording]    = useState(false);
+
   const handleEditFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
     setEditUploadingFile(true);
@@ -64,6 +72,8 @@ export default function OrderDetailModal({ order, onClose }: Props) {
 
   useEffect(() => {
     if (!order) return;
+    setFullOrder(null); // сбрасываем старый заказ сразу
+    setComments([]);
     loadOrder(); loadUsers(); loadComments();
     setTab("stages"); setEditing(false);
   }, [order?.id]);
@@ -157,9 +167,13 @@ export default function OrderDetailModal({ order, onClose }: Props) {
     setSendingReport(false);
   };
 
+  const tzItems  = o.files?.filter(f => f.fileType === "TZ" || f.mimeType === "text/plain") ?? [];
+  const nonTzFiles = o.files?.filter(f => f.fileType !== "TZ" && f.mimeType !== "text/plain") ?? [];
+
   const tabs: { id: Tab; label: string; count?: number }[] = [
     { id: "stages",   label: "Этапы" },
-    { id: "files",    label: "Файлы",   count: o.files?.length },
+    { id: "tz",       label: "ТЗ",      count: tzItems.length || undefined },
+    { id: "files",    label: "Файлы",   count: nonTzFiles.length || undefined },
     { id: "reports",  label: "Отчёты",  count: o.reports?.length || o._count?.reports },
     { id: "comments", label: "Чат",     count: comments.length || undefined },
   ];
@@ -330,6 +344,95 @@ export default function OrderDetailModal({ order, onClose }: Props) {
             />
           )}
 
+          {/* ТЗ */}
+          {tab === "tz" && (
+            <div className="space-y-4">
+              {/* Описание заказа (основное ТЗ) */}
+              {o.description && (
+                <div className="p-3.5 rounded-lg bg-bg-raised border border-bg-border">
+                  <p className="text-[10px] font-semibold text-ink-tertiary uppercase tracking-wide mb-1.5">Описание заказа</p>
+                  <p className="text-sm text-ink-primary whitespace-pre-wrap">{o.description}</p>
+                </div>
+              )}
+
+              {/* Добавить текстовую заметку */}
+              {isParticipant && (
+                <div className="p-3.5 bg-bg-raised border border-bg-border rounded-lg">
+                  <p className="text-[10px] font-semibold text-ink-tertiary uppercase tracking-wide mb-2">Добавить к ТЗ</p>
+                  <textarea
+                    value={tzText} onChange={(e) => setTzText(e.target.value)}
+                    placeholder="Текст дополнения к ТЗ..."
+                    rows={3}
+                    className="w-full text-sm bg-bg-surface border border-bg-border rounded-lg p-2.5 text-ink-primary placeholder-ink-tertiary outline-none focus:border-green-500/50 resize-none transition-colors"
+                  />
+                  <div className="flex items-center gap-2 mt-2">
+                    <button
+                      onClick={async () => {
+                        if (!tzText.trim()) return;
+                        setAddingTzNote(true);
+                        try {
+                          await api.addTzNote(o.id, tzText.trim());
+                          setTzText("");
+                          await loadOrder();
+                        } catch (e: any) { alert(e.response?.data?.error || "Ошибка"); }
+                        setAddingTzNote(false);
+                      }}
+                      disabled={!tzText.trim() || addingTzNote}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500 text-black text-sm font-bold hover:bg-green-400 disabled:opacity-50 transition-colors">
+                      {addingTzNote ? <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" /> : <Plus size={13} />}
+                      Добавить
+                    </button>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingTzFile}
+                      title="Прикрепить файл к ТЗ"
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-bg-border text-ink-secondary text-sm hover:bg-bg-hover disabled:opacity-50 transition-colors">
+                      {uploadingTzFile ? <div className="w-4 h-4 border-2 border-current/30 border-t-current rounded-full animate-spin" /> : <Paperclip size={13} />}
+                      Файл
+                    </button>
+                    {/* STT заглушка — TODO: подключить Whisper API */}
+                    <button
+                      title="Голосовое сообщение (скоро)"
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-bg-border text-ink-tertiary text-sm opacity-50 cursor-not-allowed"
+                      onClick={() => alert("Голосовой ввод: скоро. Планируется OpenAI Whisper API для русского языка.")}>
+                      🎙 Голос
+                    </button>
+                    <input
+                      ref={fileInputRef} type="file" className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0]; if (!file) return;
+                        setUploadingTzFile(true);
+                        try { await api.uploadFile(o.id, file, "TZ"); await loadOrder(); }
+                        catch (err: any) { alert(err.response?.data?.error || "Ошибка загрузки"); }
+                        setUploadingTzFile(false); e.target.value = "";
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Список элементов ТЗ */}
+              {tzItems.length === 0 && !o.description ? (
+                <div className="text-center py-10 text-ink-tertiary">
+                  <FileText size={28} className="mx-auto mb-2 opacity-20" />
+                  <p className="text-sm">ТЗ пока не добавлено</p>
+                  <p className="text-xs mt-1">Добавьте через поле выше или пришлите в Telegram-бот</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {tzItems.map((f) => (
+                    <FileRow
+                      key={f.id}
+                      file={f}
+                      canDelete={isMarketer || (f.uploadedBy?.id === user?.id)}
+                      onDeleted={(id) => setFullOrder((prev) => prev ? { ...prev, files: prev.files.filter((x) => x.id !== id) } : prev)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* FILES */}
           {tab === "files" && (
             <div>
@@ -348,14 +451,14 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                 </div>
               )}
 
-              {!o.files || o.files.length === 0 ? (
+              {nonTzFiles.length === 0 ? (
                 <div className="text-center py-10 text-ink-tertiary">
                   <Paperclip size={28} className="mx-auto mb-2 opacity-20" />
                   <p className="text-sm">Файлов нет</p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {o.files.map((f) => (
+                  {nonTzFiles.map((f) => (
                     <FileRow
                       key={f.id}
                       file={f}

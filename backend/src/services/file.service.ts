@@ -157,7 +157,10 @@ export async function getDownloadUrl(fileId: string): Promise<string> {
 
 // Отправить файл пользователю в Telegram
 export async function sendFileToUserTelegram(fileId: string, userId: string): Promise<void> {
-  const file = await prisma.orderFile.findUnique({ where: { id: fileId } });
+  const file = await prisma.orderFile.findUnique({
+    where: { id: fileId },
+    include: { order: { select: { title: true } } },
+  });
   if (!file) throw { statusCode: 404, message: "Файл не найден" };
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -166,7 +169,16 @@ export async function sendFileToUserTelegram(fileId: string, userId: string): Pr
   }
 
   if (file.telegramChatId && file.telegramMsgId) {
-    // Файл в TG-хранилище — пересылаем
+    // Файл в TG-хранилище — сначала подпись, потом сам файл
+    const { sendMessageToUser } = await import("./telegram.service");
+    const orderTitle = (file as any).order?.title || file.orderId;
+    const isText = file.mimeType === "text/plain";
+    if (!isText) {
+      await sendMessageToUser(
+        user.chatId.toString(),
+        `📋 Заказ: *${orderTitle}*\n📎 ${file.fileName}`
+      );
+    }
     await forwardFileToUser(user.chatId.toString(), file.telegramChatId, file.telegramMsgId);
   } else if (file.storagePath) {
     // Файл в S3 — скачиваем и отправляем в TG
@@ -228,6 +240,24 @@ export async function createTelegramFile(
       orderId, uploadedById, fileType, fileName,
       fileSize: BigInt(fileSize), mimeType, storagePath: "",
       telegramFileId, telegramChatId, telegramMsgId,
+    },
+    include: {
+      uploadedBy: { select: { id: true, displayName: true, telegramUsername: true } },
+    },
+  });
+}
+
+// Добавить текстовую заметку к ТЗ (без TG-хранилища, только в БД)
+export async function addTzTextNote(orderId: string, uploadedById: string, text: string) {
+  return prisma.orderFile.create({
+    data: {
+      orderId,
+      uploadedById,
+      fileType: FileType.TZ,
+      fileName: text,          // текст хранится в fileName
+      fileSize: BigInt(0),
+      mimeType: "text/plain",
+      storagePath: "",
     },
     include: {
       uploadedBy: { select: { id: true, displayName: true, telegramUsername: true } },

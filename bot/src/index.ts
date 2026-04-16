@@ -691,7 +691,7 @@ bot.on("message:text", async (ctx, next) => {
 
 // ==================== ФАЙЛОВЫЕ СООБЩЕНИЯ ====================
 
-// Хелпер: форвардим файл в хранилище и сохраняем в БД
+// Хелпер: форвардим файл в хранилище с подписью и сохраняем в БД
 async function saveBotFile(
   ctx: any,
   orderId: string,
@@ -707,6 +707,20 @@ async function saveBotFile(
     return false;
   }
   try {
+    // Получаем человекочитаемые названия для подписи
+    const [order, uploader] = await Promise.all([
+      prisma.order.findUnique({ where: { id: orderId }, select: { title: true } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { displayName: true, telegramUsername: true } }),
+    ]);
+    const orderLabel    = order?.title || orderId;
+    const uploaderLabel = uploader?.displayName || uploader?.telegramUsername || userId;
+
+    // Отправляем подпись перед файлом
+    await bot.api.sendMessage(
+      STORAGE_CHAT_ID,
+      `📋 Заказ: *${orderLabel}*\n👤 От: ${uploaderLabel}\n📎 ${fileName}`,
+      { parse_mode: "Markdown" }
+    );
     const fwd = await bot.api.forwardMessage(STORAGE_CHAT_ID, ctx.chat!.id, ctx.message!.message_id);
     await prisma.orderFile.create({
       data: {
@@ -746,14 +760,15 @@ async function handleFileMessage(ctx: any, info: FileInfo) {
     try {
       const fwd = await bot.api.forwardMessage(STORAGE_CHAT_ID, ctx.chat!.id, ctx.message!.message_id);
       state.items.push({
-        fileName:    info.fileName,
-        fileSize:    info.fileSize,
-        mimeType:    info.mimeType,
-        fileId:      info.fileId,
+        fileName:     info.fileName,
+        fileSize:     info.fileSize,
+        mimeType:     info.mimeType,
+        fileId:       info.fileId,
         storageMsgId: fwd.message_id,
       });
+      const typeLabel = info.mimeType === "audio/ogg" ? "🎙 Голосовое" : "📎 Файл";
       await ctx.reply(
-        `📎 Файл добавлен (${state.items.length} эл.). Продолжайте или нажмите Готово:`,
+        `${typeLabel} добавлен (${state.items.length} эл.). Продолжайте или нажмите Готово:`,
         { reply_markup: collectingKeyboard() }
       );
     } catch (e: any) {
@@ -796,12 +811,34 @@ bot.on("message:video", async (ctx) => {
 
 // Фото
 bot.on("message:photo", async (ctx) => {
-  const photo = ctx.message.photo[ctx.message.photo.length - 1]; // largest
+  const photo = ctx.message.photo[ctx.message.photo.length - 1];
   await handleFileMessage(ctx, {
     fileId:   photo.file_id,
     fileName: `photo_${Date.now()}.jpg`,
     fileSize: photo.file_size || 0,
     mimeType: "image/jpeg",
+  });
+});
+
+// Голосовые сообщения — попадают в TZ как аудио
+bot.on("message:voice", async (ctx) => {
+  const voice = ctx.message.voice;
+  await handleFileMessage(ctx, {
+    fileId:   voice.file_id,
+    fileName: `voice_${Date.now()}.ogg`,
+    fileSize: voice.file_size || 0,
+    mimeType: "audio/ogg",
+  });
+});
+
+// Видеосообщения (кружочки)
+bot.on("message:video_note", async (ctx) => {
+  const note = ctx.message.video_note;
+  await handleFileMessage(ctx, {
+    fileId:   note.file_id,
+    fileName: `videonote_${Date.now()}.mp4`,
+    fileSize: note.file_size || 0,
+    mimeType: "video/mp4",
   });
 });
 
