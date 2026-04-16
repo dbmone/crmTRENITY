@@ -65,7 +65,7 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-bg-surface border border-bg-border rounded-modal shadow-modal w-full max-w-lg mx-4 p-6 animate-modal">
+      <div data-tour="create-modal" className="relative bg-bg-surface border border-bg-border rounded-modal shadow-modal w-full max-w-lg mx-4 p-6 animate-modal">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-base font-bold text-ink-primary flex items-center gap-2">
             <Plus size={16} className="text-green-400" /> Новый заказ
@@ -78,7 +78,7 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
         <div className="space-y-4">
           <div>
             <label className="text-xs font-medium text-ink-tertiary mb-1.5 block">Название *</label>
-            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)}
+            <input type="text" data-tour="create-title" value={title} onChange={(e) => setTitle(e.target.value)}
               placeholder="Например: Рилс для Ozon — весенняя коллекция"
               className={inputCls} autoFocus
               onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
@@ -87,13 +87,13 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
 
           <div>
             <label className="text-xs font-medium text-ink-tertiary mb-1.5 block">ТЗ / Описание</label>
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)}
+            <textarea data-tour="create-description" value={description} onChange={(e) => setDescription(e.target.value)}
               placeholder="Стиль, хронометраж, референсы, пожелания..."
               rows={4} className={`${inputCls} resize-none`}
             />
           </div>
 
-          <div>
+          <div data-tour="create-tz-files">
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-medium text-ink-tertiary block">Файлы к ТЗ</label>
               <button
@@ -159,7 +159,7 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
               className="flex-1 px-4 py-2.5 rounded-lg border border-bg-border text-sm font-medium text-ink-secondary hover:bg-bg-raised transition-colors">
               Отмена
             </button>
-            <button onClick={handleSubmit} disabled={loading}
+            <button data-tour="create-submit" onClick={handleSubmit} disabled={loading}
               className="flex-1 px-4 py-2.5 rounded-lg bg-green-500 text-black text-sm font-bold hover:bg-green-400 transition-colors disabled:opacity-50">
               {loading ? "Создаю..." : "Создать заказ"}
             </button>

@@ -298,7 +298,7 @@ export default function OrderDetailModal({ order, onClose }: Props) {
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-end sm:justify-center sm:pt-10 sm:pb-6 sm:overflow-y-auto">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative bg-bg-surface border border-t border-bg-border rounded-t-2xl sm:rounded-modal shadow-modal w-full sm:max-w-2xl sm:mx-4 max-h-[92vh] overflow-y-auto animate-modal">
+      <div data-tour="order-modal" className="relative bg-bg-surface border border-t border-bg-border rounded-t-2xl sm:rounded-modal shadow-modal w-full sm:max-w-2xl sm:mx-4 max-h-[92vh] overflow-y-auto animate-modal">
 
         {/* ── Header ── */}
         <div className="p-5 pb-0">
@@ -427,7 +427,17 @@ export default function OrderDetailModal({ order, onClose }: Props) {
           {/* Tabs */}
           <div className="flex gap-1 mt-4 border-b border-bg-border -mx-5 px-5">
             {tabs.map((t) => (
-              <button key={t.id} onClick={() => setTab(t.id)}
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                data-tour={
+                  t.id === "stages" ? "tab-stages"
+                  : t.id === "tz" ? "tab-tz"
+                  : t.id === "files" ? "tab-files"
+                  : t.id === "reports" ? "tab-reports"
+                  : t.id === "comments" ? "tab-comments"
+                  : undefined
+                }
                 className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${
                   tab === t.id ? "border-green-500 text-green-400" : "border-transparent text-ink-tertiary hover:text-ink-primary"
                 }`}>

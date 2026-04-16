@@ -446,7 +446,7 @@ export default function TasksPage() {
       <Header />
 
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto px-4 py-6">
+        <div className="max-w-2xl mx-auto px-4 py-6" data-tour="tasks-page">
 
           {/* Page header */}
           <div className="flex items-center justify-between mb-6">
@@ -472,7 +472,7 @@ export default function TasksPage() {
                   Стоп
                 </button>
               ) : (
-                <button onClick={voice.start}
+                <button data-tour="tasks-voice" onClick={voice.start}
                   title="Надиктовать задачу — AI разберёт на подзадачи"
                   className="flex items-center gap-2 px-3 py-2 rounded-xl border border-bg-border text-ink-secondary text-sm hover:border-amber-400/30 hover:text-amber-400 transition-colors">
                   <Mic size={14} />
@@ -482,7 +482,7 @@ export default function TasksPage() {
               )}
 
               {/* Add button */}
-              <button onClick={() => setShowAdd((v) => !v)}
+              <button data-tour="tasks-add" onClick={() => setShowAdd((v) => !v)}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-green-500 text-black text-sm font-bold hover:bg-green-400 transition-colors">
                 <Plus size={14} />
                 Задача

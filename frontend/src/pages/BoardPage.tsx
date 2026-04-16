@@ -108,6 +108,7 @@ export default function BoardPage() {
           {isMarketer && (
             <button
               onClick={() => setShowCreate(true)}
+              data-tour="create-btn"
               className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-lg bg-green-500 text-black text-xs font-bold hover:bg-green-400 transition-colors"
             >
               <Plus size={13} />
@@ -118,7 +119,7 @@ export default function BoardPage() {
       </div>
 
       {/* Board area — takes remaining height */}
-      <div className="flex-1 overflow-hidden relative pt-3">
+      <div className="flex-1 overflow-hidden relative pt-3" data-tour="board">
         {/* Full-height loading */}
         {isLoading && orders.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center">

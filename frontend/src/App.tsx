@@ -10,6 +10,8 @@ import DashboardPage from "./pages/DashboardPage";
 import TasksPage from "./pages/TasksPage";
 import AiPage from "./pages/AiPage";
 import GuidePage from "./pages/GuidePage";
+import TourOverlay from "./components/tour/TourOverlay";
+import { useTourStore } from "./store/tour.store";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token);
@@ -26,15 +28,17 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 function GuideGate() {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
+  const tourActive = useTourStore((s) => s.active);
   const location = useLocation();
   const navigate = useNavigate();
 
   useEffect(() => {
     if (!token || !user) return;
+    if (tourActive) return;
     if (!user.guideSeenAt && location.pathname !== "/guide") {
       navigate("/guide", { replace: true });
     }
-  }, [location.pathname, navigate, token, user]);
+  }, [location.pathname, navigate, token, tourActive, user]);
 
   return null;
 }
@@ -69,6 +73,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AppRoutes />
+      <TourOverlay />
     </BrowserRouter>
   );
 }

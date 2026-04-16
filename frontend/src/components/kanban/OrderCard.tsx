@@ -54,6 +54,7 @@ export default function OrderCard({ order, onClick, dim }: Props) {
       style={style}
       {...attributes}
       {...listeners}
+      data-tour="order-card"
       onClick={() => onClick(order)}
       className={`group relative bg-bg-raised border rounded-xl p-3 cursor-pointer select-none transition-all duration-150 ${
         isDragging

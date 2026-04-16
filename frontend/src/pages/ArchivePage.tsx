@@ -34,7 +34,7 @@ export default function ArchivePage() {
     <div className="min-h-screen bg-bg-base">
       <Header />
 
-      <div className="max-w-4xl mx-auto px-6 py-8">
+      <div className="max-w-4xl mx-auto px-6 py-8" data-tour="archive-page">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-xl font-bold text-ink-primary flex items-center gap-2">

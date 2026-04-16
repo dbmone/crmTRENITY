@@ -19,11 +19,11 @@ import * as api from "../../api/client";
 
 const ROLE_LABELS: Record<string, string> = {
   MARKETER: "Маркетолог",
-  HEAD_MARKETER: "Гл. маркетолог",
+  HEAD_MARKETER: "Главный маркетолог",
   CREATOR: "Креатор",
-  HEAD_CREATOR: "Гл. креатор",
-  LEAD_CREATOR: "Лид-креатор",
-  ADMIN: "Админ",
+  HEAD_CREATOR: "Главный креатор",
+  LEAD_CREATOR: "Лид креаторов",
+  ADMIN: "Администратор",
 };
 
 const ROLE_COLORS: Record<string, string> = {
@@ -36,13 +36,13 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 const NAV = [
-  { path: "/", label: "Доска", icon: LayoutDashboard },
-  { path: "/tasks", label: "Задачи", icon: ListTodo },
-  { path: "/guide", label: "📖 Гайд", icon: BookOpen, showGuideDot: true },
-  { path: "/archive", label: "Архив", icon: Archive },
-  { path: "/dashboard", label: "Аналитика", icon: LayoutDashboard },
-  { path: "/admin", label: "Команда", icon: Users, adminOnly: true },
-  { path: "/ai", label: "AI", icon: Bot, aiOnly: true },
+  { path: "/", label: "Доска", icon: LayoutDashboard, tour: "nav-board" },
+  { path: "/tasks", label: "Задачи", icon: ListTodo, tour: "nav-tasks" },
+  { path: "/guide", label: "📖 Гайд", icon: BookOpen, tour: "nav-guide", showGuideDot: true },
+  { path: "/archive", label: "Архив", icon: Archive, tour: "nav-archive" },
+  { path: "/dashboard", label: "Аналитика", icon: LayoutDashboard, tour: "nav-dashboard" },
+  { path: "/admin", label: "Команда", icon: Users, tour: "nav-admin", adminOnly: true },
+  { path: "/ai", label: "AI", icon: Bot, tour: "nav-ai", aiOnly: true },
 ];
 
 export default function Header() {
@@ -60,52 +60,50 @@ export default function Header() {
   const guideNeedsAttention = !user?.guideSeenAt;
 
   const isAdmin = user?.role === "ADMIN";
-  const isHeadMark = user?.role === "HEAD_MARKETER" || isAdmin;
+  const isHeadMarketer = user?.role === "HEAD_MARKETER" || isAdmin;
   const isHeadCreator = user?.role === "HEAD_CREATOR" || isAdmin;
   const isLeadCreator = user?.role === "LEAD_CREATOR" || isAdmin;
-  const canSeeAdmin = isAdmin || isHeadMark || isHeadCreator || isLeadCreator;
+  const canSeeAdmin = isAdmin || isHeadMarketer || isHeadCreator || isLeadCreator;
   const canSeeAi = isAdmin || isHeadCreator;
+
+  const navItems = NAV.filter((item) => {
+    if ((item as any).adminOnly) return canSeeAdmin;
+    if ((item as any).aiOnly) return canSeeAi;
+    return true;
+  });
 
   useEffect(() => {
     setMobileOpen(false);
   }, [location.pathname]);
 
-  const loadNotifs = async () => {
-    try {
-      const data = await api.getNotifications(1, 30);
-      const list = Array.isArray(data) ? data : data.items ?? data.notifications ?? [];
-      setNotifications(list);
-    } catch {}
-  };
-
   useEffect(() => {
     if (!user) return;
-    loadNotifs();
-    const iv = setInterval(loadNotifs, 30_000);
-    return () => clearInterval(iv);
+
+    const loadNotifications = async () => {
+      try {
+        const data = await api.getNotifications(1, 30);
+        const list = Array.isArray(data) ? data : data.items ?? data.notifications ?? [];
+        setNotifications(list);
+      } catch {}
+    };
+
+    void loadNotifications();
+    const interval = window.setInterval(loadNotifications, 30_000);
+    return () => window.clearInterval(interval);
   }, [user]);
 
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+    const handler = (event: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
         setShowNotifs(false);
       }
     };
-    if (showNotifs) document.addEventListener("mousedown", handler);
+
+    if (showNotifs) {
+      document.addEventListener("mousedown", handler);
+    }
     return () => document.removeEventListener("mousedown", handler);
   }, [showNotifs]);
-
-  const markAll = async () => {
-    await api.markAllNotificationsRead();
-    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-  };
-
-  const markOne = async (id: string, type?: string) => {
-    await api.markNotificationRead(id);
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
-    setShowNotifs(false);
-    if (type === "REGISTRATION_REQUEST") navigate("/admin?tab=pending");
-  };
 
   const initials = user?.displayName
     ?.split(" ")
@@ -114,42 +112,67 @@ export default function Header() {
     .toUpperCase()
     .slice(0, 2);
 
-  const navItems = NAV.filter((item) => {
-    if ((item as any).adminOnly) return canSeeAdmin;
-    if ((item as any).aiOnly) return canSeeAi;
-    return true;
-  });
+  const markAllNotificationsRead = async () => {
+    await api.markAllNotificationsRead();
+    setNotifications((prev) => prev.map((item) => ({ ...item, isRead: true })));
+  };
+
+  const openNotification = async (notification: Notification) => {
+    await api.markNotificationRead(notification.id);
+    setNotifications((prev) => prev.map((item) => (
+      item.id === notification.id ? { ...item, isRead: true } : item
+    )));
+    setShowNotifs(false);
+
+    if (notification.type === "REGISTRATION_REQUEST") {
+      navigate("/admin?tab=pending");
+    }
+  };
+
+  const renderNavButton = (item: (typeof NAV)[number], mobile = false) => {
+    const active = location.pathname === item.path;
+    const showDot = Boolean((item as any).showGuideDot && guideNeedsAttention);
+
+    return (
+      <button
+        key={`${mobile ? "m" : "d"}-${item.path}`}
+        type="button"
+        onClick={() => navigate(item.path)}
+        data-tour={(item as any).tour}
+        className={mobile
+          ? `flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors ${
+              active
+                ? "bg-green-500/10 text-green-400"
+                : "text-ink-secondary hover:bg-bg-hover hover:text-ink-primary"
+            }`
+          : `flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+              active
+                ? "bg-green-500/10 text-green-400"
+                : "text-ink-secondary hover:bg-bg-hover hover:text-ink-primary"
+            }`}
+      >
+        <item.icon size={mobile ? 17 : 14} />
+        <span>{item.label}</span>
+        {showDot && (
+          <span className={mobile ? "ml-auto text-xs text-green-400" : "text-xs text-green-400"}>
+            ●
+          </span>
+        )}
+      </button>
+    );
+  };
 
   return (
     <header className="sticky top-0 z-50 border-b border-bg-border bg-bg-surface">
       <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
-        <button onClick={() => navigate("/")} className="flex flex-shrink-0 items-center">
+        <button type="button" onClick={() => navigate("/")} className="flex flex-shrink-0 items-center">
           <span className="font-bold tracking-tight text-ink-primary">
             TRENITY <span className="text-green-500">CRM</span>
           </span>
         </button>
 
         <nav className="ml-2 hidden items-center gap-1 md:flex">
-          {navItems.map((item) => {
-            const active = location.pathname === item.path;
-            const showDot = Boolean((item as any).showGuideDot && guideNeedsAttention);
-
-            return (
-              <button
-                key={item.path}
-                onClick={() => navigate(item.path)}
-                className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  active
-                    ? "bg-green-500/10 text-green-400"
-                    : "text-ink-secondary hover:bg-bg-hover hover:text-ink-primary"
-                }`}
-              >
-                <item.icon size={14} />
-                <span>{item.label}</span>
-                {showDot && <span className="text-xs text-green-400">●</span>}
-              </button>
-            );
-          })}
+          {navItems.map((item) => renderNavButton(item))}
         </nav>
 
         {user && (
@@ -160,6 +183,7 @@ export default function Header() {
 
             <div className="relative" ref={notifRef}>
               <button
+                type="button"
                 onClick={() => setShowNotifs((prev) => !prev)}
                 className="relative rounded-lg p-2 text-ink-secondary transition-colors hover:bg-bg-hover hover:text-ink-primary"
               >
@@ -177,37 +201,39 @@ export default function Header() {
                     <span className="text-sm font-semibold text-ink-primary">Уведомления</span>
                     <div className="flex items-center gap-2">
                       {unread > 0 && (
-                        <button onClick={markAll} className="text-xs text-green-400 hover:text-green-300">
+                        <button type="button" onClick={markAllNotificationsRead} className="text-xs text-green-400 hover:text-green-300">
                           Прочитать все
                         </button>
                       )}
-                      <button onClick={() => setShowNotifs(false)} className="rounded p-1 text-ink-tertiary hover:text-ink-primary">
+                      <button type="button" onClick={() => setShowNotifs(false)} className="rounded p-1 text-ink-tertiary hover:text-ink-primary">
                         <X size={14} />
                       </button>
                     </div>
                   </div>
+
                   <div className="max-h-80 overflow-y-auto">
                     {notifications.length === 0 ? (
                       <div className="py-8 text-center text-ink-tertiary">
                         <Bell size={24} className="mx-auto mb-2 opacity-30" />
-                        <p className="text-sm">Нет уведомлений</p>
+                        <p className="text-sm">Пока уведомлений нет</p>
                       </div>
                     ) : (
-                      notifications.map((n) => (
+                      notifications.map((notification) => (
                         <button
-                          key={n.id}
-                          onClick={() => markOne(n.id, n.type)}
+                          key={notification.id}
+                          type="button"
+                          onClick={() => void openNotification(notification)}
                           className={`w-full border-b border-bg-border px-4 py-3 text-left transition-colors last:border-0 hover:bg-bg-raised ${
-                            !n.isRead ? "bg-green-500/5" : ""
+                            !notification.isRead ? "bg-green-500/5" : ""
                           }`}
                         >
                           <div className="flex items-start gap-2.5">
-                            {!n.isRead && <div className="mt-2 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-green-500" />}
-                            <div className={!n.isRead ? "" : "pl-4"}>
-                              <p className="text-sm leading-snug text-ink-primary">{n.message}</p>
-                              {n.order && <p className="mt-0.5 text-xs text-ink-tertiary">{n.order.title}</p>}
+                            {!notification.isRead && <div className="mt-2 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-green-500" />}
+                            <div className={!notification.isRead ? "" : "pl-4"}>
+                              <p className="text-sm leading-snug text-ink-primary">{notification.message}</p>
+                              {notification.order && <p className="mt-0.5 text-xs text-ink-tertiary">{notification.order.title}</p>}
                               <p className="mt-1 text-[10px] text-ink-tertiary">
-                                {new Date(n.createdAt).toLocaleString("ru-RU", {
+                                {new Date(notification.createdAt).toLocaleString("ru-RU", {
                                   day: "numeric",
                                   month: "short",
                                   hour: "2-digit",
@@ -225,6 +251,7 @@ export default function Header() {
             </div>
 
             <button
+              type="button"
               onClick={() => navigate("/profile")}
               className="hidden items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-bg-hover md:flex"
             >
@@ -239,6 +266,7 @@ export default function Header() {
             </button>
 
             <button
+              type="button"
               onClick={() => {
                 logout();
                 navigate("/login");
@@ -250,6 +278,7 @@ export default function Header() {
             </button>
 
             <button
+              type="button"
               onClick={() => setMobileOpen((prev) => !prev)}
               className="rounded-lg p-2 text-ink-secondary transition-colors hover:bg-bg-hover md:hidden"
               aria-label="Меню"
@@ -279,28 +308,10 @@ export default function Header() {
           </div>
 
           <nav className="space-y-0.5 px-3 py-2">
-            {navItems.map((item) => {
-              const active = location.pathname === item.path;
-              const showDot = Boolean((item as any).showGuideDot && guideNeedsAttention);
-
-              return (
-                <button
-                  key={item.path}
-                  onClick={() => navigate(item.path)}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors ${
-                    active
-                      ? "bg-green-500/10 text-green-400"
-                      : "text-ink-secondary hover:bg-bg-hover hover:text-ink-primary"
-                  }`}
-                >
-                  <item.icon size={17} />
-                  <span>{item.label}</span>
-                  {showDot && <span className="ml-auto text-xs text-green-400">●</span>}
-                </button>
-              );
-            })}
+            {navItems.map((item) => renderNavButton(item, true))}
 
             <button
+              type="button"
               onClick={() => navigate("/profile")}
               className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors ${
                 location.pathname === "/profile"
@@ -309,12 +320,13 @@ export default function Header() {
               }`}
             >
               <UserCircle size={17} />
-              Профиль
+              <span>Профиль</span>
             </button>
           </nav>
 
           <div className="px-3 pb-3">
             <button
+              type="button"
               onClick={() => {
                 logout();
                 navigate("/login");
@@ -322,7 +334,7 @@ export default function Header() {
               className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-red-400 transition-colors hover:bg-red-400/10"
             >
               <LogOut size={17} />
-              Выйти
+              <span>Выйти</span>
             </button>
           </div>
         </div>

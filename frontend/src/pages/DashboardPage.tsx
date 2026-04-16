@@ -58,7 +58,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-bg-base">
       <Header />
 
-      <div className="max-w-5xl mx-auto px-6 py-8">
+      <div className="max-w-5xl mx-auto px-6 py-8" data-tour="dashboard-page">
         <div className="mb-6">
           <h1 className="text-xl font-bold text-ink-primary flex items-center gap-2">
             <LayoutDashboard size={20} className="text-green-400" />

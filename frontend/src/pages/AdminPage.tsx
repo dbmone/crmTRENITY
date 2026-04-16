@@ -145,7 +145,7 @@ export default function AdminPage() {
     <div className="min-h-screen bg-bg-base">
       <Header />
 
-      <div className="max-w-5xl mx-auto px-6 py-8">
+      <div className="max-w-5xl mx-auto px-6 py-8" data-tour="admin-page">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-xl font-bold text-ink-primary flex items-center gap-2">
@@ -172,7 +172,16 @@ export default function AdminPage() {
         {/* Tabs */}
         <div className="flex gap-1 border-b border-bg-border mb-6">
           {TABS.map(({ id, label }) => (
-            <button key={id} onClick={() => setTab(id)}
+            <button
+              key={id}
+              onClick={() => setTab(id)}
+              data-tour={
+                id === "users" ? "admin-users-tab"
+                : id === "team" ? "admin-team-tab"
+                : id === "access" ? "admin-access-tab"
+                : id === "rights" ? "admin-rights-tab"
+                : undefined
+              }
               className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
                 tab === id ? "border-green-500 text-green-400" : "border-transparent text-ink-tertiary hover:text-ink-primary"
               }`}
