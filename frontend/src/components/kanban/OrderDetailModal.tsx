@@ -97,9 +97,11 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   const [tzText,        setTzText]        = useState("");
   const [addingTzNote,  setAddingTzNote]  = useState(false);
   const [uploadingTzFile, setUploadingTzFile] = useState(false);
-  // STT placeholder state
   const [recording,    setRecording]    = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [sendingTzToTg, setSendingTzToTg] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef   = useRef<BlobPart[]>([]);
 
   const handleEditFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
@@ -204,6 +206,39 @@ export default function OrderDetailModal({ order, onClose }: Props) {
     try { await api.submitReport(o.id, reportText.trim()); setReportText(""); await loadOrder(); }
     catch (err: any) { alert(err.response?.data?.error || "Ошибка"); }
     setSendingReport(false);
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      mediaRecorderRef.current = mr;
+      audioChunksRef.current = [];
+      mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      mr.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: mr.mimeType });
+        setTranscribing(true);
+        try {
+          const ext = mr.mimeType.includes("webm") ? "webm" : mr.mimeType.includes("ogg") ? "ogg" : "mp4";
+          const { text } = await api.transcribeVoice(o.id, blob, ext);
+          setTzText((prev) => prev ? `${prev}\n${text}` : text);
+        } catch (e: any) {
+          alert(e.response?.data?.message || e.response?.data?.error || "Ошибка расшифровки. Проверьте GROQ_API_KEY.");
+        } finally {
+          setTranscribing(false);
+        }
+      };
+      mr.start();
+      setRecording(true);
+    } catch {
+      alert("Нет доступа к микрофону. Разрешите доступ в настройках браузера.");
+    }
+  };
+
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop();
+    setRecording(false);
   };
 
   const tzItems    = o.files?.filter((f) => getFileBucket(f) === "tz") ?? [];
@@ -432,13 +467,25 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                       {uploadingTzFile ? <div className="w-4 h-4 border-2 border-current/30 border-t-current rounded-full animate-spin" /> : <Paperclip size={13} />}
                       Файл
                     </button>
-                    {/* STT заглушка — TODO: подключить Whisper API */}
-                    <button
-                      title="Голосовое сообщение (скоро)"
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-bg-border text-ink-tertiary text-sm opacity-50 cursor-not-allowed"
-                      onClick={() => alert("Голосовой ввод: скоро. Планируется OpenAI Whisper API для русского языка.")}>
-                      🎙 Голос
-                    </button>
+                    {recording ? (
+                      <button
+                        onClick={stopRecording}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-red-500/40 text-red-400 text-sm bg-red-500/10 animate-pulse">
+                        ⏹ Стоп
+                      </button>
+                    ) : transcribing ? (
+                      <button disabled className="flex items-center gap-2 px-3 py-2 rounded-lg border border-bg-border text-ink-tertiary text-sm opacity-70">
+                        <div className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+                        Расшифровка...
+                      </button>
+                    ) : (
+                      <button
+                        onClick={startRecording}
+                        title="Записать голосовое — текст появится в поле выше"
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-bg-border text-ink-secondary text-sm hover:border-red-500/30 hover:text-red-400 transition-colors">
+                        🎙 Голос
+                      </button>
+                    )}
                     <input
                       ref={fileInputRef} type="file" className="hidden"
                       onChange={async (e) => {

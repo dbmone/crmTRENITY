@@ -142,6 +142,15 @@ export async function addTzNote(orderId: string, text: string) {
   return data;
 }
 
+export async function transcribeVoice(orderId: string, blob: Blob, ext: string): Promise<{ text: string }> {
+  const form = new FormData();
+  form.append("audio", blob, `voice.${ext}`);
+  const { data } = await api.post(`/orders/${orderId}/files/tz-transcribe`, form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
 export async function sendTzBundleToTg(orderId: string) {
   const { data } = await api.post(`/orders/${orderId}/files/tz-to-tg`);
   return data as { success: boolean; sent: number };

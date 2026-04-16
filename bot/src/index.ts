@@ -437,13 +437,44 @@ const waitingForReport     = new Map<number, string>();
 const waitingForName       = new Set<number>();
 const waitingForOrderTitle = new Map<number, true>();
 
+// ==================== STT (Groq Whisper) ====================
+
+async function transcribeVoiceGroq(fileId: string): Promise<string | null> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey || !BOT_TOKEN) return null;
+  try {
+    const fileInfo = await bot.api.getFile(fileId);
+    if (!fileInfo.file_path) return null;
+    const audioUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileInfo.file_path}`;
+    const audioRes = await fetch(audioUrl);
+    if (!audioRes.ok) return null;
+    const buffer = Buffer.from(await audioRes.arrayBuffer());
+
+    const form = new FormData();
+    form.append("file", new Blob([buffer], { type: "audio/ogg" }), "voice.ogg");
+    form.append("model", "whisper-large-v3");
+    form.append("language", "ru");
+    form.append("response_format", "text");
+
+    const groqRes = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
+    });
+    if (!groqRes.ok) return null;
+    return (await groqRes.text()).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 // Батч-сбор ТЗ / файлов
 interface CollectedItem {
   fileName: string;
   fileSize: number;
   mimeType: string;     // "text/plain" для текстовых сообщений
   fileId?: string;      // для медиа
-  storageMsgId: number; // message_id в канале-хранилище
+  storageMsgId?: number; // message_id в канале-хранилище (нет у текстовых заметок)
 }
 interface CollectingState {
   mode: "create_order" | "attach_files";
@@ -559,7 +590,7 @@ bot.callbackQuery("tz_done", async (ctx) => {
   }
 
   // Сохраняем все собранные элементы
-  if (state.items.length > 0 && STORAGE_CHAT_ID) {
+  if (state.items.length > 0) {
     await prisma.orderFile.createMany({
       data: state.items.map((item) => ({
         orderId,
@@ -570,8 +601,9 @@ bot.callbackQuery("tz_done", async (ctx) => {
         mimeType: item.mimeType,
         storagePath: "",
         telegramFileId: item.fileId ?? null,
-        telegramChatId: STORAGE_CHAT_ID,
-        telegramMsgId:  item.storageMsgId,
+        // Текстовые заметки (расшифровки) не имеют привязки к TG-хранилищу
+        telegramChatId: item.storageMsgId ? STORAGE_CHAT_ID : null,
+        telegramMsgId:  item.storageMsgId ?? null,
       })),
     });
   }
@@ -809,6 +841,24 @@ async function handleFileMessage(ctx: any, info: FileInfo) {
         fileId:       info.fileId,
         storageMsgId: fwd.message_id,
       });
+
+      // Для голосовых — пробуем расшифровать и добавить текст в коллекцию
+      if (info.mimeType === "audio/ogg" && process.env.GROQ_API_KEY) {
+        const transcription = await transcribeVoiceGroq(info.fileId).catch(() => null);
+        if (transcription) {
+          state.items.push({
+            fileName:  transcription,
+            fileSize:  0,
+            mimeType:  "text/plain",
+          });
+          await ctx.reply(
+            `🎙 Голосовое добавлено (${state.items.length - 1} эл.)\n\n📝 Расшифровка:\n_${esc(transcription)}_\n\nПродолжайте или нажмите Готово:`,
+            { parse_mode: "Markdown", reply_markup: collectingKeyboard() }
+          );
+          return;
+        }
+      }
+
       const typeLabel = info.mimeType === "audio/ogg" ? "🎙 Голосовое" : "📎 Файл";
       await ctx.reply(
         `${typeLabel} добавлен (${state.items.length} эл.). Продолжайте или нажмите Готово:`,

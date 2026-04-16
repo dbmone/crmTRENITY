@@ -1,6 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { FileType, UserRole } from "@prisma/client";
 import { uploadFile, getDownloadUrl, deleteFile, getOrderFiles, sendFileToUserTelegram, addTzTextNote, sendTzBundleToTelegram } from "../services/file.service";
+import { transcribeAudio } from "../services/stt.service";
 import { config } from "../config";
 
 const FILE_TYPE_ALIASES: Record<string, FileType> = {
@@ -42,20 +43,19 @@ export async function filesRoutes(app: FastifyInstance) {
     } catch (err: any) { return reply.status(err.statusCode || 500).send({ error: err.message }); }
   });
 
-  // STT-заглушка: расшифровка голосового сообщения в текст
-  // TODO: подключить реальный STT (см. CLAUDE.md раздел LLM/STT)
+  // Расшифровка голосового → текст (Groq Whisper, бесплатно)
+  // Возвращает { text } — фронтенд показывает его в поле для редактирования перед сохранением
   app.post<{ Params: { orderId: string } }>("/tz-transcribe", async (req, reply) => {
     const data = await req.file();
     if (!data) return reply.status(400).send({ error: "Аудиофайл не прикреплён" });
     const chunks: Buffer[] = [];
     for await (const chunk of data.file) chunks.push(chunk);
-    // TODO: отправить chunks в Whisper API / Vosk / Yandex SpeechKit
-    // Пример: const text = await transcribeAudio(Buffer.concat(chunks), "ru");
-    return reply.status(501).send({
-      error: "STT_NOT_CONFIGURED",
-      message: "Расшифровка голоса не настроена. Добавьте WHISPER_API_KEY в переменные окружения.",
-      hint: "Рекомендуется: OpenAI Whisper API (хорошая поддержка русского) или Yandex SpeechKit"
-    });
+    try {
+      const text = await transcribeAudio(Buffer.concat(chunks), data.filename || "voice.ogg");
+      return reply.status(200).send({ text });
+    } catch (err: any) {
+      return reply.status(err.statusCode || 500).send({ error: err.message });
+    }
   });
 
   app.post<{ Params: { orderId: string } }>("/", async (req, reply) => {
