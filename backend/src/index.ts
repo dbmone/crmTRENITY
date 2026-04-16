@@ -47,35 +47,21 @@ async function ensureSchema() {
       ADD COLUMN IF NOT EXISTS "client_approved_at"       TIMESTAMP(3)
   `);
 
-  // 2. Удалить ВСЕ unique-constraints на order_stages кроме нужного (по имени OR по набору полей)
-  await runSql("drop old order_stages unique constraints", `
-    DO $$
-    DECLARE cname text;
-    BEGIN
-      FOR cname IN
-        SELECT conname FROM pg_constraint
-        WHERE conrelid = 'order_stages'::regclass
-          AND contype = 'u'
-          AND conname != 'order_stages_order_id_name_revision_round_key'
-      LOOP
-        EXECUTE 'ALTER TABLE "order_stages" DROP CONSTRAINT "' || cname || '"';
-      END LOOP;
-    END $$
-  `);
+  // 2. Удалить старый constraint (IF EXISTS — безопасно, не требует DO-блока)
+  await runSql("drop old constraint order_stages_order_id_name_key",
+    `ALTER TABLE "order_stages" DROP CONSTRAINT IF EXISTS "order_stages_order_id_name_key"`
+  );
 
-  // 3. Создать новый constraint (order_id, name, revision_round)
-  await runSql("add order_stages new unique constraint", `
-    DO $$ BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'order_stages_order_id_name_revision_round_key'
-      ) THEN
-        ALTER TABLE "order_stages"
-          ADD CONSTRAINT "order_stages_order_id_name_revision_round_key"
-          UNIQUE ("order_id", "name", "revision_round");
-      END IF;
-    END $$
-  `);
+  // 2b. Удалить как индекс (на случай если остался отдельно)
+  await runSql("drop old index order_stages_order_id_name_key",
+    `DROP INDEX IF EXISTS "order_stages_order_id_name_key"`
+  );
+
+  // 3. Создать новый уникальный индекс (IF NOT EXISTS — идемпотентно)
+  await runSql("create unique index (order_id, name, revision_round)",
+    `CREATE UNIQUE INDEX IF NOT EXISTS "order_stages_order_id_name_revision_round_key"
+     ON "order_stages" ("order_id", "name", "revision_round")`
+  );
 
   // 4. Колонки order_files для TG-хранилища
   await runSql("order_files telegram columns", `

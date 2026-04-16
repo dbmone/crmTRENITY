@@ -130,25 +130,22 @@ export async function startRevisionRound(
     throw { statusCode: 403, message: "Только маркетолог заказа может создавать раунд правок" };
   }
 
-  // Гарантируем что constraint правильный (самовосстановление)
-  await prisma.$executeRawUnsafe(`
-    DO $$ DECLARE cname text; BEGIN
-      FOR cname IN
-        SELECT conname FROM pg_constraint
-        WHERE conrelid = 'order_stages'::regclass AND contype = 'u'
-          AND conname != 'order_stages_order_id_name_revision_round_key'
-      LOOP EXECUTE 'ALTER TABLE "order_stages" DROP CONSTRAINT "' || cname || '"'; END LOOP;
-    END $$
-  `).catch(() => {});
+  // Гарантируем правильный constraint (самовосстановление без DO-блоков)
+  // 1. Удалить старый constraint (IF EXISTS — безопасно)
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "order_stages" DROP CONSTRAINT IF EXISTS "order_stages_order_id_name_key"`
+  ).catch((e) => console.warn("drop old constraint:", e.message));
 
-  await prisma.$executeRawUnsafe(`
-    DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'order_stages_order_id_name_revision_round_key') THEN
-        ALTER TABLE "order_stages" ADD CONSTRAINT "order_stages_order_id_name_revision_round_key"
-          UNIQUE ("order_id", "name", "revision_round");
-      END IF;
-    END $$
-  `).catch(() => {});
+  // 2. Удалить как индекс на случай если он остался
+  await prisma.$executeRawUnsafe(
+    `DROP INDEX IF EXISTS "order_stages_order_id_name_key"`
+  ).catch((e) => console.warn("drop old index:", e.message));
+
+  // 3. Создать новый уникальный индекс (IF NOT EXISTS — идемпотентно)
+  await prisma.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS "order_stages_order_id_name_revision_round_key"
+     ON "order_stages" ("order_id", "name", "revision_round")`
+  ).catch((e) => console.warn("create new index:", e.message));
 
   // Найти текущий максимальный раунд
   const stages = await prisma.orderStage.findMany({ where: { orderId } });
