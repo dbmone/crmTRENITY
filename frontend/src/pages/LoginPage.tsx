@@ -3,8 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/auth.store";
 
 export default function LoginPage() {
-  const [digits,  setDigits]  = useState(["", "", "", ""]);
-  const [error,   setError]   = useState("");
+  const [digits, setDigits] = useState(["", "", "", ""]);
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const refs = [
     useRef<HTMLInputElement>(null),
@@ -13,9 +13,11 @@ export default function LoginPage() {
     useRef<HTMLInputElement>(null),
   ];
   const navigate = useNavigate();
-  const login    = useAuthStore((s) => s.login);
+  const login = useAuthStore((s) => s.login);
 
-  useEffect(() => { refs[0].current?.focus(); }, []);
+  useEffect(() => {
+    refs[0].current?.focus();
+  }, []);
 
   const handleChange = (index: number, value: string) => {
     if (value.length > 1) value = value.slice(-1);
@@ -29,13 +31,16 @@ export default function LoginPage() {
 
   const handleKeyDown = (index: number, e: React.KeyboardEvent) => {
     if (e.key === "Backspace" && !digits[index] && index > 0) refs[index - 1].current?.focus();
-    if (e.key === "Enter") { const p = digits.join(""); if (p.length === 4) submitPin(p); }
+    if (e.key === "Enter") {
+      const pin = digits.join("");
+      if (pin.length === 4) submitPin(pin);
+    }
   };
 
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
     const text = e.clipboardData.getData("text").trim().slice(0, 4);
-    const next  = [...digits];
+    const next = [...digits];
     for (let i = 0; i < text.length; i++) next[i] = text[i];
     setDigits(next);
     if (text.length === 4) submitPin(text);
@@ -59,13 +64,11 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-bg-base">
-      {/* Background glow */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-green-500/5 rounded-full blur-3xl" />
       </div>
 
       <div className="relative bg-bg-surface border border-bg-border rounded-modal p-10 w-full max-w-sm shadow-modal">
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-14 h-14 rounded-2xl bg-green-500/10 border border-green-500/20 flex items-center justify-center mx-auto mb-4">
             <span className="text-green-400 font-black text-2xl">T</span>
@@ -76,25 +79,24 @@ export default function LoginPage() {
           <p className="text-sm text-ink-tertiary mt-1.5">Введите PIN-код для входа</p>
         </div>
 
-        {/* PIN input */}
         <div className="flex gap-3 justify-center mb-6">
-          {digits.map((d, i) => (
+          {digits.map((digit, index) => (
             <input
-              key={i}
-              ref={refs[i]}
+              key={index}
+              ref={refs[index]}
               type="text"
               inputMode="text"
               maxLength={1}
-              value={d}
-              onChange={(e) => handleChange(i, e.target.value)}
-              onKeyDown={(e) => handleKeyDown(i, e)}
-              onPaste={i === 0 ? handlePaste : undefined}
+              value={digit}
+              onChange={(e) => handleChange(index, e.target.value)}
+              onKeyDown={(e) => handleKeyDown(index, e)}
+              onPaste={index === 0 ? handlePaste : undefined}
               className={`w-14 h-16 text-center text-2xl font-bold rounded-xl border-2 outline-none transition-all bg-bg-raised text-ink-primary ${
                 error
                   ? "border-red-500/50 bg-red-500/5"
-                  : d
-                  ? "border-green-500/50 bg-green-500/5 text-green-400"
-                  : "border-bg-border focus:border-green-500/50 focus:bg-green-500/5"
+                  : digit
+                    ? "border-green-500/50 bg-green-500/5 text-green-400"
+                    : "border-bg-border focus:border-green-500/50 focus:bg-green-500/5"
               }`}
               disabled={loading}
             />
@@ -110,7 +112,15 @@ export default function LoginPage() {
         )}
 
         <p className="text-center text-xs text-ink-tertiary">
-          PIN-код можно получить в Telegram-боте
+          PIN-код можно получить в{" "}
+          <a
+            href="https://t.me/TrenityWork_bot"
+            target="_blank"
+            rel="noreferrer"
+            className="text-green-400 underline underline-offset-2 transition-colors hover:text-green-300"
+          >
+            @TrenityWork_bot
+          </a>
         </p>
       </div>
     </div>
