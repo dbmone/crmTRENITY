@@ -1,12 +1,20 @@
 import { FastifyInstance } from "fastify";
 import { FileType, UserRole } from "@prisma/client";
-import { uploadFile, getDownloadUrl, deleteFile, getOrderFiles, sendFileToUserTelegram, addTzTextNote } from "../services/file.service";
+import { uploadFile, getDownloadUrl, deleteFile, getOrderFiles, sendFileToUserTelegram, addTzTextNote, sendTzBundleToTelegram } from "../services/file.service";
 import { config } from "../config";
 
 export async function filesRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
 
   app.get<{ Params: { orderId: string } }>("/", async (req) => getOrderFiles(req.params.orderId));
+
+  // Отправить всё ТЗ пачкой в Telegram пользователя
+  app.post<{ Params: { orderId: string } }>("/tz-to-tg", async (req, reply) => {
+    try {
+      const result = await sendTzBundleToTelegram(req.params.orderId, req.currentUser.id);
+      return { success: true, sent: result.sent };
+    } catch (err: any) { return reply.status(err.statusCode || 500).send({ error: err.message }); }
+  });
 
   // Добавить текстовую заметку к ТЗ (с сайта)
   app.post<{ Params: { orderId: string }; Body: { text: string } }>("/tz-note", async (req, reply) => {

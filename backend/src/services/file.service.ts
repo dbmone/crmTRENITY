@@ -280,6 +280,65 @@ export async function addTzTextNote(orderId: string, uploadedById: string, text:
   });
 }
 
+// Отправить всё ТЗ заказа пачкой в Telegram пользователя
+export async function sendTzBundleToTelegram(orderId: string, userId: string): Promise<{ sent: number }> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user?.chatId) {
+    throw { statusCode: 400, message: "Чат с ботом не найден. Напишите боту /start." };
+  }
+
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { marketer: { select: { displayName: true, telegramUsername: true } } },
+  });
+  if (!order) throw { statusCode: 404, message: "Заказ не найден" };
+
+  const tzFiles = await prisma.orderFile.findMany({
+    where: { orderId, OR: [{ fileType: "TZ" }, { mimeType: "text/plain" }] },
+    include: { uploadedBy: { select: { displayName: true, telegramUsername: true } } },
+    orderBy: { uploadedAt: "asc" },
+  });
+
+  const { sendMessageToUser } = await import("./telegram.service");
+  const marketerName = (order as any).marketer?.displayName
+    || (order as any).marketer?.telegramUsername
+    || "неизвестно";
+
+  // Заголовочное сообщение
+  const headerLines = [
+    `📋 *${order.title}*`,
+    `👤 Маркетолог: ${marketerName}`,
+  ];
+  if (order.description) headerLines.push(`\n${order.description}`);
+  if (tzFiles.length > 0) headerLines.push(`\n📎 Вложений: ${tzFiles.length}`);
+
+  await sendMessageToUser(user.chatId.toString(), headerLines.join("\n"));
+
+  // Отправляем каждый элемент ТЗ
+  let sent = 0;
+  for (const file of tzFiles) {
+    try {
+      const uploaderName = (file as any).uploadedBy?.displayName
+        || (file as any).uploadedBy?.telegramUsername || "";
+
+      if (file.mimeType === "text/plain") {
+        // Текстовая заметка
+        const prefix = uploaderName ? `👤 ${uploaderName}:\n` : "";
+        await sendMessageToUser(user.chatId.toString(), `${prefix}${file.fileName}`);
+      } else if (file.telegramChatId && file.telegramMsgId) {
+        // Файл из TG-хранилища
+        if (uploaderName) {
+          await sendMessageToUser(user.chatId.toString(), `👤 ${uploaderName}: 📎 ${file.fileName}`);
+        }
+        await forwardFileToUser(user.chatId.toString(), file.telegramChatId, file.telegramMsgId);
+      }
+      sent++;
+    } catch {}
+  }
+
+  return { sent };
+}
+
 export async function cleanupArchivedFiles(): Promise<{ deleted: number; freedBytes: bigint }> {
   const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
   const archivedOrders = await prisma.order.findMany({

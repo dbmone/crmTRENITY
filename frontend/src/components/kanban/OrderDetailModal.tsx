@@ -437,22 +437,20 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                 </div>
               )}
 
-              {/* Кнопка — получить всё ТЗ в Telegram */}
+              {/* Кнопка — получить всё ТЗ в Telegram одной пачкой */}
               {(tzItems.length > 0 || o.description) && (
                 <button
                   onClick={async () => {
                     setSendingTzToTg(true);
                     try {
-                      for (const f of tzItems) {
-                        await api.sendFileToTelegram(f.id);
-                      }
-                      alert(`ТЗ отправлено в ваш Telegram (${tzItems.length} эл.)`);
+                      const res = await api.sendTzBundleToTg(o.id);
+                      alert(`ТЗ отправлено в Telegram (${res.sent} эл.)`);
                     } catch (e: any) {
                       alert(e.response?.data?.error || e.response?.data?.message || "Ошибка отправки");
                     }
                     setSendingTzToTg(false);
                   }}
-                  disabled={sendingTzToTg || tzItems.length === 0}
+                  disabled={sendingTzToTg}
                   className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-[#229ED9]/30 text-[#229ED9] text-sm hover:bg-[#229ED9]/10 disabled:opacity-40 transition-colors">
                   {sendingTzToTg
                     ? <div className="w-4 h-4 border-2 border-[#229ED9]/30 border-t-[#229ED9] rounded-full animate-spin" />

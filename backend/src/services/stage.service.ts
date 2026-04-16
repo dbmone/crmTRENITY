@@ -130,13 +130,33 @@ export async function startRevisionRound(
     throw { statusCode: 403, message: "Только маркетолог заказа может создавать раунд правок" };
   }
 
+  // Гарантируем что constraint правильный (самовосстановление)
+  await prisma.$executeRawUnsafe(`
+    DO $$ DECLARE cname text; BEGIN
+      FOR cname IN
+        SELECT conname FROM pg_constraint
+        WHERE conrelid = 'order_stages'::regclass AND contype = 'u'
+          AND conname != 'order_stages_order_id_name_revision_round_key'
+      LOOP EXECUTE 'ALTER TABLE "order_stages" DROP CONSTRAINT "' || cname || '"'; END LOOP;
+    END $$
+  `).catch(() => {});
+
+  await prisma.$executeRawUnsafe(`
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'order_stages_order_id_name_revision_round_key') THEN
+        ALTER TABLE "order_stages" ADD CONSTRAINT "order_stages_order_id_name_revision_round_key"
+          UNIQUE ("order_id", "name", "revision_round");
+      END IF;
+    END $$
+  `).catch(() => {});
+
   // Найти текущий максимальный раунд
   const stages = await prisma.orderStage.findMany({ where: { orderId } });
-  const maxRound = stages.length > 0 ? Math.max(...stages.map((s) => s.revisionRound)) : 0;
+  const maxRound = stages.length > 0 ? Math.max(...stages.map((s) => s.revisionRound ?? 0)) : 0;
 
   // Проверить, что COMPLETED стадия текущего раунда выполнена
   const completedStage = stages.find(
-    (s) => s.name === StageName.COMPLETED && s.revisionRound === maxRound
+    (s) => s.name === StageName.COMPLETED && (s.revisionRound ?? 0) === maxRound
   );
   if (!completedStage || completedStage.status !== StageStatus.DONE) {
     throw { statusCode: 400, message: "Видео ещё не готово — нельзя создать раунд правок" };

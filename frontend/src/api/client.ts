@@ -139,6 +139,11 @@ export async function addTzNote(orderId: string, text: string) {
   return data;
 }
 
+export async function sendTzBundleToTg(orderId: string) {
+  const { data } = await api.post(`/orders/${orderId}/files/tz-to-tg`);
+  return data as { success: boolean; sent: number };
+}
+
 export async function deleteFile(fileId: string) {
   const { data } = await api.delete(`/files/${fileId}`);
   return data;

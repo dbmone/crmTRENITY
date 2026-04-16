@@ -99,7 +99,15 @@ export default function OrderCard({ order, onClick, dim }: Props) {
             <span className={`text-[10px] font-medium ${
               activeStage ? "text-amber-400" : pct === 100 ? "text-green-400" : "text-ink-tertiary"
             }`}>
-              {activeStage ? STAGE_LABELS[activeStage.name] : pct === 100 ? "Завершено" : `${pct}%`}
+              {activeStage
+                ? <>
+                    {STAGE_LABELS[activeStage.name]}
+                    {activeStage.awaitingClientApproval && (
+                      <span className="ml-1 text-[9px] text-blue-400 opacity-80">· ожид. клиента</span>
+                    )}
+                  </>
+                : pct === 100 ? "Завершено" : `${pct}%`
+              }
             </span>
             <span className="text-[10px] text-ink-tertiary">{doneStages}/{totalStages}</span>
           </div>
