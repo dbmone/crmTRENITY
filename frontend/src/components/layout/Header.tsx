@@ -16,6 +16,8 @@ import {
 import { useAuthStore } from "../../store/auth.store";
 import type { Notification } from "../../types";
 import * as api from "../../api/client";
+import { TOUR_STEPS } from "../../data/tourSteps";
+import { useTourStore } from "../../store/tour.store";
 
 const ROLE_LABELS: Record<string, string> = {
   MARKETER: "Маркетолог",
@@ -55,6 +57,9 @@ export default function Header() {
   const [showNotifs, setShowNotifs] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
+  const tourActive = useTourStore((s) => s.active);
+  const tourStepIndex = useTourStore((s) => s.stepIndex);
+  const tourRole = useTourStore((s) => s.role);
 
   const unread = notifications.filter((n) => !n.isRead).length;
   const guideNeedsAttention = !user?.guideSeenAt;
@@ -64,7 +69,7 @@ export default function Header() {
   const isHeadCreator = user?.role === "HEAD_CREATOR" || isAdmin;
   const isLeadCreator = user?.role === "LEAD_CREATOR" || isAdmin;
   const canSeeAdmin = isAdmin || isHeadMarketer || isHeadCreator || isLeadCreator;
-  const canSeeAi = isAdmin || isHeadCreator;
+  const canSeeAi = isAdmin || isHeadCreator || isHeadMarketer;
 
   const navItems = NAV.filter((item) => {
     if ((item as any).adminOnly) return canSeeAdmin;
@@ -75,6 +80,14 @@ export default function Header() {
   useEffect(() => {
     setMobileOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    const steps = tourRole ? TOUR_STEPS[tourRole] ?? [] : [];
+    const step = tourActive ? steps[tourStepIndex] : null;
+    const target = step?.target ?? "";
+    if (!tourActive || window.innerWidth >= 768) return;
+    setMobileOpen(target.startsWith("nav-"));
+  }, [tourActive, tourRole, tourStepIndex]);
 
   useEffect(() => {
     if (!user) return;

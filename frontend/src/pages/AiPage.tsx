@@ -5,11 +5,12 @@ import Header from "../components/layout/Header";
 import { Bot, RotateCw } from "lucide-react";
 import * as api from "../api/client";
 
-function PromptEditor({ settingKey, title, description, jsonOutput }: {
+function PromptEditor({ settingKey, title, description, jsonOutput, tourTarget }: {
   settingKey: string;
   title: string;
   description: React.ReactNode;
   jsonOutput?: boolean;
+  tourTarget?: string;
 }) {
   const [prompt,    setPrompt]    = useState("");
   const [original,  setOriginal]  = useState("");
@@ -63,7 +64,7 @@ function PromptEditor({ settingKey, title, description, jsonOutput }: {
   );
 
   return (
-    <div className="bg-bg-surface border border-bg-border rounded-xl p-5">
+    <div data-tour={tourTarget} className="bg-bg-surface border border-bg-border rounded-xl p-5">
       <div className="flex items-start justify-between mb-1">
         <h3 className="text-sm font-semibold text-ink-primary flex items-center gap-2">
           <Bot size={14} className="text-purple-400" />
@@ -115,7 +116,7 @@ export default function AiPage() {
   const user     = useAuthStore((s) => s.user);
   const navigate = useNavigate();
 
-  const canAccess = user?.role === "ADMIN" || user?.role === "HEAD_CREATOR";
+  const canAccess = user?.role === "ADMIN" || user?.role === "HEAD_CREATOR" || user?.role === "HEAD_MARKETER";
 
   useEffect(() => {
     if (!canAccess) navigate("/");
@@ -126,7 +127,7 @@ export default function AiPage() {
   return (
     <div className="min-h-screen bg-bg-base">
       <Header />
-      <div className="max-w-3xl mx-auto px-6 py-8">
+      <div className="max-w-3xl mx-auto px-6 py-8" data-tour="ai-page">
         <div className="mb-6">
           <h1 className="text-xl font-bold text-ink-primary flex items-center gap-2">
             <Bot size={20} className="text-purple-400" />
@@ -140,6 +141,7 @@ export default function AiPage() {
         <div className="space-y-6">
           <PromptEditor
             settingKey="task_parse_prompt"
+            tourTarget="ai-task-prompt"
             title="Голос → Личная задача"
             description={<>
               Используется на странице{" "}
@@ -153,6 +155,7 @@ export default function AiPage() {
 
           <PromptEditor
             settingKey="tz_structure_prompt"
+            tourTarget="ai-tz-prompt"
             title="Голос → Структурированное ТЗ"
             description={<>
               Используется в кнопке <span className="text-ink-secondary">🪄 Голос → ТЗ</span> внутри заказа.

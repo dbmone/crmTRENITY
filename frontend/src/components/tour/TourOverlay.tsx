@@ -94,6 +94,7 @@ export default function TourOverlay() {
   const steps = useMemo(() => (role ? TOUR_STEPS[role] ?? [] : []), [role]);
   const step = steps[stepIndex];
   const isLast = stepIndex === steps.length - 1;
+  const isMobile = typeof window !== "undefined" ? window.innerWidth < 640 : false;
 
   const [targetRect, setTargetRect] = useState<RectLike | null>(null);
   const [targetFound, setTargetFound] = useState(false);
@@ -133,26 +134,6 @@ export default function TourOverlay() {
   }, [active, step]);
 
   useEffect(() => {
-    if (!active || !step?.target || step.advanceOn !== "target-click") return;
-
-    const handler = (event: MouseEvent) => {
-      const rawTarget = event.target;
-      if (!(rawTarget instanceof HTMLElement)) return;
-      const matched = rawTarget.closest(`[data-tour="${step.target}"]`);
-      if (!matched) return;
-
-      if (isLast) {
-        void finish();
-      } else {
-        next(steps.length);
-      }
-    };
-
-    document.addEventListener("click", handler, true);
-    return () => document.removeEventListener("click", handler, true);
-  }, [active, finish, isLast, next, step, steps.length]);
-
-  useEffect(() => {
     if (!active || !step?.target) return;
     const element = getTargetElement(step.target);
     if (!element) return;
@@ -166,7 +147,13 @@ export default function TourOverlay() {
 
   const position = getTooltipPosition(targetRect, targetFound ? step.placement : "center");
   const progress = Math.round(((stepIndex + 1) / steps.length) * 100);
-  const waitingForClick = step.advanceOn === "target-click" && targetFound;
+  const desktopTop = clamp(position.top, VIEWPORT_PADDING, Math.max(VIEWPORT_PADDING, window.innerHeight - 440));
+  const desktopLeft = clamp(
+    position.left,
+    VIEWPORT_PADDING,
+    Math.max(VIEWPORT_PADDING, window.innerWidth - Math.min(TOOLTIP_WIDTH, window.innerWidth - VIEWPORT_PADDING * 2) - VIEWPORT_PADDING)
+  );
+  const waitingForClick = false;
 
   return (
     <div className="pointer-events-none fixed inset-0 z-[120]">
@@ -193,8 +180,22 @@ export default function TourOverlay() {
       )}
 
       <aside
-        className="pointer-events-auto fixed w-[min(380px,calc(100vw-32px))] rounded-3xl border border-bg-border bg-bg-surface/95 p-5 shadow-[0_24px_90px_rgba(0,0,0,0.45)] backdrop-blur"
-        style={{ top: position.top, left: position.left }}
+        className="pointer-events-auto fixed rounded-3xl border border-bg-border bg-bg-surface/95 p-4 shadow-[0_24px_90px_rgba(0,0,0,0.45)] backdrop-blur sm:p-5"
+        style={isMobile
+          ? {
+              top: VIEWPORT_PADDING,
+              left: VIEWPORT_PADDING,
+              right: VIEWPORT_PADDING,
+              maxHeight: `calc(100vh - ${VIEWPORT_PADDING * 2}px)`,
+              overflowY: "auto",
+            }
+          : {
+              top: desktopTop,
+              left: desktopLeft,
+              width: "min(380px, calc(100vw - 32px))",
+              maxHeight: `calc(100vh - ${VIEWPORT_PADDING * 2}px)`,
+              overflowY: "auto",
+            }}
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -280,7 +281,7 @@ export default function TourOverlay() {
                 onClick={() => next(steps.length)}
                 className="rounded-2xl bg-green-500 px-4 py-2.5 text-sm font-black text-black transition-colors hover:bg-green-400"
               >
-                {waitingForClick ? "Дальше без клика" : step.nextLabel ?? "Далее"}
+                {step.nextLabel ?? "Далее"}
               </button>
             )}
           </div>

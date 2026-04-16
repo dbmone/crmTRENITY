@@ -545,11 +545,88 @@ const ADMIN_STEPS: TourStep[] = [
   },
 ];
 
+const VOICE_ORDER_STEPS: TourStep[] = [
+  {
+    route: "/",
+    target: "tz-voice",
+    title: "Голосовой ввод в ТЗ",
+    content: "Эта кнопка превращает обычную голосовую запись в текст и подставляет его в поле ТЗ. Так удобно быстро надиктовать вводные, правки и пожелания без ручного набора.",
+    details: [
+      "После расшифровки текст можно сразу проверить и сохранить в ТЗ.",
+      "Это особенно удобно с телефона и в ситуациях, когда нужно быстро зафиксировать мысль по заказу.",
+    ],
+    emoji: "🎙️",
+    placement: "bottom",
+  },
+  {
+    route: "/",
+    target: "tz-voice-ai",
+    title: "Голос → AI → готовое ТЗ",
+    content: "Эта кнопка не просто расшифровывает голос, а просит AI разложить сказанное в понятную структуру. В итоге в заказ попадает уже более аккуратное и читаемое ТЗ.",
+    details: [
+      "Это помогает, когда мысли высказаны сумбурно, но их нужно быстро привести в рабочий вид.",
+      "Промпт для этого сценария главные роли могут настраивать отдельно в разделе AI.",
+    ],
+    emoji: "🧠",
+    placement: "bottom",
+  },
+];
+
+const AI_SETTINGS_STEPS: TourStep[] = [
+  {
+    route: "/ai",
+    target: "ai-page",
+    title: "Раздел настройки AI",
+    content: "Здесь настраиваются подсказки для AI, который работает с голосом. Это влияет на то, как система превращает голос в личные задачи и в структурированное ТЗ.",
+    details: [
+      "Изменения здесь отражаются и на сайте, и в Telegram-сценариях, потому что логика у них общая.",
+    ],
+    emoji: "🤖",
+    placement: "bottom",
+  },
+  {
+    route: "/ai",
+    target: "ai-task-prompt",
+    title: "Промпт для голосовых задач",
+    content: "Этот блок отвечает за разбор голосовых заметок в личные задачи. Именно он подсказывает AI, как выделять название, описание, приоритет и подзадачи.",
+    details: [
+      "Если результат разборов слишком сырой или слишком формальный, это место как раз для тонкой настройки.",
+    ],
+    emoji: "✅",
+    placement: "bottom",
+  },
+  {
+    route: "/ai",
+    target: "ai-tz-prompt",
+    title: "Промпт для голосового ТЗ",
+    content: "Этот блок влияет на то, как AI собирает из голоса чистое и структурированное ТЗ внутри заказа. Через него можно подстроить стиль, формат и глубину результата.",
+    details: [
+      "Полезно, если команда хочет единый стиль постановки задач независимо от того, кто и как диктовал вводные.",
+    ],
+    emoji: "📝",
+    placement: "bottom",
+  },
+];
+
+function insertStepsAfterTarget(steps: TourStep[], target: string, extraSteps: TourStep[]) {
+  const index = steps.findIndex((step) => step.target === target);
+  if (index === -1) return steps;
+  return [...steps.slice(0, index + 1), ...extraSteps, ...steps.slice(index + 1)];
+}
+
+function withVoiceGuide(steps: TourStep[]) {
+  return insertStepsAfterTarget(steps, "tab-tz", VOICE_ORDER_STEPS);
+}
+
+function withAiGuide(steps: TourStep[]) {
+  return [...steps, ...AI_SETTINGS_STEPS];
+}
+
 export const TOUR_STEPS: Record<UserRole, TourStep[]> = {
-  CREATOR: CREATOR_STEPS,
-  LEAD_CREATOR: LEAD_CREATOR_STEPS,
-  HEAD_CREATOR: HEAD_CREATOR_STEPS,
-  MARKETER: MARKETER_STEPS,
-  HEAD_MARKETER: HEAD_MARKETER_STEPS,
-  ADMIN: [...MARKETER_STEPS, ...ADMIN_STEPS.slice(1)],
+  CREATOR: withVoiceGuide(CREATOR_STEPS),
+  LEAD_CREATOR: withVoiceGuide(LEAD_CREATOR_STEPS),
+  HEAD_CREATOR: withAiGuide(withVoiceGuide(HEAD_CREATOR_STEPS)),
+  MARKETER: withVoiceGuide(MARKETER_STEPS),
+  HEAD_MARKETER: withAiGuide(withVoiceGuide(HEAD_MARKETER_STEPS)),
+  ADMIN: withAiGuide(withVoiceGuide([...MARKETER_STEPS, ...ADMIN_STEPS.slice(1)])),
 };

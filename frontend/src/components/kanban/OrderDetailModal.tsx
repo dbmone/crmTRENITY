@@ -55,9 +55,9 @@ type Tab = "stages" | "tz" | "files" | "reports" | "comments";
 
 const inputCls = "w-full px-3.5 py-2.5 rounded-lg border border-bg-border bg-bg-raised text-sm text-ink-primary placeholder-ink-tertiary outline-none focus:border-green-500/50 transition-colors";
 
-interface Props { order: Order | null; onClose: () => void; }
+interface Props { order: Order | null; onClose: () => void; forcedTab?: Tab | null; }
 
-export default function OrderDetailModal({ order, onClose }: Props) {
+export default function OrderDetailModal({ order, onClose, forcedTab = null }: Props) {
   const user        = useAuthStore((s) => s.user);
   const fetchOrders = useOrdersStore((s) => s.fetchOrders);
 
@@ -115,6 +115,9 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef   = useRef<BlobPart[]>([]);
   const tzFileInputRef   = useRef<HTMLInputElement>(null);
+  const fileUploadAbortRef = useRef<AbortController | null>(null);
+  const editUploadAbortRef = useRef<AbortController | null>(null);
+  const tzUploadAbortRef   = useRef<AbortController | null>(null);
 
   const handleEditFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -139,6 +142,11 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   }, [order?.id]);
 
   useEffect(() => {
+    if (!order || !forcedTab) return;
+    setTab(forcedTab);
+  }, [forcedTab, order?.id]);
+
+  useEffect(() => {
     if (tab === "comments") commentsEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [comments, tab]);
 
@@ -150,7 +158,8 @@ export default function OrderDetailModal({ order, onClose }: Props) {
     orderId: string,
     files: File[],
     fileType: UploadFileType,
-    setProgress: (value: number | null) => void
+    setProgress: (value: number | null) => void,
+    signal?: AbortSignal
   ) => {
     if (!files.length) {
       setProgress(null);
@@ -166,6 +175,7 @@ export default function OrderDetailModal({ order, onClose }: Props) {
     for (const file of files) {
       try {
         await api.uploadFile(orderId, file, fileType, {
+          signal,
           onProgress: (_percent, loaded, total) => {
             const effectiveTotal = Math.max(total || file.size || 1, 1);
             const currentLoaded = Math.min(loaded, effectiveTotal);
@@ -173,7 +183,8 @@ export default function OrderDetailModal({ order, onClose }: Props) {
             setProgress(overallPercent);
           },
         });
-      } catch {
+      } catch (err) {
+        if (api.isRequestCanceled(err)) throw err;
         failed += 1;
       } finally {
         uploadedBytes += Math.max(file.size, 1);
@@ -196,6 +207,55 @@ export default function OrderDetailModal({ order, onClose }: Props) {
 
   const daysLeft = o.deadline ? Math.ceil((new Date(o.deadline).getTime() - Date.now()) / 86400000) : null;
   const availableCreators = users.filter((u) => ["CREATOR", "LEAD_CREATOR", "HEAD_CREATOR"].includes(u.role) && !o.creators?.some((c) => c.creatorId === u.id));
+
+  const handleManagedUpload = async (
+    files: File[],
+    fileType: UploadFileType,
+    setUploading: (value: boolean) => void,
+    setProgress: (value: number | null) => void,
+    abortRef: { current: AbortController | null },
+  ) => {
+    if (!files.length) return false;
+
+    setUploading(true);
+    setProgress(0);
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      const failed = await uploadFilesWithProgress(o.id, files, fileType, setProgress, controller.signal);
+      await loadOrder();
+      if (failed > 0) {
+        alert(`РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ ${failed} С„Р°Р№Р»(РѕРІ)`);
+      }
+      return true;
+    } catch (err: any) {
+      if (!api.isRequestCanceled(err)) {
+        alert(err.response?.data?.error || "РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё");
+      }
+      return false;
+    } finally {
+      abortRef.current = null;
+      setUploading(false);
+      setProgress(null);
+    }
+  };
+
+  const handleEditFilesUpload = async (files: File[]) => {
+    await handleManagedUpload(files, editSelectedFileType, setEditUploadingFile, setEditUploadProgress, editUploadAbortRef);
+  };
+
+  const handleTzFilesUpload = async (files: File[]) => {
+    await handleManagedUpload(files, "TZ", setUploadingTzFile, setTzUploadProgress, tzUploadAbortRef);
+  };
+
+  const handleRegularFilesUpload = async (files: File[]) => {
+    await handleManagedUpload(files, uploadFileType, setUploadingFile, setFileUploadProgress, fileUploadAbortRef);
+  };
+
+  const cancelEditUpload = () => editUploadAbortRef.current?.abort();
+  const cancelTzUpload = () => tzUploadAbortRef.current?.abort();
+  const cancelFilesUpload = () => fileUploadAbortRef.current?.abort();
 
   // ── handlers ──
   const handleStageUpdate = async (stageId: string, status: string) => {
@@ -432,7 +492,17 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                     : <Paperclip size={12} />}
                   {editUploadingFile ? "Загружаю..." : "Прикрепить файл"}
                 </button>
-                <input ref={editFileInputRef} type="file" className="hidden" onChange={handleEditFileUpload} />
+                <input
+                  ref={editFileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={async (e) => {
+                    const files = Array.from(e.target.files || []);
+                    await handleEditFilesUpload(files);
+                    e.target.value = "";
+                  }}
+                />
               </div>
               {editUploadProgress !== null && (
                 <div className="rounded-lg border border-bg-border bg-bg-raised p-2.5">
@@ -443,6 +513,17 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                   <div className="h-1.5 overflow-hidden rounded-full bg-bg-base">
                     <div className="h-full rounded-full bg-green-500 transition-[width] duration-150" style={{ width: `${editUploadProgress}%` }} />
                   </div>
+                  {editUploadingFile && (
+                    <div className="mt-2 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={cancelEditUpload}
+                        className="rounded-md border border-red-500/20 px-2.5 py-1 text-[11px] text-red-400 transition-colors hover:bg-red-500/10"
+                      >
+                        РћС‚РјРµРЅРёС‚СЊ Р·Р°РіСЂСѓР·РєСѓ
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               <div className="flex items-center gap-2">
@@ -565,6 +646,8 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                     e.stopPropagation();
                     setDraggingTz(false);
                     const files = Array.from(e.dataTransfer.files || []);
+                    await handleTzFilesUpload(files);
+                    return;
                     if (!files.length) return;
                     setUploadingTzFile(true);
                     setTzUploadProgress(0);
@@ -629,6 +712,7 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                     ) : (
                       <button
                         onClick={startRecording}
+                        data-tour="tz-voice"
                         title="Записать голосовое — текст появится в поле выше"
                         className="flex items-center gap-2 px-3 py-2 rounded-lg border border-bg-border text-ink-secondary text-sm hover:border-red-500/30 hover:text-red-400 transition-colors">
                         🎙 Голос
@@ -649,6 +733,7 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                     ) : (
                       <button
                         onClick={startTzAiRecording}
+                        data-tour="tz-voice-ai"
                         title="Записать голос — AI структурирует в готовое ТЗ"
                         className="flex items-center gap-2 px-3 py-2 rounded-lg border border-purple-500/30 text-purple-400 text-sm hover:bg-purple-500/10 transition-colors">
                         🪄 Голос → ТЗ
@@ -658,6 +743,9 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                       ref={tzFileInputRef} type="file" multiple className="hidden"
                       onChange={async (e) => {
                         const files = Array.from(e.target.files || []);
+                        await handleTzFilesUpload(files);
+                        e.target.value = "";
+                        return;
                         if (!files.length) return;
                         setUploadingTzFile(true);
                         setTzUploadProgress(0);
@@ -680,6 +768,17 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                       <div className="h-1.5 overflow-hidden rounded-full bg-bg-base">
                         <div className="h-full rounded-full bg-green-500 transition-[width] duration-150" style={{ width: `${tzUploadProgress}%` }} />
                       </div>
+                      {uploadingTzFile && (
+                        <div className="mt-2 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={cancelTzUpload}
+                            className="rounded-md border border-red-500/20 px-2.5 py-1 text-[11px] text-red-400 transition-colors hover:bg-red-500/10"
+                          >
+                            РћС‚РјРµРЅРёС‚СЊ Р·Р°РіСЂСѓР·РєСѓ
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -739,10 +838,12 @@ export default function OrderDetailModal({ order, onClose }: Props) {
               onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDraggingFiles(false); }}
               onDrop={async (e) => {
                 e.preventDefault();
-                e.stopPropagation();
-                setDraggingFiles(false);
-                const files = Array.from(e.dataTransfer.files || []);
-                if (!files.length) return;
+                    e.stopPropagation();
+                    setDraggingFiles(false);
+                    const files = Array.from(e.dataTransfer.files || []);
+                    await handleRegularFilesUpload(files);
+                    return;
+                    if (!files.length) return;
                 setUploadingFile(true);
                 setFileUploadProgress(0);
                 try {
@@ -776,7 +877,17 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                       {uploadingFile ? <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" /> : <Upload size={14} />}
                       {uploadingFile ? "Загружаю..." : "Загрузить"}
                     </button>
-                    <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileUpload} />
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={async (e) => {
+                        const files = Array.from(e.target.files || []);
+                        await handleRegularFilesUpload(files);
+                        e.target.value = "";
+                      }}
+                    />
                   </>
                 )}
               </div>
@@ -794,6 +905,17 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                   <div className="h-1.5 overflow-hidden rounded-full bg-bg-base">
                     <div className="h-full rounded-full bg-green-500 transition-[width] duration-150" style={{ width: `${fileUploadProgress}%` }} />
                   </div>
+                  {uploadingFile && (
+                    <div className="mt-2 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={cancelFilesUpload}
+                        className="rounded-md border border-red-500/20 px-2.5 py-1 text-[11px] text-red-400 transition-colors hover:bg-red-500/10"
+                      >
+                        РћС‚РјРµРЅРёС‚СЊ Р·Р°РіСЂСѓР·РєСѓ
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 

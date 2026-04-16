@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useOrdersStore } from "../store/orders.store";
 import { useAuthStore } from "../store/auth.store";
 import { Order } from "../types";
@@ -8,6 +8,8 @@ import OrderDetailModal from "../components/kanban/OrderDetailModal";
 import Header from "../components/layout/Header";
 import { Plus, RefreshCw, Search, X, SlidersHorizontal } from "lucide-react";
 import * as api from "../api/client";
+import { TOUR_STEPS } from "../data/tourSteps";
+import { useTourStore } from "../store/tour.store";
 
 export default function BoardPage() {
   const user = useAuthStore((s) => s.user);
@@ -18,8 +20,25 @@ export default function BoardPage() {
   const [search,        setSearch]        = useState("");
   const [searchTimer,   setSearchTimer]   = useState<ReturnType<typeof setTimeout> | null>(null);
   const [dragEnabled,   setDragEnabled]   = useState(false);
+  const tourActive = useTourStore((s) => s.active);
+  const tourRole = useTourStore((s) => s.role);
+  const tourStepIndex = useTourStore((s) => s.stepIndex);
 
   const isMarketer = user?.permissions?.create_order ?? ["MARKETER", "HEAD_MARKETER", "ADMIN", "HEAD_CREATOR"].includes(user?.role ?? "");
+  const tourStep = useMemo(
+    () => (tourActive && tourRole ? TOUR_STEPS[tourRole]?.[tourStepIndex] ?? null : null),
+    [tourActive, tourRole, tourStepIndex]
+  );
+  const forcedTab = useMemo(() => {
+    switch (tourStep?.target) {
+      case "tab-stages": return "stages" as const;
+      case "tab-tz": return "tz" as const;
+      case "tab-files": return "files" as const;
+      case "tab-reports": return "reports" as const;
+      case "tab-comments": return "comments" as const;
+      default: return null;
+    }
+  }, [tourStep?.target]);
 
   useEffect(() => {
     fetchOrders();
@@ -30,6 +49,41 @@ export default function BoardPage() {
       } catch {}
     })();
   }, []);
+
+  useEffect(() => {
+    if (!tourActive || tourStep?.route !== "/") {
+      setShowCreate(false);
+      setSelectedOrder(null);
+      return;
+    }
+
+    const target = tourStep.target ?? "";
+    const createTargets = new Set(["create-btn", "create-modal", "create-title", "create-description", "create-tz-files", "create-submit"]);
+    const orderTargets = new Set(["order-modal", "tab-stages", "tab-tz", "tab-files", "tab-reports", "tab-comments"]);
+    const firstOrder = orders[0] ?? null;
+
+    if (createTargets.has(target)) {
+      setShowCreate(true);
+      setSelectedOrder(null);
+      return;
+    }
+
+    setShowCreate(false);
+
+    if (target === "order-card") {
+      setSelectedOrder(null);
+      return;
+    }
+
+    if (orderTargets.has(target)) {
+      if (firstOrder) {
+        setSelectedOrder((prev) => (prev?.id === firstOrder.id ? prev : firstOrder));
+      }
+      return;
+    }
+
+    setSelectedOrder(null);
+  }, [orders, tourActive, tourStep?.route, tourStep?.target]);
 
   const handleSearch = (val: string) => {
     setSearch(val);
@@ -159,7 +213,7 @@ export default function BoardPage() {
       </div>
 
       <CreateOrderModal isOpen={showCreate} onClose={() => setShowCreate(false)} />
-      <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} />
+      <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} forcedTab={forcedTab} />
     </div>
   );
 }

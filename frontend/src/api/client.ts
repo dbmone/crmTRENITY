@@ -119,6 +119,7 @@ export async function rollbackStage(orderId: string, stageId: string) {
 
 export type UploadFileOptions = {
   onProgress?: (percent: number, loaded: number, total: number) => void;
+  signal?: AbortSignal;
 };
 
 export async function uploadFile(orderId: string, file: File, fileType: string, options?: UploadFileOptions) {
@@ -127,6 +128,7 @@ export async function uploadFile(orderId: string, file: File, fileType: string, 
   form.append("fileType", fileType);
   const { data } = await api.post(`/orders/${orderId}/files`, form, {
     headers: { "Content-Type": "multipart/form-data" },
+    signal: options?.signal,
     onUploadProgress: (event) => {
       if (!options?.onProgress) return;
       const total = event.total ?? file.size ?? 0;
@@ -136,6 +138,14 @@ export async function uploadFile(orderId: string, file: File, fileType: string, 
     },
   });
   return data;
+}
+
+export function isRequestCanceled(error: unknown) {
+  return axios.isCancel(error)
+    || (typeof error === "object" && error !== null && (
+      (error as { code?: string }).code === "ERR_CANCELED"
+      || (error as { name?: string }).name === "CanceledError"
+    ));
 }
 
 export async function getDownloadUrl(fileId: string) {

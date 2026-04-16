@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "../store/auth.store";
 import Header from "../components/layout/Header";
 import { Check, X, Shield, RefreshCw, UserX, Crown, Users, ChevronRight, Trash2, UserPlus, RotateCcw, Lock, Unlock, MoveHorizontal } from "lucide-react";
 import * as api from "../api/client";
+import { TOUR_STEPS } from "../data/tourSteps";
+import { useTourStore } from "../store/tour.store";
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: "Админ", HEAD_MARKETER: "Гл. маркетолог",
@@ -41,12 +43,19 @@ export default function AdminPage() {
   const [dragEnabled, setDragEnabled] = useState(false);
   const [dragSettingLoading, setDragSettingLoading] = useState(false);
   const [dragSettingSaving, setDragSettingSaving] = useState(false);
+  const tourActive = useTourStore((s) => s.active);
+  const tourRole = useTourStore((s) => s.role);
+  const tourStepIndex = useTourStore((s) => s.stepIndex);
 
   const isAdmin    = user?.role === "ADMIN";
   const isHeadMark = user?.role === "HEAD_MARKETER" || isAdmin;
   const isHeadCreator = user?.role === "HEAD_CREATOR" || isAdmin;
   const isLead     = user?.role === "LEAD_CREATOR"  || isAdmin;
   const canAccess  = isAdmin || isHeadMark || isHeadCreator || isLead;
+  const tourStep = useMemo(
+    () => (tourActive && tourRole ? TOUR_STEPS[tourRole]?.[tourStepIndex] ?? null : null),
+    [tourActive, tourRole, tourStepIndex]
+  );
 
   const load = async () => {
     setLoading(true);
@@ -76,6 +85,25 @@ export default function AdminPage() {
       setDragSettingLoading(false);
     })();
   }, [isAdmin]);
+
+  useEffect(() => {
+    if (!tourActive || tourStep?.route !== "/admin") return;
+
+    switch (tourStep.target) {
+      case "admin-team-tab":
+        setTab("team");
+        break;
+      case "admin-access-tab":
+        setTab("access");
+        break;
+      case "admin-rights-tab":
+        if (isAdmin) setTab("rights");
+        break;
+      default:
+        setTab("users");
+        break;
+    }
+  }, [isAdmin, tourActive, tourStep?.route, tourStep?.target]);
 
   const approve = async (id: string, role?: string) => {
     setWorking(id);

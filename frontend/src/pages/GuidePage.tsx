@@ -79,25 +79,32 @@ export default function GuidePage() {
                 Пройдём CRM в живом интерфейсе, а не по слайдам
               </h1>
               <p className="mt-4 max-w-3xl text-base leading-7 text-ink-secondary">
-                Тебя проведут по настоящим кнопкам и вкладкам. Нужно будет самому нажимать на реальные элементы интерфейса,
-                чтобы быстро понять, что где находится, зачем оно нужно и как сайт связан с Telegram-ботом.
+                Гайд сам проведёт тебя по CRM: откроет нужные экраны, карточки заказа, вкладки и разделы. Тебе остаётся
+                только нажимать «Далее», читать пояснения и смотреть, что именно происходит на сайте, что дублируется в
+                Telegram и куда потом попадает результат.
               </p>
 
               <div className="mt-6 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-3xl border border-bg-border bg-bg-raised/60 p-4">
                   <MonitorSmartphone size={18} className="mb-2 text-green-400" />
                   <p className="text-sm font-semibold text-ink-primary">Живой интерфейс</p>
-                  <p className="mt-1 text-sm leading-6 text-ink-secondary">Подсветка идёт по настоящим кнопкам, вкладкам и разделам CRM.</p>
+                  <p className="mt-1 text-sm leading-6 text-ink-secondary">
+                    Подсветка идёт по настоящим кнопкам, вкладкам и разделам CRM, а не по макетам.
+                  </p>
                 </div>
                 <div className="rounded-3xl border border-bg-border bg-bg-raised/60 p-4">
                   <Bot size={18} className="mb-2 text-blue-400" />
                   <p className="text-sm font-semibold text-ink-primary">Связь с ботом</p>
-                  <p className="mt-1 text-sm leading-6 text-ink-secondary">По пути я объясню, что дублируется в Telegram и зачем это вообще нужно.</p>
+                  <p className="mt-1 text-sm leading-6 text-ink-secondary">
+                    По пути гайд объясняет, что дублируется в Telegram, зачем это нужно и где это потом искать.
+                  </p>
                 </div>
                 <div className="rounded-3xl border border-bg-border bg-bg-raised/60 p-4">
                   <Sparkles size={18} className="mb-2 text-amber-400" />
-                  <p className="text-sm font-semibold text-ink-primary">Без кодовых слов</p>
-                  <p className="mt-1 text-sm leading-6 text-ink-secondary">Только понятные русские формулировки: что нажать и что после этого произойдёт.</p>
+                  <p className="text-sm font-semibold text-ink-primary">Без сложных терминов</p>
+                  <p className="mt-1 text-sm leading-6 text-ink-secondary">
+                    Только понятные русские формулировки: что нажать, что увидеть и что после этого произойдёт.
+                  </p>
                 </div>
               </div>
 
@@ -131,7 +138,8 @@ export default function GuidePage() {
                 Роль: {ROLE_LABELS[user.role] ?? user.role}
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-300">
-                Для твоей роли я покажу {steps.length} ключевых шагов. Тур можно проходить заново из меню «Гайд» в любое время.
+                Для твоей роли я покажу {steps.length} ключевых шагов. Тур можно проходить заново из вкладки «Гайд» в
+                любое время.
               </p>
 
               <div className="mt-6 space-y-3">

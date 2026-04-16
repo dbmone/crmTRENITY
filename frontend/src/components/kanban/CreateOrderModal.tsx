@@ -18,6 +18,7 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadAbortRef = useRef<AbortController | null>(null);
 
   const createOrder = useOrdersStore((s) => s.createOrder);
 
@@ -28,7 +29,7 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
     setTzFiles((prev) => [...prev, ...files]);
   };
 
-  const uploadTzFiles = async (orderId: string, files: File[]) => {
+  const uploadTzFiles = async (orderId: string, files: File[], signal?: AbortSignal) => {
     if (!files.length) {
       setUploadProgress(null);
       return 0;
@@ -41,6 +42,7 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
     for (const file of files) {
       try {
         await api.uploadFile(orderId, file, "TZ", {
+          signal,
           onProgress: (_percent, loaded, total) => {
             const effectiveTotal = Math.max(total || file.size || 1, 1);
             const currentLoaded = Math.min(loaded, effectiveTotal);
@@ -48,7 +50,8 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
             setUploadProgress(overallPercent);
           },
         });
-      } catch {
+      } catch (err) {
+        if (api.isRequestCanceled(err)) throw err;
         failedUploads += 1;
       } finally {
         uploadedBytes += Math.max(file.size, 1);
@@ -105,6 +108,66 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
     setTzFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const handleSubmitWithCancel = async () => {
+    if (!title.trim()) {
+      setError("Р’РІРµРґРёС‚Рµ РЅР°Р·РІР°РЅРёРµ Р·Р°РєР°Р·Р°");
+      return;
+    }
+
+    setLoading(true);
+    setUploadProgress(tzFiles.length ? 0 : null);
+    setError("");
+    let createdOrder = false;
+
+    try {
+      const controller = new AbortController();
+      uploadAbortRef.current = controller;
+
+      const order = await createOrder({
+        title: title.trim(),
+        description: description.trim() || undefined,
+        deadline: deadline || undefined,
+        reminderDays,
+      });
+      createdOrder = true;
+
+      const failedUploads = await uploadTzFiles(order.id, tzFiles, controller.signal);
+
+      setTitle("");
+      setDescription("");
+      setDeadline("");
+      setReminderDays(2);
+      setTzFiles([]);
+      onClose();
+
+      if (failedUploads > 0) {
+        alert(`Р—Р°РєР°Р· СЃРѕР·РґР°РЅ, РЅРѕ ${failedUploads} С„Р°Р№Р»(РѕРІ) РўР— РЅРµ Р·Р°РіСЂСѓР·РёР»РёСЃСЊ`);
+      }
+    } catch (err: any) {
+      if (api.isRequestCanceled(err)) {
+        setTitle("");
+        setDescription("");
+        setDeadline("");
+        setReminderDays(2);
+        setTzFiles([]);
+        onClose();
+        if (createdOrder) {
+          alert("Р—Р°РіСЂСѓР·РєР° С„Р°Р№Р»РѕРІ РѕСЃС‚Р°РЅРѕРІР»РµРЅР°. РЎР°Рј Р·Р°РєР°Р· СѓР¶Рµ СЃРѕР·РґР°РЅ.");
+        }
+      } else {
+        setError(err.response?.data?.error || "РћС€РёР±РєР° РїСЂРё СЃРѕР·РґР°РЅРёРё");
+      }
+    } finally {
+      uploadAbortRef.current = null;
+      setUploadProgress(null);
+      setLoading(false);
+    }
+  };
+
+  const handleCancelUpload = () => {
+    uploadAbortRef.current?.abort();
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
@@ -129,7 +192,7 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
               placeholder="Например: Рилс для Ozon — весенняя коллекция"
               className={inputCls}
               autoFocus
-              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+              onKeyDown={(e) => e.key === "Enter" && handleSubmitWithCancel()}
             />
           </div>
 
@@ -244,6 +307,17 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
                   style={{ width: `${uploadProgress}%` }}
                 />
               </div>
+              {loading && (
+                <div className="mt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleCancelUpload}
+                    className="rounded-md border border-red-500/20 px-2.5 py-1 text-[11px] text-red-400 transition-colors hover:bg-red-500/10"
+                  >
+                    РћС‚РјРµРЅРёС‚СЊ Р·Р°РіСЂСѓР·РєСѓ
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -256,7 +330,7 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
             </button>
             <button
               data-tour="create-submit"
-              onClick={handleSubmit}
+              onClick={handleSubmitWithCancel}
               disabled={loading}
               className="flex-1 rounded-lg bg-green-500 px-4 py-2.5 text-sm font-bold text-black transition-colors hover:bg-green-400 disabled:opacity-50"
             >

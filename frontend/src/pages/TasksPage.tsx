@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Header from "../components/layout/Header";
 import * as api from "../api/client";
 import { Task, TaskPriority, TaskSubtask, ParsedTask } from "../types";
@@ -6,6 +6,8 @@ import {
   Plus, Trash2, ChevronDown, ChevronRight, Check, X, Mic, Square,
   Loader2, Sparkles, Flag, Calendar, Edit2,
 } from "lucide-react";
+import { TOUR_STEPS } from "../data/tourSteps";
+import { useTourStore } from "../store/tour.store";
 
 // ─── Константы ────────────────────────────────────────────────
 
@@ -349,6 +351,13 @@ export default function TasksPage() {
   const [showAdd,     setShowAdd]     = useState(false);
   const [newTitle,    setNewTitle]    = useState("");
   const [newPriority, setNewPriority] = useState<TaskPriority>("MEDIUM");
+  const tourActive = useTourStore((s) => s.active);
+  const tourRole = useTourStore((s) => s.role);
+  const tourStepIndex = useTourStore((s) => s.stepIndex);
+  const tourStep = useMemo(
+    () => (tourActive && tourRole ? TOUR_STEPS[tourRole]?.[tourStepIndex] ?? null : null),
+    [tourActive, tourRole, tourStepIndex]
+  );
 
   const voice = useVoiceRecorder(async (blob, ext) => {
     setParsing(true);
@@ -369,6 +378,14 @@ export default function TasksPage() {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    if (!tourActive || tourStep?.route !== "/tasks") {
+      setShowAdd(false);
+      return;
+    }
+    setShowAdd(tourStep.target === "tasks-add");
+  }, [tourActive, tourStep?.route, tourStep?.target]);
 
   // ── Handlers ──
 
