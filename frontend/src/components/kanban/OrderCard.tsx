@@ -77,7 +77,7 @@ export default function OrderCard({ order, onClick, dim }: Props) {
       {curStages.length > 0 && (
         <div className="mb-2.5">
           {maxRound > 0 && (
-            <div className="text-[9px] font-semibold text-amber-400/80 uppercase tracking-wider mb-1">
+            <div className="text-[9px] font-semibold text-purple-400 uppercase tracking-wider mb-1">
               Правка {maxRound}
             </div>
           )}
@@ -94,7 +94,7 @@ export default function OrderCard({ order, onClick, dim }: Props) {
                       ? st.status === "DONE"
                         ? "bg-purple-500"
                         : st.status === "IN_PROGRESS"
-                        ? "bg-fuchsia-400 pulse-green"
+                        ? "bg-orange-400 pulse-green"
                         : "bg-bg-border"
                       : st.status === "DONE"
                       ? "bg-green-500"
@@ -109,7 +109,7 @@ export default function OrderCard({ order, onClick, dim }: Props) {
           <div className="flex items-center justify-between">
             <span className={`text-[10px] font-medium ${
               activeStage
-                ? maxRound > 0 ? "text-fuchsia-400" : "text-amber-400"
+                ? maxRound > 0 ? "text-orange-400" : "text-amber-400"
                 : pct === 100
                 ? maxRound > 0 ? "text-purple-400" : "text-green-400"
                 : "text-ink-tertiary"
