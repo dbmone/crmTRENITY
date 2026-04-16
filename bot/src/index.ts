@@ -10,6 +10,7 @@ dotenv.config();
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const TELEGRAM_PROXY_URL = process.env.TELEGRAM_PROXY_URL;
+const FRONTEND_URL = process.env.FRONTEND_URL?.trim() || "";
 
 function maskEndpoint(value: string): string {
   try {
@@ -151,6 +152,11 @@ function mainMenuKeyboard(status: UserStatus, role?: UserRole): InlineKeyboard {
   return kb;
 }
 
+function withFrontendLink(kb: InlineKeyboard): InlineKeyboard {
+  if (FRONTEND_URL) kb.row().url("🌐 Открыть сайт", FRONTEND_URL);
+  return kb;
+}
+
 // ==================== /start — РЕГИСТРАЦИЯ / ВХОД ====================
 
 bot.command("start", async (ctx) => {
@@ -218,7 +224,7 @@ bot.command("start", async (ctx) => {
 
     await ctx.reply(
       `👋 ${existing.displayName}!\n\n${statusText}\nРоль: ${formatRole(existing.role)}`,
-      { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(existing.status, existing.role) }
+      { parse_mode: "Markdown", reply_markup: withFrontendLink(mainMenuKeyboard(existing.status, existing.role)) }
     );
     return;
   }
@@ -232,7 +238,7 @@ bot.command("start", async (ctx) => {
     `👋 Добро пожаловать в *TRENITY CRM*!\n\n` +
     `Для начала работы нужно подать заявку.\n` +
     `Выберите вашу роль:`,
-    { parse_mode: "Markdown", reply_markup: kb }
+    { parse_mode: "Markdown", reply_markup: withFrontendLink(kb) }
   );
 });
 
@@ -289,7 +295,7 @@ bot.callbackQuery(/^reg_(.+)$/, async (ctx) => {
     `📋 Роль: ${formatRole(roleStr)}\n\n` +
     `⏳ Дождитесь одобрения от администратора.\n` +
     `Вам придёт уведомление и PIN-код для входа на сайт.`,
-    { reply_markup: mainMenuKeyboard(UserStatus.PENDING) }
+    { reply_markup: withFrontendLink(mainMenuKeyboard(UserStatus.PENDING)) }
   );
 });
 

@@ -57,6 +57,7 @@ services:
       BOT_TOKEN: ${BOT_TOKEN}
       TELEGRAM_STORAGE_CHAT_ID: ${TELEGRAM_STORAGE_CHAT_ID}
       TELEGRAM_PROXY_URL: ${TELEGRAM_PROXY_URL:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
       ADMIN_TG_USERNAME: ${ADMIN_TG_USERNAME}
     depends_on:
       backend:
