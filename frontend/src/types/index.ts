@@ -48,6 +48,7 @@ export interface OrderFile {
   fileType: string;
   fileName: string;
   fileSize: number;
+  mimeType: string;
   uploadedAt: string;
   uploadedBy?: User;
   telegramFileId?: string | null;
