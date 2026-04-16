@@ -33,7 +33,12 @@ export async function commentsRoutes(app: FastifyInstance) {
     if (!order) return reply.status(404).send({ error: "Заказ не найден" });
 
     const comment = await prisma.orderComment.create({
-      data: { orderId: req.params.orderId, authorId: req.currentUser.id, text: text.trim() },
+      data: {
+        orderId: req.params.orderId,
+        authorId: req.currentUser.id,
+        text: text.trim(),
+        source: "WEB",
+      },
       include: {
         author: { select: { id: true, displayName: true, telegramUsername: true, avatarUrl: true, role: true } },
       },

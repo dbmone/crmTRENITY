@@ -202,6 +202,7 @@ model OrderComment {
   orderId   String   @map("order_id")
   authorId  String   @map("author_id")
   text      String   @db.Text
+  source    String   @default("WEB") @db.VarChar(32)
   createdAt DateTime @default(now()) @map("created_at")
 
   order  Order @relation(fields: [orderId], references: [id], onDelete: Cascade)

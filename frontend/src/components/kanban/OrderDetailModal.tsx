@@ -309,6 +309,7 @@ export default function OrderDetailModal({ order, onClose }: Props) {
 
   const tzItems    = o.files?.filter((f) => getFileBucket(f) === "tz") ?? [];
   const nonTzFiles = o.files?.filter((f) => getFileBucket(f) !== "tz") ?? [];
+  const visibleComments = comments.filter((comment) => !(comment.source === "TELEGRAM" && comment.author.id === user?.id));
   const filteredFiles = selectedFileType === "all"
     ? nonTzFiles
     : nonTzFiles.filter((f) => getFileBucket(f) === selectedFileType);
@@ -320,6 +321,9 @@ export default function OrderDetailModal({ order, onClose }: Props) {
     { id: "reports",  label: "Отчёты",  count: o.reports?.length || o._count?.reports },
     { id: "comments", label: "Чат",     count: comments.length || undefined },
   ];
+
+  const commentsTab = tabs.find((item) => item.id === "comments");
+  if (commentsTab) commentsTab.count = visibleComments.length || undefined;
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-end sm:justify-center sm:pt-10 sm:pb-6 sm:overflow-y-auto">
@@ -816,12 +820,12 @@ export default function OrderDetailModal({ order, onClose }: Props) {
           {tab === "comments" && (
             <div>
               <div className="max-h-72 overflow-y-auto space-y-2 mb-3">
-                {comments.length === 0 ? (
+                {visibleComments.length === 0 ? (
                   <div className="text-center py-10 text-ink-tertiary">
                     <MessageSquare size={28} className="mx-auto mb-2 opacity-20" />
                     <p className="text-sm">Чат пустой</p>
                   </div>
-                ) : comments.map((c) => {
+                ) : visibleComments.map((c) => {
                   const isOwn = c.author.id === user?.id;
                   return (
                     <div key={c.id} className={`flex gap-2 ${isOwn ? "flex-row-reverse" : ""}`}>

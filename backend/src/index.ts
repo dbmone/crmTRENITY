@@ -96,6 +96,11 @@ async function ensureSchema() {
       ADD COLUMN IF NOT EXISTS "guide_seen_at" TIMESTAMP(3)
   `);
 
+  await runSql("order_comments source column", `
+    ALTER TABLE "order_comments"
+      ADD COLUMN IF NOT EXISTS "source" VARCHAR(32) NOT NULL DEFAULT 'WEB'
+  `);
+
   // 5. Default для storage_path
   await runSql("order_files storage_path default", `
     ALTER TABLE "order_files" ALTER COLUMN "storage_path" SET DEFAULT ''

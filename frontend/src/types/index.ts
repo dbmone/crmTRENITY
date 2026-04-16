@@ -139,6 +139,7 @@ export interface OrderComment {
   id: string;
   orderId: string;
   text: string;
+  source?: "WEB" | "TELEGRAM" | string;
   createdAt: string;
   author: User;
 }

@@ -1418,6 +1418,7 @@ async function saveGroupComment(orderId: string, telegramUserId: number, text: s
       orderId,
       authorId: author.id,
       text,
+      source: "TELEGRAM",
     },
   });
   return true;
@@ -2364,7 +2365,7 @@ bot.on("message:text", async (ctx, next) => {
     }
 
     await prisma.orderComment.create({
-      data: { orderId, authorId: user.id, text },
+      data: { orderId, authorId: user.id, text, source: "TELEGRAM" },
     });
     await mirrorTextToOrderGroup(orderId, `💬 *${esc(user.displayName)}*\n${esc(text)}`);
 
