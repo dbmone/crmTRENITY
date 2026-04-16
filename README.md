@@ -145,3 +145,27 @@ After that:
 - Bot API cannot create groups. That is why the backend uses a userbot via `gramjs`.
 - The userbot is only used for group creation and participant invites.
 - Live message/file sync is handled by the existing Telegram bot.
+
+## Guide Tab
+
+The web app now has a dedicated `📖 Гайд` page with an interactive onboarding flow.
+
+What it does:
+
+- every user sees role-specific onboarding steps
+- after the first successful login, users with `guideSeenAt = null` are automatically redirected to `/guide`
+- finishing or skipping the guide marks it as seen through `POST /api/users/guide-seen`
+- the top navigation shows a dot indicator near `Гайд` until the guide is completed
+
+Roles covered:
+
+- `CREATOR`, `LEAD_CREATOR`, `HEAD_CREATOR`
+- `MARKETER`, `HEAD_MARKETER`
+- `ADMIN`
+
+Implementation notes:
+
+- guide state is stored in `users.guide_seen_at`
+- backend keeps the column in sync through `ensureSchema()`
+- frontend guide content lives in `frontend/src/data/guideSteps.ts`
+- the interactive slide component lives in `frontend/src/components/guide/GuideTour.tsx`
