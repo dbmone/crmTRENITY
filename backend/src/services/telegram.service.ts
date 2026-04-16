@@ -13,10 +13,20 @@ const telegramProxy = config.bot.proxyUrl
   ? new ProxyAgent({ getProxyForUrl: () => config.bot.proxyUrl })
   : null;
 
+function getBotApiBase(): string {
+  return config.bot.apiBaseUrl.replace(/\/+$/, "");
+}
+
 function getTG(): string {
   const token = config.bot.token;
   if (!token) throw new Error("BOT_TOKEN не задан в переменных окружения бэкенда");
-  return `https://api.telegram.org/bot${token}`;
+  return `${getBotApiBase()}/bot${token}`;
+}
+
+function getTGFileBase(): string {
+  const token = config.bot.token;
+  if (!token) throw new Error("BOT_TOKEN не задан в переменных окружения бэкенда");
+  return `${getBotApiBase()}/file/bot${token}`;
 }
 
 async function tgFetch(input: string, init: RequestInit = {}) {
@@ -165,7 +175,7 @@ export async function getTelegramFileStream(fileId: string): Promise<{
     throw new Error(`Telegram API error: ${meta.description || "getFile failed"}`);
   }
 
-  const downloadUrl = `https://api.telegram.org/file/bot${config.bot.token}/${meta.result.file_path}`;
+  const downloadUrl = `${getTGFileBase()}/${meta.result.file_path}`;
   const fileRes: any = await tgFetch(downloadUrl, { method: "GET" });
   if (!fileRes.ok || !fileRes.body) {
     throw new Error(`Telegram file download failed: ${fileRes.status}`);

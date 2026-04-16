@@ -234,7 +234,7 @@ app.register(cors, {
 
 app.register(jwt, { secret: config.jwt.secret });
 app.decorate("authenticate", authMiddleware);
-app.register(multipart, { limits: { fileSize: 1024 * 1024 * 1024 } });
+app.register(multipart, { limits: { fileSize: 2 * 1024 * 1024 * 1024 } });
 
 // Гарантируем charset=utf-8 во всех JSON-ответах
 app.addHook("onSend", (_req, reply, _payload, done) => {

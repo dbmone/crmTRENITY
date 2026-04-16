@@ -296,17 +296,9 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
     let failed = 0;
     const items = startUploadItems(files, setItems);
 
-    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
-
     for (let index = 0; index < files.length; index += 1) {
       const file = files[index];
       const item = items[index];
-
-      if (file.size > MAX_FILE_SIZE) {
-        failed += 1;
-        updateUploadItem(item.key, setItems, { state: "error", errorMsg: "Слишком большой (макс. 50 МБ)" });
-        continue;
-      }
 
       try {
         await api.uploadFile(orderId, file, fileType, {
@@ -1216,6 +1208,18 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
                 Отмена
               </button>
               <button
+                onClick={() => {
+                  if (!tzAiPreview.text.trim()) return;
+                  setTzText((prev) => (prev ? `${prev}\n${tzAiPreview.text.trim()}` : tzAiPreview.text.trim()));
+                  setTzAiPreview(null);
+                }}
+                disabled={!tzAiPreview.text.trim()}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-green-500/20 bg-green-500/10 text-green-400 text-sm font-bold hover:bg-green-500/20 disabled:opacity-50 transition-colors"
+              >
+                <Plus size={13} />
+                В основное поле
+              </button>
+              <button
                 onClick={async () => {
                   if (!tzAiPreview.text.trim()) return;
                   setAddingTzNote(true);
@@ -1232,7 +1236,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
                 {addingTzNote
                   ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   : <Plus size={13} />}
-                Сохранить в ТЗ
+                Доп. заметка
               </button>
             </div>
           </div>

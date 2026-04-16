@@ -97,6 +97,12 @@ export default function BoardPage() {
     ]);
     const firstOrder = orders[0] ?? null;
 
+    if (target === "create-btn") {
+      setShowCreate(false);
+      setSelectedOrder(null);
+      return;
+    }
+
     if (createTargets.has(target)) {
       setShowCreate(true);
       setSelectedOrder(null);

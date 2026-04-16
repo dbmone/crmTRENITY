@@ -35,6 +35,32 @@ function formatFileSize(size: number) {
   return `${Math.max(1, Math.round(size / 1024))} КБ`;
 }
 
+function getExtension(fileName: string) {
+  const parts = fileName.toLowerCase().split(".");
+  return parts.length > 1 ? parts.pop() || "" : "";
+}
+
+function isImageFile(file: Pick<OrderFile, "fileName" | "mimeType">) {
+  const ext = getExtension(file.fileName);
+  return file.mimeType?.startsWith("image/") || ["jpg", "jpeg", "png", "webp", "gif", "bmp"].includes(ext);
+}
+
+function isVideoFile(file: Pick<OrderFile, "fileName" | "mimeType">) {
+  const ext = getExtension(file.fileName);
+  return file.mimeType?.startsWith("video/") || ["mp4", "mov", "webm", "mkv", "avi", "m4v"].includes(ext);
+}
+
+function isAudioFile(file: Pick<OrderFile, "fileName" | "mimeType">) {
+  const ext = getExtension(file.fileName);
+  const mime = (file.mimeType || "").toLowerCase();
+  return mime.startsWith("audio/")
+    || mime.includes("ogg")
+    || mime.includes("mpeg")
+    || mime.includes("wav")
+    || mime.includes("mp4")
+    || ["ogg", "oga", "opus", "mp3", "wav", "m4a", "aac", "webm"].includes(ext);
+}
+
 export default function OrderFileRow({
   file,
   canDelete,
@@ -54,9 +80,9 @@ export default function OrderFileRow({
   const isTelegramFile = !!file.telegramFileId || !!file.telegramMsgId;
   const fileBucket = getFileBucket(file);
   const isTextTz = fileBucket === "tz" && file.mimeType === "text/plain";
-  const isImagePreview = file.mimeType?.startsWith("image/");
-  const isVideoPreview = file.mimeType?.startsWith("video/");
-  const isAudioPreview = file.mimeType?.startsWith("audio/");
+  const isImagePreview = isImageFile(file);
+  const isVideoPreview = isVideoFile(file);
+  const isAudioPreview = isAudioFile(file);
   const canPreview = isImagePreview || isVideoPreview || isAudioPreview;
 
   // Видео и аудио используют прямой стриминговый URL (поддерживает Range, нет загрузки в память)

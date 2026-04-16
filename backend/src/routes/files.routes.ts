@@ -101,15 +101,6 @@ export async function filesRoutes(app: FastifyInstance) {
     for await (const chunk of data.file) chunks.push(chunk);
     const buffer = Buffer.concat(chunks);
 
-    const maxSize = config.bot.useAsTFileStorage ? 50 * 1024 * 1024 : 1024 * 1024 * 1024;
-    if (buffer.length > maxSize) {
-      return reply.status(413).send({
-        error: config.bot.useAsTFileStorage
-          ? "При хранении файлов в Telegram через сайт можно загрузить только до 50 МБ. Для больших файлов переключите хранилище на S3/MinIO или отправляйте их другим способом."
-          : "Через сайт можно загрузить файл до 1 ГБ.",
-      });
-    }
-
     try {
       const file = await uploadFile(
         req.params.orderId,
@@ -127,8 +118,6 @@ export async function filesRoutes(app: FastifyInstance) {
 }
 
 export async function filesGlobalRoutes(app: FastifyInstance) {
-  app.addHook("preHandler", app.authenticate);
-
   // ── Streaming endpoint для видео/аудио (без addHook — своя auth через query token) ──
   app.get<{ Params: { fileId: string }; Querystring: { token?: string } }>(
     "/:fileId/stream",
@@ -188,7 +177,7 @@ export async function filesGlobalRoutes(app: FastifyInstance) {
     }
   );
 
-  app.get<{ Params: { fileId: string } }>("/:fileId/content", async (req, reply) => {
+  app.get<{ Params: { fileId: string } }>("/:fileId/content", { preHandler: app.authenticate }, async (req, reply) => {
     try {
       const file = await getFileContentStream(req.params.fileId);
       reply.header("Content-Type", file.mimeType);
@@ -202,7 +191,7 @@ export async function filesGlobalRoutes(app: FastifyInstance) {
     }
   });
 
-  app.get<{ Params: { fileId: string } }>("/:fileId/download", async (req, reply) => {
+  app.get<{ Params: { fileId: string } }>("/:fileId/download", { preHandler: app.authenticate }, async (req, reply) => {
     try {
       const url = await getDownloadUrl(req.params.fileId);
       return { url };
@@ -217,7 +206,7 @@ export async function filesGlobalRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post<{ Params: { fileId: string } }>("/:fileId/send-to-tg", async (req, reply) => {
+  app.post<{ Params: { fileId: string } }>("/:fileId/send-to-tg", { preHandler: app.authenticate }, async (req, reply) => {
     try {
       await sendFileToUserTelegram(req.params.fileId, req.currentUser.id);
       return { success: true, message: "Файл отправлен в ваш Telegram" };
@@ -226,7 +215,7 @@ export async function filesGlobalRoutes(app: FastifyInstance) {
     }
   });
 
-  app.delete<{ Params: { fileId: string } }>("/:fileId", async (req, reply) => {
+  app.delete<{ Params: { fileId: string } }>("/:fileId", { preHandler: app.authenticate }, async (req, reply) => {
     try {
       return await deleteFile(req.params.fileId, req.currentUser.id, req.currentUser.role as UserRole);
     } catch (err: any) {

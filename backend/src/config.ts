@@ -32,6 +32,7 @@ export const config = {
     useAsTFileStorage: process.env.USE_TELEGRAM_STORAGE === "true",
     proxyUrl: process.env.TELEGRAM_PROXY_URL || "",
     username: (process.env.BOT_USERNAME || "").replace(/^@/, ""),
+    apiBaseUrl: process.env.TELEGRAM_BOT_API_BASE_URL || "https://api.telegram.org",
   },
 
   telegramUserbot: {

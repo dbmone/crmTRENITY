@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
 import { TOUR_STEPS, type TourStep } from "../../data/tourSteps";
@@ -46,15 +46,14 @@ function getRect(element: HTMLElement | null): RectLike | null {
   };
 }
 
-function getTooltipPosition(rect: RectLike | null, placement: TourStep["placement"]) {
+function getTooltipPosition(rect: RectLike | null, placement: TourStep["placement"], tooltipHeight: number) {
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
   const tooltipWidth = Math.min(TOOLTIP_WIDTH, viewportWidth - VIEWPORT_PADDING * 2);
-  const tooltipHeight = 360;
 
   if (!rect || placement === "center") {
     return {
-      top: Math.max(80, viewportHeight / 2 - 180),
+      top: Math.max(80, viewportHeight / 2 - tooltipHeight / 2),
       left: clamp(
         (viewportWidth - tooltipWidth) / 2,
         VIEWPORT_PADDING,
@@ -85,7 +84,7 @@ function getTooltipPosition(rect: RectLike | null, placement: TourStep["placemen
   switch (resolvedPlacement) {
     case "top":
       return {
-        top: clamp(rect.top - 280, VIEWPORT_PADDING, maxTop),
+        top: clamp(rect.top - tooltipHeight - gap, VIEWPORT_PADDING, maxTop),
         left: clamp(rect.left + rect.width / 2 - tooltipWidth / 2, VIEWPORT_PADDING, maxLeft),
       };
     case "left":
@@ -126,6 +125,8 @@ export default function TourOverlay() {
   const [targetRect, setTargetRect] = useState<RectLike | null>(null);
   const [targetFound, setTargetFound] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
+  const [tooltipHeight, setTooltipHeight] = useState(360);
+  const tooltipRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const update = () => setIsMobile(window.innerWidth < 640);
@@ -173,15 +174,37 @@ export default function TourOverlay() {
     if (!element) return;
 
     window.setTimeout(() => {
-      element.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+      element.scrollIntoView({
+        block: window.innerWidth < 640 ? "start" : "center",
+        inline: "center",
+        behavior: "smooth",
+      });
     }, 80);
   }, [active, stepIndex, step?.target]);
 
+  useEffect(() => {
+    const measure = () => {
+      if (!tooltipRef.current) return;
+      const nextHeight = Math.ceil(tooltipRef.current.getBoundingClientRect().height);
+      if (nextHeight > 0) {
+        setTooltipHeight((current) => (Math.abs(current - nextHeight) > 4 ? nextHeight : current));
+      }
+    };
+
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [active, isMobile, step, targetFound]);
+
   if (!active || !step || steps.length === 0) return null;
 
-  const position = getTooltipPosition(targetRect, targetFound ? step.placement : "center");
+  const position = getTooltipPosition(targetRect, targetFound ? step.placement : "center", tooltipHeight);
   const progress = Math.round(((stepIndex + 1) / steps.length) * 100);
-  const desktopTop = clamp(position.top, VIEWPORT_PADDING, Math.max(VIEWPORT_PADDING, window.innerHeight - 460));
+  const desktopTop = clamp(
+    position.top,
+    VIEWPORT_PADDING,
+    Math.max(VIEWPORT_PADDING, window.innerHeight - tooltipHeight - VIEWPORT_PADDING)
+  );
   const desktopLeft = clamp(
     position.left,
     VIEWPORT_PADDING,
@@ -216,6 +239,7 @@ export default function TourOverlay() {
       )}
 
       <aside
+        ref={tooltipRef}
         className="pointer-events-auto fixed rounded-3xl border border-bg-border bg-bg-surface/95 p-4 shadow-[0_24px_90px_rgba(0,0,0,0.45)] backdrop-blur sm:p-5"
         style={
           isMobile

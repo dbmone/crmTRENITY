@@ -94,10 +94,6 @@ async function uploadFileViaTelegram(
   fileBuffer: Buffer,
   mimeType: string
 ) {
-  if (fileBuffer.length > 50 * 1024 * 1024) {
-    throw { statusCode: 413, message: "Telegram поддерживает файлы до 50 МБ через сайт. Загрузите файл через Telegram-бот." };
-  }
-
   const [order, uploader] = await Promise.all([
     prisma.order.findUnique({ where: { id: orderId }, select: { title: true } }),
     prisma.user.findUnique({ where: { id: uploadedById }, select: { displayName: true, telegramUsername: true } }),

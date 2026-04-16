@@ -1124,6 +1124,8 @@ const waitingForSubtaskForTask = new Map<number, string>();
 const waitingForOrderComment = new Map<number, string>();
 const waitingForTzNote = new Map<number, string>();
 const waitingForTzVoice = new Map<number, string>();
+const waitingForCollectVoiceText = new Set<number>();
+const waitingForCollectVoiceAi = new Set<number>();
 const taskVoiceDraft = new Map<number, {
   title: string;
   description?: string;
@@ -1282,14 +1284,8 @@ async function replyOrEdit(ctx: any, text: string, extra: Record<string, any>) {
     const chatId = Number(ctx.chat.id);
     const currentPanelId = panelMessageIds.get(chatId);
     if (currentPanelId) {
-      try {
-        await bot.api.editMessageText(chatId, currentPanelId, text, extra as any);
-        return;
-      } catch {
-        // Редактирование не удалось — удаляем старое сообщение перед отправкой нового
-        try { await bot.api.deleteMessage(chatId, currentPanelId); } catch {}
-        panelMessageIds.delete(chatId);
-      }
+      try { await bot.api.deleteMessage(chatId, currentPanelId); } catch {}
+      panelMessageIds.delete(chatId);
     }
   }
 
@@ -1309,6 +1305,8 @@ function clearInteractiveState(userId: number) {
   waitingForOrderComment.delete(userId);
   waitingForTzNote.delete(userId);
   waitingForTzVoice.delete(userId);
+  waitingForCollectVoiceText.delete(userId);
+  waitingForCollectVoiceAi.delete(userId);
   taskVoiceDraft.delete(userId);
   tzVoiceDraft.delete(userId);
   collectingState.delete(userId);
@@ -1886,10 +1884,11 @@ async function sendOrderFileToChat(chatId: number, file: any) {
 async function startOrderFileCollection(ctx: any, orderId: string, targetFileType: string, promptTitle: string) {
   collectingState.set(ctx.from!.id, { mode: "attach_files", orderId, targetFileType, items: [] });
   const order = await prisma.order.findUnique({ where: { id: orderId }, select: { title: true } });
+  const canUseTzVoice = targetFileType === "TZ";
   await replyOrEdit(
     ctx,
     `${promptTitle}: *${order?.title || orderId}*\n\nОтправляйте файлы, фото, видео, голосовые или текст. Когда закончите — нажмите Готово.`,
-    { parse_mode: "Markdown", reply_markup: collectingKeyboard() }
+    { parse_mode: "Markdown", reply_markup: collectingKeyboard({ tzVoice: canUseTzVoice }) }
   );
 }
 
@@ -2260,8 +2259,19 @@ interface CollectingState {
 }
 const collectingState = new Map<number, CollectingState>();
 
-function collectingKeyboard(): InlineKeyboard {
-  return new InlineKeyboard()
+function isTzCollectingState(state: CollectingState | undefined | null): boolean {
+  if (!state) return false;
+  return state.mode === "create_order" || state.targetFileType === "TZ";
+}
+
+function collectingKeyboard(options?: { tzVoice?: boolean }): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  if (options?.tzVoice) {
+    kb.text("🎙 Голос → текст", "collect_voice_text")
+      .text("🪄 AI из голоса", "collect_voice_ai")
+      .row();
+  }
+  return kb
     .text("✅ Готово", "tz_done").row()
     .text("❌ Отмена", "tz_cancel");
 }
@@ -2310,6 +2320,30 @@ bot.callbackQuery("create_order", async (ctx) => {
 });
 
 // Готово / Отмена для батч-сбора
+bot.callbackQuery("collect_voice_text", async (ctx) => {
+  const state = collectingState.get(ctx.from!.id);
+  if (!isTzCollectingState(state)) { await ctx.answerCallbackQuery("РќРµС‚ Р°РєС‚РёРІРЅРѕРіРѕ РўР—"); return; }
+
+  waitingForCollectVoiceAi.delete(ctx.from!.id);
+  waitingForCollectVoiceText.add(ctx.from!.id);
+  await ctx.answerCallbackQuery();
+  await replyOrEdit(ctx, "рџЋ™ РћС‚РїСЂР°РІСЊС‚Рµ РіРѕР»РѕСЃРѕРІРѕРµ. РЇ СЂР°СЃС€РёС„СЂСѓСЋ РµРіРѕ Рё РґРѕР±Р°РІР»СЋ РєР°Рє С‚РµРєСЃС‚ РІ РўР—.", {
+    reply_markup: collectingKeyboard({ tzVoice: true }),
+  });
+});
+
+bot.callbackQuery("collect_voice_ai", async (ctx) => {
+  const state = collectingState.get(ctx.from!.id);
+  if (!isTzCollectingState(state)) { await ctx.answerCallbackQuery("РќРµС‚ Р°РєС‚РёРІРЅРѕРіРѕ РўР—"); return; }
+
+  waitingForCollectVoiceText.delete(ctx.from!.id);
+  waitingForCollectVoiceAi.add(ctx.from!.id);
+  await ctx.answerCallbackQuery();
+  await replyOrEdit(ctx, "рџЄ„ РћС‚РїСЂР°РІСЊС‚Рµ РіРѕР»РѕСЃРѕРІРѕРµ. AI СЃРѕР±РµСЂС‘С‚ РµРіРѕ РІ Р°РєРєСѓСЂР°С‚РЅРѕРµ РўР— Рё РґРѕР±Р°РІРёС‚ Рє РјР°С‚РµСЂРёР°Р»Р°Рј.", {
+    reply_markup: collectingKeyboard({ tzVoice: true }),
+  });
+});
+
 bot.callbackQuery("tz_done", async (ctx) => {
   const userId = ctx.from!.id;
   const state = collectingState.get(userId);
@@ -2705,7 +2739,7 @@ bot.on("message:text", async (ctx, next) => {
       `• Текстовые сообщения\n• Файлы, фото, видео\n• Пересланные сообщения\n\n` +
       `Можно сколько угодно штук подряд. Когда закончите — нажмите *Готово*.\n` +
       `Или сразу Готово если ТЗ не нужно:`,
-      { parse_mode: "Markdown", reply_markup: collectingKeyboard() }
+      { parse_mode: "Markdown", reply_markup: collectingKeyboard({ tzVoice: true }) }
     );
     return;
   }
@@ -2729,7 +2763,7 @@ bot.on("message:text", async (ctx, next) => {
       await replyOrEdit(
         ctx,
         `📩 Добавлено (${state.items.length} эл.). Продолжайте или нажмите Готово:`,
-        { reply_markup: collectingKeyboard() }
+        { reply_markup: collectingKeyboard({ tzVoice: isTzCollectingState(state) }) }
       );
     } catch (e: any) {
       await ctx.reply("❌ Ошибка: " + e.message);
@@ -2885,7 +2919,7 @@ async function handleFileMessage(ctx: any, info: FileInfo) {
           await replyOrEdit(
             ctx,
             `🎙 Голосовое добавлено (${state.items.length - 1} эл.)\n\n📝 Расшифровка:\n_${esc(transcription)}_\n\nПродолжайте или нажмите Готово:`,
-            { parse_mode: "Markdown", reply_markup: collectingKeyboard() }
+            { parse_mode: "Markdown", reply_markup: collectingKeyboard({ tzVoice: isTzCollectingState(state) }) }
           );
           return;
         }
@@ -2895,7 +2929,7 @@ async function handleFileMessage(ctx: any, info: FileInfo) {
       await replyOrEdit(
         ctx,
         `${typeLabel} добавлен (${state.items.length} эл.). Продолжайте или нажмите Готово:`,
-        { reply_markup: collectingKeyboard() }
+        { reply_markup: collectingKeyboard({ tzVoice: isTzCollectingState(state) }) }
       );
     } catch (e: any) {
       await ctx.reply("❌ Ошибка сохранения: " + e.message);
@@ -2951,10 +2985,78 @@ bot.on("message:photo", async (ctx) => {
 bot.on("message:voice", async (ctx) => {
   const voice = ctx.message.voice;
 
+  if (waitingForCollectVoiceText.has(ctx.from!.id)) {
+    waitingForCollectVoiceText.delete(ctx.from!.id);
+    const state = collectingState.get(ctx.from!.id);
+    if (!state || !isTzCollectingState(state)) {
+      await ctx.reply("вќЊ РЎРµСЃСЃРёСЏ РґРѕР±Р°РІР»РµРЅРёСЏ РўР— РЅРµ РЅР°Р№РґРµРЅР°.");
+      return;
+    }
+
+    await ctx.reply("вЏі Р Р°СЃС€РёС„СЂРѕРІС‹РІР°СЋ РіРѕР»РѕСЃ РІ С‚РµРєСЃС‚...");
+    await replyOrEdit(ctx, "⏳ Расшифровываю голос в текст...", {
+      reply_markup: collectingKeyboard({ tzVoice: true }),
+    });
+    const transcription = await transcribeVoiceGroq(voice.file_id).catch(() => null);
+    if (!transcription) {
+      await replyOrEdit(ctx, "вќЊ РќРµ СѓРґР°Р»РѕСЃСЊ СЂР°СЃС€РёС„СЂРѕРІР°С‚СЊ РіРѕР»РѕСЃ. РџРѕРїСЂРѕР±СѓР№С‚Рµ РµС‰С‘ СЂР°Р·.", {
+        reply_markup: collectingKeyboard({ tzVoice: true }),
+      });
+      return;
+    }
+
+    state.items.push({
+      fileName: transcription.slice(0, 500),
+      fileSize: 0,
+      mimeType: "text/plain",
+    });
+    await replyOrEdit(
+      ctx,
+      `рџЋ™ Р“РѕР»РѕСЃ СЂР°СЃС€РёС„СЂРѕРІР°РЅ Рё РґРѕР±Р°РІР»РµРЅ РІ РўР— (${state.items.length} СЌР».).\n\nрџ“ќ _${esc(transcription)}_\n\nРџСЂРѕРґРѕР»Р¶Р°Р№С‚Рµ РёР»Рё РЅР°Р¶РјРёС‚Рµ Р“РѕС‚РѕРІРѕ:`,
+      { parse_mode: "Markdown", reply_markup: collectingKeyboard({ tzVoice: true }) }
+    );
+    return;
+  }
+
+  if (waitingForCollectVoiceAi.has(ctx.from!.id)) {
+    waitingForCollectVoiceAi.delete(ctx.from!.id);
+    const state = collectingState.get(ctx.from!.id);
+    if (!state || !isTzCollectingState(state)) {
+      await ctx.reply("вќЊ РЎРµСЃСЃРёСЏ РґРѕР±Р°РІР»РµРЅРёСЏ РўР— РЅРµ РЅР°Р№РґРµРЅР°.");
+      return;
+    }
+
+    await ctx.reply("вЏі AI СЃРѕР±РёСЂР°РµС‚ РўР— РёР· РІР°С€РµРіРѕ РіРѕР»РѕСЃР°...");
+    await replyOrEdit(ctx, "⏳ AI собирает ТЗ из вашего голоса...", {
+      reply_markup: collectingKeyboard({ tzVoice: true }),
+    });
+    const draft = await parseVoiceToTzDraft(voice.file_id);
+    if (!draft) {
+      await replyOrEdit(ctx, "вќЊ РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±СЂР°Р±РѕС‚Р°С‚СЊ РіРѕР»РѕСЃ AI-РѕРј. РџРѕРїСЂРѕР±СѓР№С‚Рµ РµС‰С‘ СЂР°Р·.", {
+        reply_markup: collectingKeyboard({ tzVoice: true }),
+      });
+      return;
+    }
+
+    state.items.push({
+      fileName: draft.text.slice(0, 500),
+      fileSize: 0,
+      mimeType: "text/plain",
+    });
+    await replyOrEdit(
+      ctx,
+      `рџЄ„ AI РґРѕР±Р°РІРёР» СЃС‚СЂСѓРєС‚СѓСЂРёСЂРѕРІР°РЅРЅРѕРµ РўР— (${state.items.length} СЌР».).\n\n${esc(draft.text)}\n\n*Р Р°СЃС€РёС„СЂРѕРІРєР°:*\n_${esc(draft.rawText)}_\n\nРџСЂРѕРґРѕР»Р¶Р°Р№С‚Рµ РёР»Рё РЅР°Р¶РјРёС‚Рµ Р“РѕС‚РѕРІРѕ:`,
+      { parse_mode: "Markdown", reply_markup: collectingKeyboard({ tzVoice: true }) }
+    );
+    return;
+  }
+
   if (waitingForTzVoice.has(ctx.from!.id)) {
     const orderId = waitingForTzVoice.get(ctx.from!.id);
     waitingForTzVoice.delete(ctx.from!.id);
-    await ctx.reply("⏳ Превращаю голос в структурированное ТЗ...");
+    await replyOrEdit(ctx, "⏳ Превращаю голос в структурированное ТЗ...", {
+      reply_markup: new InlineKeyboard().text("🔙 К заказу", `ord_open_${orderId}`),
+    });
 
     const draft = await parseVoiceToTzDraft(voice.file_id);
     if (!draft || !orderId) {
@@ -2982,7 +3084,9 @@ bot.on("message:voice", async (ctx) => {
 
   if (waitingForTaskVoice.has(ctx.from!.id)) {
     waitingForTaskVoice.delete(ctx.from!.id);
-    await ctx.reply("⏳ Разбираю голос в задачу...");
+    await replyOrEdit(ctx, "⏳ Разбираю голос в задачу...", {
+      reply_markup: new InlineKeyboard().text("❌ Отмена", "tsk_voice_cancel"),
+    });
 
     const draft = await parseVoiceToTaskDraft(voice.file_id);
     if (!draft) {

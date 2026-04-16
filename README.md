@@ -27,6 +27,7 @@ BOT_USERNAME=your_bot_username_without_@
 TELEGRAM_STORAGE_CHAT_ID=-100...
 USE_TELEGRAM_STORAGE=true
 TELEGRAM_PROXY_URL=
+TELEGRAM_BOT_API_BASE_URL=https://api.telegram.org
 ADMIN_TG_USERNAME=your_username
 
 TELEGRAM_USERBOT_API_ID=
@@ -54,6 +55,8 @@ Disable privacy mode for the bot:
 6. `Turn off`
 
 Without this, the bot will not see normal messages/files inside order groups.
+
+If you want to upload very large files from the CRM website directly into Telegram storage, you will eventually hit the public Bot API upload ceiling. In that case point `TELEGRAM_BOT_API_BASE_URL` to your own local Telegram Bot API server instead of `https://api.telegram.org`.
 
 ### 2. Storage Chat
 
