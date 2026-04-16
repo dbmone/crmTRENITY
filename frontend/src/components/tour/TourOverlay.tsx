@@ -211,8 +211,28 @@ export default function TourOverlay() {
     Math.max(
       VIEWPORT_PADDING,
       window.innerWidth - Math.min(TOOLTIP_WIDTH, window.innerWidth - VIEWPORT_PADDING * 2) - VIEWPORT_PADDING
-    )
+      )
   );
+  const mobileShowOnTop = Boolean(targetRect && targetRect.top > window.innerHeight * 0.42);
+  const mobileStyle = isMobile
+    ? mobileShowOnTop
+      ? {
+          left: VIEWPORT_PADDING,
+          right: VIEWPORT_PADDING,
+          top: VIEWPORT_PADDING,
+          bottom: "auto" as const,
+          maxHeight: "42vh",
+          overflowY: "auto" as const,
+        }
+      : {
+          left: VIEWPORT_PADDING,
+          right: VIEWPORT_PADDING,
+          bottom: VIEWPORT_PADDING,
+          top: "auto" as const,
+          maxHeight: "42vh",
+          overflowY: "auto" as const,
+        }
+    : null;
 
   return (
     <div className="pointer-events-none fixed inset-0 z-[120]">
@@ -243,14 +263,7 @@ export default function TourOverlay() {
         className="pointer-events-auto fixed rounded-3xl border border-bg-border bg-bg-surface/95 p-4 shadow-[0_24px_90px_rgba(0,0,0,0.45)] backdrop-blur sm:p-5"
         style={
           isMobile
-            ? {
-                left: VIEWPORT_PADDING,
-                right: VIEWPORT_PADDING,
-                bottom: VIEWPORT_PADDING,
-                top: "auto",
-                maxHeight: "48vh",
-                overflowY: "auto",
-              }
+            ? mobileStyle ?? undefined
             : {
                 top: desktopTop,
                 left: desktopLeft,

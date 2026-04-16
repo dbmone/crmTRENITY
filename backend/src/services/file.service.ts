@@ -11,11 +11,13 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { config } from "../config";
 import { randomUUID } from "crypto";
 import { uploadFileToStorage, forwardFileToUser, getTelegramFileStream } from "./telegram.service";
+import { downloadTelegramMessageMediaViaUserbot } from "./telegram-userbot.service";
 import {
   mirrorBufferFileToOrderGroup,
   mirrorStoredTelegramMessageToOrderGroup,
   mirrorTextNoteToOrderGroup,
 } from "./order-group.service";
+import { Readable } from "stream";
 
 const prisma = new PrismaClient();
 
@@ -162,7 +164,9 @@ async function uploadFileViaS3(
 export async function getDownloadUrl(fileId: string): Promise<string> {
   const file = await prisma.orderFile.findUnique({ where: { id: fileId } });
   if (!file) throw { statusCode: 404, message: "Файл не найден" };
-  if (file.telegramFileId) throw { statusCode: 400, message: "TG_FILE" }; // нужна sendToTelegram
+  if (file.telegramFileId || (file.telegramChatId && file.telegramMsgId)) {
+    throw { statusCode: 400, message: "TG_FILE" };
+  }
 
   const client = getS3Client();
   const command = new GetObjectCommand({ Bucket: config.minio.bucket, Key: file.storagePath });
@@ -185,6 +189,16 @@ export async function getFileContentStream(fileId: string): Promise<{
       mimeType: result.contentType || file.mimeType || "application/octet-stream",
       fileName: file.fileName,
       fileSize: result.contentLength ?? file.fileSize,
+    };
+  }
+
+  if (file.telegramChatId && file.telegramMsgId) {
+    const result = await downloadTelegramMessageMediaViaUserbot(file.telegramChatId, file.telegramMsgId);
+    return {
+      stream: Readable.from(result.buffer),
+      mimeType: result.contentType || file.mimeType || "application/octet-stream",
+      fileName: file.fileName,
+      fileSize: file.fileSize,
     };
   }
 

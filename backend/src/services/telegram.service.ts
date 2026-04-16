@@ -6,6 +6,10 @@
 import FormData from "form-data";
 import { ProxyAgent } from "proxy-agent";
 import { config } from "../config";
+import {
+  isTelegramUserbotEnabled,
+  uploadBufferToTelegramChatViaUserbot,
+} from "./telegram-userbot.service";
 
 const nodeFetch = require("node-fetch") as typeof fetch;
 
@@ -52,29 +56,47 @@ export async function uploadFileToStorage(
   const storageChatId = config.bot.storageChatId;
   if (!storageChatId) throw new Error("TELEGRAM_STORAGE_CHAT_ID не задан");
 
-  // Формируем multipart/form-data вручную через Blob API (Node.js 18+)
-  const formData = new FormData();
-  formData.append("chat_id", storageChatId);
-  formData.append("document", buffer, {
-    filename: fileName,
-    contentType: mimeType,
-  });
-  if (caption) formData.append("caption", caption);
+  if (isTelegramUserbotEnabled() && buffer.length >= 45 * 1024 * 1024) {
+    const uploaded = await uploadBufferToTelegramChatViaUserbot(storageChatId, buffer, fileName, mimeType, caption);
+    return {
+      fileId: uploaded.fileId || "",
+      messageId: uploaded.messageId,
+      chatId: uploaded.chatId,
+    };
+  }
 
-  const res  = await tgFetch(`${getTG()}/sendDocument`, {
-    method: "POST",
-    headers: formData.getHeaders() as any,
-    body: formData as any,
-  });
-  const data: any = await res.json();
-  if (!data.ok) throw new Error(`Telegram API error: ${data.description}`);
+  try {
+    const formData = new FormData();
+    formData.append("chat_id", storageChatId);
+    formData.append("document", buffer, {
+      filename: fileName,
+      contentType: mimeType,
+    });
+    if (caption) formData.append("caption", caption);
 
-  const doc = data.result.document;
-  return {
-    fileId:    doc.file_id,
-    messageId: data.result.message_id,
-    chatId:    storageChatId,
-  };
+    const res  = await tgFetch(`${getTG()}/sendDocument`, {
+      method: "POST",
+      headers: formData.getHeaders() as any,
+      body: formData as any,
+    });
+    const data: any = await res.json();
+    if (!data.ok) throw new Error(`Telegram API error: ${data.description}`);
+
+    const doc = data.result.document;
+    return {
+      fileId:    doc.file_id,
+      messageId: data.result.message_id,
+      chatId:    storageChatId,
+    };
+  } catch (err) {
+    if (!isTelegramUserbotEnabled()) throw err;
+    const uploaded = await uploadBufferToTelegramChatViaUserbot(storageChatId, buffer, fileName, mimeType, caption);
+    return {
+      fileId: uploaded.fileId || "",
+      messageId: uploaded.messageId,
+      chatId: uploaded.chatId,
+    };
+  }
 }
 
 // Переслать файл из хранилища в чат пользователя

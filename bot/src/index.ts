@@ -1847,7 +1847,7 @@ function buildOrderFilesKeyboard(
     kb.text("🎙 AI из голоса", `ord_tzvoice_${orderId}`)
       .text("📝 Текст в ТЗ", `ord_tztext_${orderId}`).row();
   }
-  kb.text("➕ Добавить", addCallback).row();
+  kb.text("➕ Добавить материал", addCallback).row();
   for (const file of files.slice(0, 8)) {
     const title = file.fileName.length > 28 ? `${file.fileName.slice(0, 28)}…` : file.fileName;
     kb.text(`📤 ${title}`, `ord_file_${file.id}`).row();

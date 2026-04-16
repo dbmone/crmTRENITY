@@ -2,6 +2,7 @@ import { config } from "../config";
 
 const { TelegramClient } = require("telegram");
 const { StringSession } = require("telegram/sessions");
+const { CustomFile } = require("telegram/client/uploads");
 
 let clientPromise: Promise<any> | null = null;
 
@@ -55,4 +56,66 @@ export async function resolveTelegramInputUser(client: any, participant: {
   }
 
   return null;
+}
+
+export async function uploadBufferToTelegramChatViaUserbot(
+  chatId: string,
+  buffer: Buffer,
+  fileName: string,
+  mimeType: string,
+  caption?: string
+): Promise<{ messageId: number; chatId: string; fileId: string | null }> {
+  const client = await getTelegramUserbotClient();
+  if (!client) {
+    throw new Error("Telegram userbot is not configured");
+  }
+
+  const entity = await client.getInputEntity(chatId);
+  const file = new CustomFile(fileName, buffer.length, "", buffer);
+  const sent = await client.sendFile(entity, {
+    file,
+    caption,
+    forceDocument: !(mimeType.startsWith("image/") || mimeType.startsWith("video/")),
+    supportsStreaming: mimeType.startsWith("video/"),
+    workers: 1,
+  });
+
+  const message = Array.isArray(sent) ? sent[0] : sent;
+  return {
+    messageId: Number(message?.id),
+    chatId,
+    fileId: null,
+  };
+}
+
+export async function downloadTelegramMessageMediaViaUserbot(
+  chatId: string,
+  messageId: number
+): Promise<{ buffer: Buffer; contentType: string | null }> {
+  const client = await getTelegramUserbotClient();
+  if (!client) {
+    throw new Error("Telegram userbot is not configured");
+  }
+
+  const result = await client.getMessages(chatId, { ids: [messageId] });
+  const message = Array.isArray(result) ? result[0] : result;
+  if (!message) {
+    throw new Error("Telegram message not found");
+  }
+
+  const downloaded = await client.downloadMedia(message, {});
+  if (!downloaded || !Buffer.isBuffer(downloaded)) {
+    throw new Error("Telegram media download failed");
+  }
+
+  const documentMime =
+    message?.document?.mimeType
+    || message?.media?.document?.mimeType
+    || null;
+  const contentType = message?.photo ? "image/jpeg" : documentMime;
+
+  return {
+    buffer: downloaded,
+    contentType,
+  };
 }

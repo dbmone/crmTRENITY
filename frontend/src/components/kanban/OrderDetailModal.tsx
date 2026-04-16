@@ -608,16 +608,16 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
               <textarea value={editDesc} onChange={(e) => setEditDesc(e.target.value)}
                 placeholder="ТЗ / описание..." rows={3} className={`${inputCls} resize-none`} />
               {/* File attach in edit mode */}
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <select value={editSelectedFileType} onChange={(e) => setEditSelectedFileType(e.target.value as UploadFileType)}
-                  className="text-xs px-2.5 py-1.5 rounded-lg border border-bg-border bg-bg-raised text-ink-secondary outline-none">
+                  className="min-w-[150px] flex-1 sm:flex-none text-xs px-2.5 py-1.5 rounded-lg border border-bg-border bg-bg-raised text-ink-secondary outline-none">
                   <option value="TZ">ТЗ</option>
                   <option value="CONTRACT">Договор</option>
                   <option value="STORYBOARD">Раскадровка</option>
                   <option value="OTHER">Другое</option>
                 </select>
                 <button onClick={() => editFileInputRef.current?.click()} disabled={editUploadingFile}
-                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-dashed border-bg-border text-ink-tertiary hover:border-green-500/40 hover:text-green-400 disabled:opacity-50 transition-colors">
+                  className="w-full justify-center sm:w-auto sm:justify-start flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-dashed border-bg-border text-ink-tertiary hover:border-green-500/40 hover:text-green-400 disabled:opacity-50 transition-colors">
                   {editUploadingFile
                     ? <div className="w-3 h-3 border-2 border-green-500/30 border-t-green-500 rounded-full animate-spin" />
                     : <Paperclip size={12} />}
@@ -642,14 +642,14 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
                 onCancel={cancelEditUpload}
                 showCancel={editUploadingFile}
               />
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <input type="date" value={editDL} onChange={(e) => setEditDL(e.target.value)}
-                  className={`${inputCls} flex-1`} style={{ colorScheme: "dark" }} />
+                  className={`${inputCls} min-w-[180px] flex-1`} style={{ colorScheme: "dark" }} />
                 <button onClick={handleSaveEdit} disabled={saving}
-                  className="px-4 py-2 rounded-lg bg-green-500 text-black text-sm font-bold hover:bg-green-400 disabled:opacity-50 transition-colors flex items-center gap-1.5">
+                  className="w-full justify-center sm:w-auto sm:justify-start px-4 py-2 rounded-lg bg-green-500 text-black text-sm font-bold hover:bg-green-400 disabled:opacity-50 transition-colors flex items-center gap-1.5">
                   <Check size={14} /> {saving ? "Сохраняю..." : "Сохранить"}
                 </button>
-                <button onClick={() => setEditing(false)} className="px-3 py-2 rounded-lg border border-bg-border text-sm text-ink-secondary hover:bg-bg-raised transition-colors">
+                <button onClick={() => setEditing(false)} className="w-full sm:w-auto px-3 py-2 rounded-lg border border-bg-border text-sm text-ink-secondary hover:bg-bg-raised transition-colors">
                   Отмена
                 </button>
               </div>
@@ -778,6 +778,12 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
                   />
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
                     <button
+                      onClick={() => { setTzExtraTexts((p) => [...p, ""]); setSavingTzExtra((p) => [...p, false]); }}
+                      title="Добавить ещё одно текстовое поле для доп. заметки к ТЗ"
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-bg-border text-ink-secondary text-sm hover:bg-bg-hover transition-colors">
+                      <Plus size={13} /> Ещё заметка
+                    </button>
+                    <button
                       onClick={async () => {
                         if (!tzText.trim()) return;
                         setAddingTzNote(true);
@@ -789,15 +795,9 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
                         setAddingTzNote(false);
                       }}
                       disabled={!tzText.trim() || addingTzNote}
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500 text-black text-sm font-bold hover:bg-green-400 disabled:opacity-50 transition-colors">
-                      {addingTzNote ? <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" /> : <Plus size={13} />}
-                      Добавить
-                    </button>
-                    <button
-                      onClick={() => { setTzExtraTexts((p) => [...p, ""]); setSavingTzExtra((p) => [...p, false]); }}
-                      title="Добавить ещё одно текстовое поле для доп. заметки к ТЗ"
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-bg-border text-ink-secondary text-sm hover:bg-bg-hover transition-colors">
-                      <Plus size={13} /> Доп. поле
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-green-500/20 bg-green-500/10 text-green-400 text-sm font-medium hover:bg-green-500/20 disabled:opacity-50 transition-colors">
+                      {addingTzNote ? <div className="w-4 h-4 border-2 border-current/30 border-t-current rounded-full animate-spin" /> : <FileText size={13} />}
+                      Сохранить текст
                     </button>
                     <button
                       onClick={() => tzFileInputRef.current?.click()}
