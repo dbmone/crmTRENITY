@@ -26,64 +26,71 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 // Применяем SQL-миграции вручную (идемпотентно, безопасно для перезапуска)
-async function ensureSchema() {
+async function runSql(label: string, sql: string) {
   try {
-    // 1. Добавить колонки к order_stages если нет
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE "order_stages"
-        ADD COLUMN IF NOT EXISTS "revision_round"          INTEGER   NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS "awaiting_client_approval" BOOLEAN   NOT NULL DEFAULT false,
-        ADD COLUMN IF NOT EXISTS "client_approval_skipped"  BOOLEAN   NOT NULL DEFAULT false,
-        ADD COLUMN IF NOT EXISTS "client_approved_at"       TIMESTAMP(3)
-    `);
-
-    // 2. Удалить ВСЕ старые unique-constraints на order_stages кроме нужного
-    await prisma.$executeRawUnsafe(`
-      DO $$
-      DECLARE cname text;
-      BEGIN
-        FOR cname IN
-          SELECT conname FROM pg_constraint
-          WHERE conrelid = 'order_stages'::regclass
-            AND contype = 'u'
-            AND conname != 'order_stages_order_id_name_revision_round_key'
-        LOOP
-          EXECUTE 'ALTER TABLE "order_stages" DROP CONSTRAINT IF EXISTS "' || cname || '"';
-        END LOOP;
-      END $$
-    `);
-
-    // 3. Создать новый индекс (order_id, name, revision_round) если нет
-    await prisma.$executeRawUnsafe(`
-      DO $$ BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM pg_constraint
-          WHERE conname = 'order_stages_order_id_name_revision_round_key'
-        ) THEN
-          ALTER TABLE "order_stages"
-            ADD CONSTRAINT "order_stages_order_id_name_revision_round_key"
-            UNIQUE ("order_id", "name", "revision_round");
-        END IF;
-      END $$
-    `);
-
-    // 4. Добавить колонки к order_files если нет
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE "order_files"
-        ADD COLUMN IF NOT EXISTS "telegram_file_id" TEXT,
-        ADD COLUMN IF NOT EXISTS "telegram_chat_id"  TEXT,
-        ADD COLUMN IF NOT EXISTS "telegram_msg_id"   INTEGER
-    `);
-
-    // 5. Убрать NOT NULL с storage_path чтобы TG-файлы могли иметь пустую строку
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE "order_files" ALTER COLUMN "storage_path" SET DEFAULT ''
-    `);
-
-    console.log("✅ Schema migrations applied");
+    await prisma.$executeRawUnsafe(sql);
+    console.log(`  ✔ ${label}`);
   } catch (err: any) {
-    console.error("⚠️  Schema migration error:", err.message);
+    console.error(`  ✘ ${label}: ${err.message}`);
   }
+}
+
+async function ensureSchema() {
+  console.log("🔧 Applying schema migrations...");
+
+  // 1. Колонки order_stages
+  await runSql("order_stages columns", `
+    ALTER TABLE "order_stages"
+      ADD COLUMN IF NOT EXISTS "revision_round"           INTEGER      NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS "awaiting_client_approval" BOOLEAN      NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS "client_approval_skipped"  BOOLEAN      NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS "client_approved_at"       TIMESTAMP(3)
+  `);
+
+  // 2. Удалить ВСЕ unique-constraints на order_stages кроме нужного (по имени OR по набору полей)
+  await runSql("drop old order_stages unique constraints", `
+    DO $$
+    DECLARE cname text;
+    BEGIN
+      FOR cname IN
+        SELECT conname FROM pg_constraint
+        WHERE conrelid = 'order_stages'::regclass
+          AND contype = 'u'
+          AND conname != 'order_stages_order_id_name_revision_round_key'
+      LOOP
+        EXECUTE 'ALTER TABLE "order_stages" DROP CONSTRAINT "' || cname || '"';
+      END LOOP;
+    END $$
+  `);
+
+  // 3. Создать новый constraint (order_id, name, revision_round)
+  await runSql("add order_stages new unique constraint", `
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'order_stages_order_id_name_revision_round_key'
+      ) THEN
+        ALTER TABLE "order_stages"
+          ADD CONSTRAINT "order_stages_order_id_name_revision_round_key"
+          UNIQUE ("order_id", "name", "revision_round");
+      END IF;
+    END $$
+  `);
+
+  // 4. Колонки order_files для TG-хранилища
+  await runSql("order_files telegram columns", `
+    ALTER TABLE "order_files"
+      ADD COLUMN IF NOT EXISTS "telegram_file_id" TEXT,
+      ADD COLUMN IF NOT EXISTS "telegram_chat_id" TEXT,
+      ADD COLUMN IF NOT EXISTS "telegram_msg_id"  INTEGER
+  `);
+
+  // 5. Default для storage_path
+  await runSql("order_files storage_path default", `
+    ALTER TABLE "order_files" ALTER COLUMN "storage_path" SET DEFAULT ''
+  `);
+
+  console.log("✅ Schema migrations done");
 }
 
 const app = Fastify({
