@@ -80,6 +80,7 @@ export default function OrderDetailModal({ order, onClose }: Props) {
 
   // Files
   const [uploadingFile,    setUploadingFile]    = useState(false);
+  const [fileUploadProgress, setFileUploadProgress] = useState<number | null>(null);
   const [selectedFileType, setSelectedFileType] = useState<"all" | Exclude<FileBucket, "tz">>("all");
   const [uploadFileType,   setUploadFileType]   = useState<Exclude<UploadFileType, "TZ">>("OTHER");
   const [draggingFiles,    setDraggingFiles]    = useState(false);
@@ -91,6 +92,7 @@ export default function OrderDetailModal({ order, onClose }: Props) {
 
   // Edit file attach
   const [editUploadingFile,    setEditUploadingFile]    = useState(false);
+  const [editUploadProgress,   setEditUploadProgress]   = useState<number | null>(null);
   const [editSelectedFileType, setEditSelectedFileType] = useState<UploadFileType>("TZ");
   const editFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -98,6 +100,7 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   const [tzText,          setTzText]          = useState("");
   const [addingTzNote,    setAddingTzNote]    = useState(false);
   const [uploadingTzFile, setUploadingTzFile] = useState(false);
+  const [tzUploadProgress, setTzUploadProgress] = useState<number | null>(null);
   const [draggingTz,      setDraggingTz]      = useState(false);
   const [recording,       setRecording]       = useState(false);
   const [transcribing,    setTranscribing]    = useState(false);
@@ -116,20 +119,14 @@ export default function OrderDetailModal({ order, onClose }: Props) {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
     setEditUploadingFile(true);
-    let failed = 0;
+    setEditUploadProgress(0);
     try {
-      for (const file of files) {
-        try {
-          await api.uploadFile(o.id, file, editSelectedFileType);
-        } catch {
-          failed += 1;
-        }
-      }
+      const failed = await uploadFilesWithProgress(o.id, files, editSelectedFileType, setEditUploadProgress);
       await loadOrder();
       if (failed > 0) alert(`Не удалось загрузить ${failed} файл(ов)`);
     }
     catch (err: any) { alert(err.response?.data?.error || "Ошибка загрузки"); }
-    setEditUploadingFile(false); e.target.value = "";
+    setEditUploadingFile(false); setEditUploadProgress(null); e.target.value = "";
   };
 
   useEffect(() => {
@@ -147,6 +144,44 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   const loadOrder  = async () => { if (!order) return; const d = await api.getOrder(order.id); setFullOrder(d); };
   const loadUsers  = async () => { const d = await api.getUsers(); setUsers(Array.isArray(d) ? d : (d.users ?? [])); };
   const loadComments = async () => { if (!order) return; try { const d = await api.getComments(order.id); setComments(d); } catch {} };
+
+  const uploadFilesWithProgress = async (
+    orderId: string,
+    files: File[],
+    fileType: UploadFileType,
+    setProgress: (value: number | null) => void
+  ) => {
+    if (!files.length) {
+      setProgress(null);
+      return 0;
+    }
+
+    const totalBytes = files.reduce((sum, file) => sum + Math.max(file.size, 1), 0);
+    let uploadedBytes = 0;
+    let failed = 0;
+
+    setProgress(0);
+
+    for (const file of files) {
+      try {
+        await api.uploadFile(orderId, file, fileType, {
+          onProgress: (_percent, loaded, total) => {
+            const effectiveTotal = Math.max(total || file.size || 1, 1);
+            const currentLoaded = Math.min(loaded, effectiveTotal);
+            const overallPercent = Math.min(100, Math.round(((uploadedBytes + currentLoaded) / totalBytes) * 100));
+            setProgress(overallPercent);
+          },
+        });
+      } catch {
+        failed += 1;
+      } finally {
+        uploadedBytes += Math.max(file.size, 1);
+        setProgress(Math.min(100, Math.round((uploadedBytes / totalBytes) * 100)));
+      }
+    }
+
+    return failed;
+  };
 
   if (!order) return null;
   const o = fullOrder || order;
@@ -209,20 +244,14 @@ export default function OrderDetailModal({ order, onClose }: Props) {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
     setUploadingFile(true);
-    let failed = 0;
+    setFileUploadProgress(0);
     try {
-      for (const file of files) {
-        try {
-          await api.uploadFile(o.id, file, uploadFileType);
-        } catch {
-          failed += 1;
-        }
-      }
+      const failed = await uploadFilesWithProgress(o.id, files, uploadFileType, setFileUploadProgress);
       await loadOrder();
       if (failed > 0) alert(`Не удалось загрузить ${failed} файл(ов)`);
     }
     catch (err: any) { alert(err.response?.data?.error || "Ошибка загрузки"); }
-    setUploadingFile(false); e.target.value = "";
+    setUploadingFile(false); setFileUploadProgress(null); e.target.value = "";
   };
 
   const handleSendComment = async () => {
@@ -404,6 +433,17 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                 </button>
                 <input ref={editFileInputRef} type="file" className="hidden" onChange={handleEditFileUpload} />
               </div>
+              {editUploadProgress !== null && (
+                <div className="rounded-lg border border-bg-border bg-bg-raised p-2.5">
+                  <div className="mb-1 flex items-center justify-between text-[11px] text-ink-secondary">
+                    <span>Загрузка файла</span>
+                    <span className="font-semibold text-ink-primary">{editUploadProgress}%</span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-bg-base">
+                    <div className="h-full rounded-full bg-green-500 transition-[width] duration-150" style={{ width: `${editUploadProgress}%` }} />
+                  </div>
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <input type="date" value={editDL} onChange={(e) => setEditDL(e.target.value)}
                   className={`${inputCls} flex-1`} style={{ colorScheme: "dark" }} />
@@ -526,21 +566,16 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                     const files = Array.from(e.dataTransfer.files || []);
                     if (!files.length) return;
                     setUploadingTzFile(true);
-                    let failed = 0;
+                    setTzUploadProgress(0);
                     try {
-                      for (const file of files) {
-                        try {
-                          await api.uploadFile(o.id, file, "TZ");
-                        } catch {
-                          failed += 1;
-                        }
-                      }
+                      const failed = await uploadFilesWithProgress(o.id, files, "TZ", setTzUploadProgress);
                       await loadOrder();
                       if (failed > 0) alert(`Не удалось загрузить ${failed} файл(ов)`);
                     } catch (err: any) {
                       alert(err.response?.data?.error || "Ошибка загрузки");
                     } finally {
                       setUploadingTzFile(false);
+                      setTzUploadProgress(null);
                     }
                   }}
                 >
@@ -624,23 +659,28 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                         const files = Array.from(e.target.files || []);
                         if (!files.length) return;
                         setUploadingTzFile(true);
-                        let failed = 0;
+                        setTzUploadProgress(0);
                         try {
-                          for (const file of files) {
-                            try {
-                              await api.uploadFile(o.id, file, "TZ");
-                            } catch {
-                              failed += 1;
-                            }
-                          }
+                          const failed = await uploadFilesWithProgress(o.id, files, "TZ", setTzUploadProgress);
                           await loadOrder();
                           if (failed > 0) alert(`Не удалось загрузить ${failed} файл(ов)`);
                         }
                         catch (err: any) { alert(err.response?.data?.error || "Ошибка загрузки"); }
-                        setUploadingTzFile(false); e.target.value = "";
+                        setUploadingTzFile(false); setTzUploadProgress(null); e.target.value = "";
                       }}
                     />
                   </div>
+                  {tzUploadProgress !== null && (
+                    <div className="mt-3 rounded-lg border border-bg-border bg-bg-surface p-2.5">
+                      <div className="mb-1 flex items-center justify-between text-[11px] text-ink-secondary">
+                        <span>Загрузка файлов в ТЗ</span>
+                        <span className="font-semibold text-ink-primary">{tzUploadProgress}%</span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-bg-base">
+                        <div className="h-full rounded-full bg-green-500 transition-[width] duration-150" style={{ width: `${tzUploadProgress}%` }} />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -703,21 +743,16 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                 const files = Array.from(e.dataTransfer.files || []);
                 if (!files.length) return;
                 setUploadingFile(true);
-                let failed = 0;
+                setFileUploadProgress(0);
                 try {
-                  for (const file of files) {
-                    try {
-                      await api.uploadFile(o.id, file, uploadFileType);
-                    } catch {
-                      failed += 1;
-                    }
-                  }
+                  const failed = await uploadFilesWithProgress(o.id, files, uploadFileType, setFileUploadProgress);
                   await loadOrder();
                   if (failed > 0) alert(`Не удалось загрузить ${failed} файл(ов)`);
                 } catch (err: any) {
                   alert(err.response?.data?.error || "Ошибка загрузки");
                 } finally {
                   setUploadingFile(false);
+                  setFileUploadProgress(null);
                 }
               }}
             >
@@ -748,6 +783,18 @@ export default function OrderDetailModal({ order, onClose }: Props) {
               <div className="mb-4 rounded-lg bg-bg-raised px-3 py-2 text-xs text-ink-tertiary">
                 Можно перетащить файлы прямо в эту область. Они загрузятся в выбранный тип без дополнительных окон.
               </div>
+
+              {fileUploadProgress !== null && (
+                <div className="mb-4 rounded-lg border border-bg-border bg-bg-raised p-2.5">
+                  <div className="mb-1 flex items-center justify-between text-[11px] text-ink-secondary">
+                    <span>Загрузка файлов</span>
+                    <span className="font-semibold text-ink-primary">{fileUploadProgress}%</span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-bg-base">
+                    <div className="h-full rounded-full bg-green-500 transition-[width] duration-150" style={{ width: `${fileUploadProgress}%` }} />
+                  </div>
+                </div>
+              )}
 
               {filteredFiles.length === 0 ? (
                 <div className="text-center py-10 text-ink-tertiary">

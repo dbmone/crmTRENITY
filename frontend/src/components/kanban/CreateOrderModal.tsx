@@ -15,6 +15,7 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
   const [tzFiles, setTzFiles] = useState<File[]>([]);
   const [draggingTz, setDraggingTz] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -27,6 +28,37 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
     setTzFiles((prev) => [...prev, ...files]);
   };
 
+  const uploadTzFiles = async (orderId: string, files: File[]) => {
+    if (!files.length) {
+      setUploadProgress(null);
+      return 0;
+    }
+
+    const totalBytes = files.reduce((sum, file) => sum + Math.max(file.size, 1), 0);
+    let uploadedBytes = 0;
+    let failedUploads = 0;
+
+    for (const file of files) {
+      try {
+        await api.uploadFile(orderId, file, "TZ", {
+          onProgress: (_percent, loaded, total) => {
+            const effectiveTotal = Math.max(total || file.size || 1, 1);
+            const currentLoaded = Math.min(loaded, effectiveTotal);
+            const overallPercent = Math.min(100, Math.round(((uploadedBytes + currentLoaded) / totalBytes) * 100));
+            setUploadProgress(overallPercent);
+          },
+        });
+      } catch {
+        failedUploads += 1;
+      } finally {
+        uploadedBytes += Math.max(file.size, 1);
+        setUploadProgress(Math.min(100, Math.round((uploadedBytes / totalBytes) * 100)));
+      }
+    }
+
+    return failedUploads;
+  };
+
   const handleSubmit = async () => {
     if (!title.trim()) {
       setError("Введите название заказа");
@@ -34,6 +66,7 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
     }
 
     setLoading(true);
+    setUploadProgress(tzFiles.length ? 0 : null);
     setError("");
     try {
       const order = await createOrder({
@@ -43,14 +76,7 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
         reminderDays,
       });
 
-      let failedUploads = 0;
-      for (const file of tzFiles) {
-        try {
-          await api.uploadFile(order.id, file, "TZ");
-        } catch {
-          failedUploads += 1;
-        }
-      }
+      const failedUploads = await uploadTzFiles(order.id, tzFiles);
 
       setTitle("");
       setDescription("");
@@ -65,6 +91,7 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
     } catch (err: any) {
       setError(err.response?.data?.error || "Ошибка при создании");
     } finally {
+      setUploadProgress(null);
       setLoading(false);
     }
   };
@@ -204,6 +231,21 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
           </div>
 
           {error && <p className="rounded-lg bg-red-400/10 px-3 py-2 text-sm text-red-400">{error}</p>}
+
+          {uploadProgress !== null && (
+            <div className="rounded-xl border border-bg-border bg-bg-raised/70 p-3">
+              <div className="mb-2 flex items-center justify-between gap-3 text-xs text-ink-secondary">
+                <span>Загрузка файлов ТЗ</span>
+                <span className="font-semibold text-ink-primary">{uploadProgress}%</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-bg-base">
+                <div
+                  className="h-full rounded-full bg-green-500 transition-[width] duration-150"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
 
           <div className="flex gap-3 pt-1">
             <button

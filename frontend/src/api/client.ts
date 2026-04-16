@@ -117,12 +117,23 @@ export async function rollbackStage(orderId: string, stageId: string) {
 
 // ==================== FILES ====================
 
-export async function uploadFile(orderId: string, file: File, fileType: string) {
+export type UploadFileOptions = {
+  onProgress?: (percent: number, loaded: number, total: number) => void;
+};
+
+export async function uploadFile(orderId: string, file: File, fileType: string, options?: UploadFileOptions) {
   const form = new FormData();
   form.append("file", file);
   form.append("fileType", fileType);
   const { data } = await api.post(`/orders/${orderId}/files`, form, {
     headers: { "Content-Type": "multipart/form-data" },
+    onUploadProgress: (event) => {
+      if (!options?.onProgress) return;
+      const total = event.total ?? file.size ?? 0;
+      const loaded = event.loaded ?? 0;
+      const percent = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
+      options.onProgress(percent, loaded, total);
+    },
   });
   return data;
 }
