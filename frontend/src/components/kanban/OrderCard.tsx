@@ -90,7 +90,13 @@ export default function OrderCard({ order, onClick, dim }: Props) {
                   key={name}
                   title={STAGE_LABELS[name]}
                   className={`flex-1 h-1 rounded-full transition-all ${
-                    st.status === "DONE"
+                    maxRound > 0
+                      ? st.status === "DONE"
+                        ? "bg-purple-500"
+                        : st.status === "IN_PROGRESS"
+                        ? "bg-fuchsia-400 pulse-green"
+                        : "bg-bg-border"
+                      : st.status === "DONE"
                       ? "bg-green-500"
                       : st.status === "IN_PROGRESS"
                       ? "bg-amber-400 pulse-green"
@@ -102,7 +108,11 @@ export default function OrderCard({ order, onClick, dim }: Props) {
           </div>
           <div className="flex items-center justify-between">
             <span className={`text-[10px] font-medium ${
-              activeStage ? "text-amber-400" : pct === 100 ? "text-green-400" : "text-ink-tertiary"
+              activeStage
+                ? maxRound > 0 ? "text-fuchsia-400" : "text-amber-400"
+                : pct === 100
+                ? maxRound > 0 ? "text-purple-400" : "text-green-400"
+                : "text-ink-tertiary"
             }`}>
               {activeStage
                 ? <>
