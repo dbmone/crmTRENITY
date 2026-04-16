@@ -19,11 +19,16 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
-    env_file: .env
     environment:
       DATABASE_URL: postgresql://crm_user:${DB_PASSWORD:-crm_super_secret_2024}@postgres:5432/crm_creators
       PORT: "3000"
       HOST: "0.0.0.0"
+      JWT_SECRET: ${JWT_SECRET:-change_me}
+      BOT_TOKEN: ${BOT_TOKEN}
+      TELEGRAM_STORAGE_CHAT_ID: ${TELEGRAM_STORAGE_CHAT_ID}
+      USE_TELEGRAM_STORAGE: ${USE_TELEGRAM_STORAGE:-true}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
+      NODE_ENV: ${NODE_ENV:-production}
     ports:
       - "3000:3000"
     depends_on:
@@ -33,10 +38,12 @@ services:
   bot:
     build: ./bot
     restart: unless-stopped
-    env_file: .env
     environment:
       DATABASE_URL: postgresql://crm_user:${DB_PASSWORD:-crm_super_secret_2024}@postgres:5432/crm_creators
       PORT: "3001"
+      BOT_TOKEN: ${BOT_TOKEN}
+      TELEGRAM_STORAGE_CHAT_ID: ${TELEGRAM_STORAGE_CHAT_ID}
+      ADMIN_TG_USERNAME: ${ADMIN_TG_USERNAME}
     depends_on:
       postgres:
         condition: service_healthy
