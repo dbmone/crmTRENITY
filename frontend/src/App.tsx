@@ -7,6 +7,7 @@ import ProfilePage  from "./pages/ProfilePage";
 import AdminPage    from "./pages/AdminPage";
 import ArchivePage  from "./pages/ArchivePage";
 import DashboardPage from "./pages/DashboardPage";
+import TasksPage    from "./pages/TasksPage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token);
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="/admin"    element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
         <Route path="/archive"  element={<ProtectedRoute><ArchivePage /></ProtectedRoute>} />
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+        <Route path="/tasks"    element={<ProtectedRoute><TasksPage /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

@@ -99,6 +99,41 @@ export const STAGE_LABELS: Record<StageName, string> = {
   COMPLETED: "Видео готово",
 };
 
+// ==================== ЛИЧНЫЕ ЗАДАЧИ ====================
+
+export type TaskStatus   = "TODO" | "IN_PROGRESS" | "DONE";
+export type TaskPriority = "LOW" | "MEDIUM" | "HIGH";
+
+export interface TaskSubtask {
+  id: string;
+  taskId: string;
+  title: string;
+  done: boolean;
+  sortOrder: number;
+}
+
+export interface Task {
+  id: string;
+  userId: string;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  priority: TaskPriority;
+  dueDate: string | null;
+  aiGenerated: boolean;
+  createdAt: string;
+  updatedAt: string;
+  subtasks: TaskSubtask[];
+}
+
+export interface ParsedTask {
+  title: string;
+  description?: string;
+  priority: TaskPriority;
+  subtasks: string[];
+  rawText: string;
+}
+
 export interface OrderComment {
   id: string;
   orderId: string;

@@ -20,6 +20,7 @@ import { commentsRoutes } from "./routes/comments.routes";
 import { notificationsRoutes } from "./routes/notifications.routes";
 import { dashboardRoutes } from "./routes/dashboard.routes";
 import { permissionsRoutes } from "./routes/permissions.routes";
+import { tasksRoutes } from "./routes/tasks.routes";
 import { loadPermissions } from "./services/permissions.service";
 import { PrismaClient } from "@prisma/client";
 
@@ -85,6 +86,39 @@ async function ensureSchema() {
     ALTER TABLE "order_files" ALTER COLUMN "storage_path" SET DEFAULT ''
   `);
 
+  // 6. Таблица личных задач
+  await runSql("create tasks table", `
+    CREATE TABLE IF NOT EXISTS "tasks" (
+      "id"           TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+      "user_id"      TEXT NOT NULL,
+      "title"        VARCHAR(500) NOT NULL,
+      "description"  TEXT,
+      "status"       TEXT NOT NULL DEFAULT 'TODO',
+      "priority"     TEXT NOT NULL DEFAULT 'MEDIUM',
+      "due_date"     TIMESTAMP(3),
+      "ai_generated" BOOLEAN NOT NULL DEFAULT false,
+      "created_at"   TIMESTAMP(3) NOT NULL DEFAULT NOW(),
+      "updated_at"   TIMESTAMP(3) NOT NULL DEFAULT NOW(),
+      CONSTRAINT "tasks_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "tasks_user_id_fkey" FOREIGN KEY ("user_id")
+        REFERENCES "users"("id") ON DELETE CASCADE
+    )
+  `);
+
+  // 7. Таблица подзадач
+  await runSql("create task_subtasks table", `
+    CREATE TABLE IF NOT EXISTS "task_subtasks" (
+      "id"         TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+      "task_id"    TEXT NOT NULL,
+      "title"      VARCHAR(500) NOT NULL,
+      "done"       BOOLEAN NOT NULL DEFAULT false,
+      "sort_order" INTEGER NOT NULL DEFAULT 0,
+      CONSTRAINT "task_subtasks_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "task_subtasks_task_id_fkey" FOREIGN KEY ("task_id")
+        REFERENCES "tasks"("id") ON DELETE CASCADE
+    )
+  `);
+
   console.log("✅ Schema migrations done");
 }
 
@@ -117,6 +151,7 @@ app.register(notificationsRoutes, { prefix: "/api/notifications" });
 app.register(dashboardRoutes, { prefix: "/api/dashboard" });
 app.register(permissionsRoutes, { prefix: "/api/permissions" });
 app.register(filesGlobalRoutes, { prefix: "/api/files" });
+app.register(tasksRoutes,      { prefix: "/api/tasks" });
 
 // Вложенные под /api/orders/:orderId/
 app.register(async (instance) => {

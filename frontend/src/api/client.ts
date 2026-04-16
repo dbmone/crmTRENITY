@@ -303,4 +303,63 @@ export async function deleteUserPermissionOverride(userId: string, key: string) 
   return data;
 }
 
+// ==================== TASKS ====================
+
+import type { Task, TaskSubtask, ParsedTask } from "../types";
+
+export async function getTasks(): Promise<Task[]> {
+  const { data } = await api.get("/tasks");
+  return data;
+}
+
+export async function createTask(body: {
+  title: string;
+  description?: string;
+  priority?: string;
+  dueDate?: string;
+  subtasks?: string[];
+  aiGenerated?: boolean;
+}): Promise<Task> {
+  const { data } = await api.post("/tasks", body);
+  return data;
+}
+
+export async function updateTask(id: string, body: {
+  title?: string;
+  description?: string;
+  status?: string;
+  priority?: string;
+  dueDate?: string | null;
+}): Promise<Task> {
+  const { data } = await api.put(`/tasks/${id}`, body);
+  return data;
+}
+
+export async function deleteTask(id: string): Promise<void> {
+  await api.delete(`/tasks/${id}`);
+}
+
+export async function addSubtask(taskId: string, title: string): Promise<TaskSubtask> {
+  const { data } = await api.post(`/tasks/${taskId}/subtasks`, { title });
+  return data;
+}
+
+export async function toggleSubtask(taskId: string, subtaskId: string, done: boolean): Promise<TaskSubtask> {
+  const { data } = await api.patch(`/tasks/${taskId}/subtasks/${subtaskId}`, { done });
+  return data;
+}
+
+export async function deleteSubtask(taskId: string, subtaskId: string): Promise<void> {
+  await api.delete(`/tasks/${taskId}/subtasks/${subtaskId}`);
+}
+
+export async function parseVoiceTask(blob: Blob, ext: string): Promise<ParsedTask> {
+  const form = new FormData();
+  form.append("audio", blob, `voice.${ext}`);
+  const { data } = await api.post("/tasks/parse-voice", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
 export default api;

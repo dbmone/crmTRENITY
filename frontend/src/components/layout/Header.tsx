@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuthStore } from "../../store/auth.store";
-import { LogOut, Bell, X, LayoutDashboard, Archive, Users, Menu, UserCircle } from "lucide-react";
+import { LogOut, Bell, X, LayoutDashboard, Archive, Users, Menu, UserCircle, ListTodo } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Notification } from "../../types";
 import * as api from "../../api/client";
@@ -22,6 +22,7 @@ const ROLE_COLORS: Record<string, string> = {
 
 const NAV = [
   { path: "/",         label: "Доска",     icon: LayoutDashboard },
+  { path: "/tasks",    label: "Задачи",    icon: ListTodo },
   { path: "/archive",  label: "Архив",     icon: Archive },
   { path: "/dashboard",label: "Аналитика", icon: LayoutDashboard },
   { path: "/admin",    label: "Команда",   icon: Users, adminOnly: true },

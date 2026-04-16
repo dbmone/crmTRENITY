@@ -52,6 +52,7 @@ model User {
   notifications    Notification[]
   comments         OrderComment[]
   approvedById     String?          @map("approved_by_id")
+  tasks            Task[]
 
   @@map("users")
 }
@@ -235,4 +236,48 @@ model Notification {
   order Order? @relation(fields: [orderId], references: [id])
 
   @@map("notifications")
+}
+
+// ==================== ЛИЧНЫЕ ЗАДАЧИ ====================
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Task {
+  id          String       @id @default(uuid())
+  userId      String       @map("user_id")
+  title       String       @db.VarChar(500)
+  description String?      @db.Text
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  dueDate     DateTime?    @map("due_date")
+  aiGenerated Boolean      @default(false) @map("ai_generated")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subtasks TaskSubtask[]
+
+  @@map("tasks")
+}
+
+model TaskSubtask {
+  id        String  @id @default(uuid())
+  taskId    String  @map("task_id")
+  title     String  @db.VarChar(500)
+  done      Boolean @default(false)
+  sortOrder Int     @default(0) @map("sort_order")
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("task_subtasks")
 }
