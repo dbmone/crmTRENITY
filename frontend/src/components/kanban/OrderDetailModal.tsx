@@ -833,6 +833,7 @@ interface StagesTabProps {
 function StagesTab({ order, user, loading, canApprove, canSubmitReport, isParticipant, isMarketer, onStageUpdate, onRemoveCreator, onSwitchToReports, onReload }: StagesTabProps) {
   const [clientApprovalLoading, setClientApprovalLoading] = useState<string | null>(null);
   const [revisionLoading,       setRevisionLoading]       = useState(false);
+  const [expandedRounds,        setExpandedRounds]        = useState<Set<number>>(new Set());
 
   const stages = order.stages || [];
   const maxRound = stages.length > 0 ? Math.max(...stages.map((s) => s.revisionRound ?? 0)) : 0;
@@ -847,6 +848,14 @@ function StagesTab({ order, user, loading, canApprove, canSubmitReport, isPartic
   // Current round is done when COMPLETED stage in max round is DONE
   const maxRoundStages = stages.filter((s) => (s.revisionRound ?? 0) === maxRound);
   const currentRoundDone = maxRoundStages.every((s) => s.status === "DONE");
+
+  const toggleRound = (round: number) => {
+    setExpandedRounds((prev) => {
+      const next = new Set(prev);
+      if (next.has(round)) next.delete(round); else next.add(round);
+      return next;
+    });
+  };
 
   const handleClientApproval = async (stageId: string, action: "request" | "approve" | "skip") => {
     setClientApprovalLoading(stageId + action);
@@ -884,29 +893,42 @@ function StagesTab({ order, user, loading, canApprove, canSubmitReport, isPartic
         const isCurrentRound = round === maxRound;
         const isDoneRound = roundStages.every((s) => s.status === "DONE");
         const isOldRound = !isCurrentRound;
+        // Старые раунды свёрнуты по умолчанию; текущий всегда раскрыт
+        const isExpanded = isCurrentRound || expandedRounds.has(round);
 
         return (
           <div key={round} className={`rounded-xl border overflow-hidden transition-all ${
-            isOldRound ? "border-bg-border/30 opacity-30" : "border-bg-border"
+            isOldRound ? "border-bg-border/30" : "border-bg-border"
           }`}>
             {/* Round header */}
-            <div className={`px-3 py-2 flex items-center gap-2 ${
-              isOldRound ? "bg-bg-raised/30" : "bg-bg-raised border-b border-bg-border"
-            }`}>
+            <div
+              className={`px-3 py-2 flex items-center gap-2 ${
+                isOldRound
+                  ? "bg-bg-raised/20 cursor-pointer hover:bg-bg-raised/40 transition-colors"
+                  : "bg-bg-raised border-b border-bg-border"
+              }`}
+              onClick={isOldRound ? () => toggleRound(round) : undefined}
+            >
               {round === 0 ? (
-                <span className="text-[10px] font-semibold text-ink-tertiary uppercase tracking-wider">
+                <span className={`text-[10px] font-semibold uppercase tracking-wider ${isOldRound ? "text-ink-muted" : "text-ink-tertiary"}`}>
                   Основной раунд
                 </span>
               ) : (
-                <span className="text-[10px] font-semibold text-purple-400 uppercase tracking-wider">
+                <span className={`text-[10px] font-semibold uppercase tracking-wider ${isOldRound ? "text-purple-400/50" : "text-purple-400"}`}>
                   Правка #{round}
                 </span>
               )}
-              {isDoneRound && <span className="text-[10px] text-green-400">✓ Завершён</span>}
+              {isDoneRound && <span className={`text-[10px] ${isOldRound ? "text-green-400/50" : "text-green-400"}`}>✓ Завершён</span>}
+              {isOldRound && (
+                <span className="ml-auto text-[10px] text-ink-muted flex items-center gap-1">
+                  {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                  {isExpanded ? "Скрыть" : "Показать"}
+                </span>
+              )}
             </div>
 
-            {/* Stages in this round */}
-            <div className={`p-2 space-y-1.5 ${isOldRound ? "pointer-events-none" : ""}`}>
+            {/* Stages in this round — скрываем если свёрнут */}
+            {isExpanded && <div className={`p-2 space-y-1.5 ${isOldRound ? "pointer-events-none opacity-40" : ""}`}>
               {STAGE_ORDER_LIST.map((name) => {
                 const stage = roundStages.find((s) => s.name === name);
                 if (!stage) return null;
@@ -1015,7 +1037,7 @@ function StagesTab({ order, user, loading, canApprove, canSubmitReport, isPartic
                   </div>
                 );
               })}
-            </div>
+            </div>}
           </div>
         );
       })}
