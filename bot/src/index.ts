@@ -393,8 +393,28 @@ bot.callbackQuery("back_menu", async (ctx) => {
 const waitingForReport     = new Map<number, string>();
 const waitingForName       = new Set<number>();
 const waitingForOrderTitle = new Map<number, true>();
-const waitingForOrderTz    = new Map<number, { title: string }>();
-const waitingForFileAttach = new Map<number, string>(); // userId → orderId
+
+// Батч-сбор ТЗ / файлов
+interface CollectedItem {
+  fileName: string;
+  fileSize: number;
+  mimeType: string;     // "text/plain" для текстовых сообщений
+  fileId?: string;      // для медиа
+  storageMsgId: number; // message_id в канале-хранилище
+}
+interface CollectingState {
+  mode: "create_order" | "attach_files";
+  title?: string;   // для create_order
+  orderId?: string; // для attach_files
+  items: CollectedItem[];
+}
+const collectingState = new Map<number, CollectingState>();
+
+function collectingKeyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text("✅ Готово", "tz_done").row()
+    .text("❌ Отмена", "tz_cancel");
+}
 
 bot.callbackQuery("send_report", async (ctx) => {
   const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
@@ -451,49 +471,81 @@ bot.callbackQuery("create_order", async (ctx) => {
   waitingForOrderTitle.set(ctx.from!.id, true);
   await ctx.reply(
     "➕ *Создание заказа*\n\nВведите название заказа:",
-    { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("❌ Отмена", "cancel_order_create") }
+    { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("❌ Отмена", "tz_cancel") }
   );
 });
 
-// Пропустить ТЗ при создании заказа
-bot.callbackQuery(/^ord_tzskip_(\d+)$/, async (ctx) => {
-  const targetUserId = parseInt(ctx.match![1]);
-  if (ctx.from!.id !== targetUserId) { await ctx.answerCallbackQuery(); return; }
+// Готово / Отмена для батч-сбора
+bot.callbackQuery("tz_done", async (ctx) => {
+  const userId = ctx.from!.id;
+  const state = collectingState.get(userId);
+  if (!state) { await ctx.answerCallbackQuery("Нет активной сессии"); return; }
 
-  const tzData = waitingForOrderTz.get(targetUserId);
-  if (!tzData) { await ctx.answerCallbackQuery("Время истекло"); return; }
-
-  waitingForOrderTz.delete(targetUserId);
+  collectingState.delete(userId);
   await ctx.answerCallbackQuery();
 
-  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(targetUserId) } });
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(userId) } });
   if (!user) return;
 
-  await prisma.order.create({
-    data: {
-      title: tzData.title,
-      marketerId: user.id,
-      status: "NEW",
-      stages: {
-        create: [
-          { name: "STORYBOARD", status: "PENDING", sortOrder: 1 },
-          { name: "ANIMATION",  status: "PENDING", sortOrder: 2 },
-          { name: "EDITING",    status: "PENDING", sortOrder: 3 },
-          { name: "REVIEW",     status: "PENDING", sortOrder: 4 },
-          { name: "COMPLETED",  status: "PENDING", sortOrder: 5 },
-        ],
-      },
-    },
-  });
+  let orderId: string;
+  let orderTitle: string;
 
-  await ctx.editMessageText(`✅ *Заказ создан:* ${tzData.title}`, { parse_mode: "Markdown" });
-  await ctx.reply("📋 Меню:", { reply_markup: mainMenuKeyboard(user.status, user.role) });
+  if (state.mode === "create_order") {
+    const order = await prisma.order.create({
+      data: {
+        title: state.title!,
+        marketerId: user.id,
+        status: "NEW",
+        stages: {
+          create: [
+            { name: "STORYBOARD", status: "PENDING", sortOrder: 1 },
+            { name: "ANIMATION",  status: "PENDING", sortOrder: 2 },
+            { name: "EDITING",    status: "PENDING", sortOrder: 3 },
+            { name: "REVIEW",     status: "PENDING", sortOrder: 4 },
+            { name: "COMPLETED",  status: "PENDING", sortOrder: 5 },
+          ],
+        },
+      },
+    });
+    orderId = order.id;
+    orderTitle = state.title!;
+  } else {
+    orderId = state.orderId!;
+    const order = await prisma.order.findUnique({ where: { id: orderId }, select: { title: true } });
+    orderTitle = order?.title || orderId;
+  }
+
+  // Сохраняем все собранные элементы
+  if (state.items.length > 0 && STORAGE_CHAT_ID) {
+    await prisma.orderFile.createMany({
+      data: state.items.map((item) => ({
+        orderId,
+        uploadedById: user.id,
+        fileType: "TZ" as any,
+        fileName: item.fileName,
+        fileSize: BigInt(item.fileSize),
+        mimeType: item.mimeType,
+        storagePath: "",
+        telegramFileId: item.fileId ?? null,
+        telegramChatId: STORAGE_CHAT_ID,
+        telegramMsgId:  item.storageMsgId,
+      })),
+    });
+  }
+
+  const what = state.mode === "create_order"
+    ? `✅ Заказ *${orderTitle}* создан!`
+    : `✅ Файлы добавлены к заказу *${orderTitle}*!`;
+
+  await ctx.reply(
+    `${what}\n📎 Прикреплено: ${state.items.length} элем.`,
+    { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(user.status, user.role) }
+  );
 });
 
-// Отмена создания заказа
-bot.callbackQuery("cancel_order_create", async (ctx) => {
+bot.callbackQuery("tz_cancel", async (ctx) => {
+  collectingState.delete(ctx.from!.id);
   waitingForOrderTitle.delete(ctx.from!.id);
-  waitingForOrderTz.delete(ctx.from!.id);
   await ctx.answerCallbackQuery("Отменено");
   const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
   if (user) await ctx.reply("📋 Меню:", { reply_markup: mainMenuKeyboard(user.status, user.role) });
@@ -524,25 +576,18 @@ bot.callbackQuery("upload_file_menu", async (ctx) => {
   const kb = new InlineKeyboard();
   for (const o of orders) kb.text(o.title.slice(0, 40), `upl_ord_${o.id}`).row();
   kb.text("🔙 Отмена", "back_menu");
-  await ctx.reply("📎 *Загрузить файл*\n\nВыберите заказ:", { parse_mode: "Markdown", reply_markup: kb });
+  await ctx.reply("📎 *Загрузить файлы*\n\nВыберите заказ:", { parse_mode: "Markdown", reply_markup: kb });
 });
 
 bot.callbackQuery(/^upl_ord_(.+)$/, async (ctx) => {
   const orderId = ctx.match![1];
   await ctx.answerCallbackQuery();
-  waitingForFileAttach.set(ctx.from!.id, orderId);
+  collectingState.set(ctx.from!.id, { mode: "attach_files", orderId, items: [] });
   const order = await prisma.order.findUnique({ where: { id: orderId }, select: { title: true } });
   await ctx.reply(
-    `📎 Заказ: *${order?.title}*\n\nОтправьте файл (документ, видео или фото):`,
-    { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("❌ Отмена", "cancel_upload") }
+    `📎 Заказ: *${order?.title}*\n\nОтправляйте файлы, фото, видео или текст.\nМожно сколько угодно — всё сохранится.\nКогда закончите:`,
+    { parse_mode: "Markdown", reply_markup: collectingKeyboard() }
   );
-});
-
-bot.callbackQuery("cancel_upload", async (ctx) => {
-  waitingForFileAttach.delete(ctx.from!.id);
-  await ctx.answerCallbackQuery("Отменено");
-  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
-  if (user) await ctx.reply("📋 Меню:", { reply_markup: mainMenuKeyboard(user.status, user.role) });
 });
 
 // ==================== ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ ====================
@@ -574,49 +619,41 @@ bot.on("message:text", async (ctx, next) => {
       return;
     }
     waitingForOrderTitle.delete(userId);
-    waitingForOrderTz.set(userId, { title });
-    const kb = new InlineKeyboard()
-      .text("⏭️ Пропустить ТЗ", `ord_tzskip_${userId}`).row()
-      .text("❌ Отмена", "cancel_order_create");
+    collectingState.set(userId, { mode: "create_order", title, items: [] });
     await ctx.reply(
-      `📋 Название: *${title}*\n\nТеперь отправьте ТЗ — текст, файл, видео или перешлите сообщение с ТЗ:`,
-      { parse_mode: "Markdown", reply_markup: kb }
+      `📋 Название: *${title}*\n\n` +
+      `Теперь отправляйте всё для ТЗ:\n` +
+      `• Текстовые сообщения\n• Файлы, фото, видео\n• Пересланные сообщения\n\n` +
+      `Можно сколько угодно штук подряд. Когда закончите — нажмите *Готово*.\n` +
+      `Или сразу Готово если ТЗ не нужно:`,
+      { parse_mode: "Markdown", reply_markup: collectingKeyboard() }
     );
     return;
   }
 
-  // Создание заказа — ввод ТЗ текстом
-  if (waitingForOrderTz.has(userId)) {
-    const { title } = waitingForOrderTz.get(userId)!;
-    waitingForOrderTz.delete(userId);
-
-    const user = await prisma.user.findUnique({ where: { telegramId: BigInt(userId) } });
-    if (!user) return;
-
-    const description = ctx.message.text.trim() || null;
-    await prisma.order.create({
-      data: {
-        title,
-        description,
-        marketerId: user.id,
-        status: "NEW",
-        stages: {
-          create: [
-            { name: "STORYBOARD", status: "PENDING", sortOrder: 1 },
-            { name: "ANIMATION",  status: "PENDING", sortOrder: 2 },
-            { name: "EDITING",    status: "PENDING", sortOrder: 3 },
-            { name: "REVIEW",     status: "PENDING", sortOrder: 4 },
-            { name: "COMPLETED",  status: "PENDING", sortOrder: 5 },
-          ],
-        },
-      },
-    });
-
-    const preview = description ? `\n\n📝 ${description.slice(0, 200)}${description.length > 200 ? "..." : ""}` : "";
-    await ctx.reply(
-      `✅ *Заказ создан!*\n\n📋 ${title}${preview}`,
-      { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(user.status, user.role) }
-    );
+  // Батч-сбор: текстовое сообщение → пересылаем в хранилище
+  if (collectingState.has(userId)) {
+    const state = collectingState.get(userId)!;
+    if (!STORAGE_CHAT_ID) {
+      await ctx.reply("❌ Хранилище Telegram не настроено.");
+      return;
+    }
+    try {
+      const fwd = await bot.api.forwardMessage(STORAGE_CHAT_ID, ctx.chat!.id, ctx.message!.message_id);
+      const text = ctx.message.text.trim();
+      state.items.push({
+        fileName: text.slice(0, 500),
+        fileSize: 0,
+        mimeType: "text/plain",
+        storageMsgId: fwd.message_id,
+      });
+      await ctx.reply(
+        `📩 Добавлено (${state.items.length} эл.). Продолжайте или нажмите Готово:`,
+        { reply_markup: collectingKeyboard() }
+      );
+    } catch (e: any) {
+      await ctx.reply("❌ Ошибка: " + e.message);
+    }
     return;
   }
 
@@ -699,56 +736,28 @@ interface FileInfo { fileId: string; fileName: string; fileSize: number; mimeTyp
 async function handleFileMessage(ctx: any, info: FileInfo) {
   const userId = ctx.from!.id;
 
-  // Ожидаем ТЗ к создаваемому заказу
-  if (waitingForOrderTz.has(userId)) {
-    const { title } = waitingForOrderTz.get(userId)!;
-    waitingForOrderTz.delete(userId);
-
-    const user = await prisma.user.findUnique({ where: { telegramId: BigInt(userId) } });
-    if (!user) return;
-
-    const order = await prisma.order.create({
-      data: {
-        title,
-        marketerId: user.id,
-        status: "NEW",
-        stages: {
-          create: [
-            { name: "STORYBOARD", status: "PENDING", sortOrder: 1 },
-            { name: "ANIMATION",  status: "PENDING", sortOrder: 2 },
-            { name: "EDITING",    status: "PENDING", sortOrder: 3 },
-            { name: "REVIEW",     status: "PENDING", sortOrder: 4 },
-            { name: "COMPLETED",  status: "PENDING", sortOrder: 5 },
-          ],
-        },
-      },
-    });
-
-    const ok = await saveBotFile(ctx, order.id, user.id, "TZ", info.fileId, info.fileName, info.fileSize, info.mimeType);
-    if (ok) {
-      await ctx.reply(
-        `✅ *Заказ создан с ТЗ!*\n\n📋 ${title}\n📎 ${info.fileName}`,
-        { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(user.status, user.role) }
-      );
+  // Батч-режим: добавляем файл в коллекцию
+  if (collectingState.has(userId)) {
+    const state = collectingState.get(userId)!;
+    if (!STORAGE_CHAT_ID) {
+      await ctx.reply("❌ Хранилище Telegram не настроено.");
+      return;
     }
-    return;
-  }
-
-  // Ожидаем прикрепления файла к существующему заказу
-  if (waitingForFileAttach.has(userId)) {
-    const orderId = waitingForFileAttach.get(userId)!;
-    waitingForFileAttach.delete(userId);
-
-    const user = await prisma.user.findUnique({ where: { telegramId: BigInt(userId) } });
-    if (!user) return;
-
-    const order = await prisma.order.findUnique({ where: { id: orderId }, select: { title: true } });
-    const ok = await saveBotFile(ctx, orderId, user.id, "OTHER", info.fileId, info.fileName, info.fileSize, info.mimeType);
-    if (ok) {
+    try {
+      const fwd = await bot.api.forwardMessage(STORAGE_CHAT_ID, ctx.chat!.id, ctx.message!.message_id);
+      state.items.push({
+        fileName:    info.fileName,
+        fileSize:    info.fileSize,
+        mimeType:    info.mimeType,
+        fileId:      info.fileId,
+        storageMsgId: fwd.message_id,
+      });
       await ctx.reply(
-        `✅ Файл прикреплён к заказу «*${order?.title}*»\n📎 ${info.fileName}`,
-        { parse_mode: "Markdown", reply_markup: mainMenuKeyboard(user.status, user.role) }
+        `📎 Файл добавлен (${state.items.length} эл.). Продолжайте или нажмите Готово:`,
+        { reply_markup: collectingKeyboard() }
       );
+    } catch (e: any) {
+      await ctx.reply("❌ Ошибка сохранения: " + e.message);
     }
     return;
   }
@@ -983,12 +992,12 @@ bot.callbackQuery(/^adm_users_(\d+)$/, async (ctx) => {
     kb.text(`${u.displayName.slice(0, 20)}${blocked}`, `adm_user_${u.id}`).row();
   }
 
-  const nav = new InlineKeyboard();
-  if (page > 0)             nav.text("← Назад",  `adm_users_${page - 1}`);
-  if (page + 1 < totalPages) nav.text("Вперёд →", `adm_users_${page + 1}`);
-  nav.row().text("🔙 Меню", "adm_back");
+  // Навигация — добавляем к тому же kb
+  if (page > 0)              kb.text("← Назад",  `adm_users_${page - 1}`);
+  if (page + 1 < totalPages) kb.text("Вперёд →", `adm_users_${page + 1}`);
+  kb.row().text("🔙 Меню", "adm_back");
 
-  await ctx.reply(text, { parse_mode: "Markdown", reply_markup: nav });
+  await ctx.reply(text, { parse_mode: "Markdown", reply_markup: kb });
 });
 
 // Профиль пользователя (управление)

@@ -21,6 +21,60 @@ import { notificationsRoutes } from "./routes/notifications.routes";
 import { dashboardRoutes } from "./routes/dashboard.routes";
 import { permissionsRoutes } from "./routes/permissions.routes";
 import { loadPermissions } from "./services/permissions.service";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+
+// Применяем SQL-миграции вручную (идемпотентно, безопасно для перезапуска)
+async function ensureSchema() {
+  try {
+    // 1. Добавить колонки к order_stages если нет
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "order_stages"
+        ADD COLUMN IF NOT EXISTS "revision_round"          INTEGER   NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS "awaiting_client_approval" BOOLEAN   NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS "client_approval_skipped"  BOOLEAN   NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS "client_approved_at"       TIMESTAMP(3)
+    `);
+
+    // 2. Удалить старый уникальный индекс (order_id, name) если есть
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "order_stages"
+        DROP CONSTRAINT IF EXISTS "order_stages_order_id_name_key"
+    `);
+
+    // 3. Создать новый индекс (order_id, name, revision_round) если нет
+    await prisma.$executeRawUnsafe(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'order_stages_order_id_name_revision_round_key'
+        ) THEN
+          ALTER TABLE "order_stages"
+            ADD CONSTRAINT "order_stages_order_id_name_revision_round_key"
+            UNIQUE ("order_id", "name", "revision_round");
+        END IF;
+      END $$
+    `);
+
+    // 4. Добавить колонки к order_files если нет
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "order_files"
+        ADD COLUMN IF NOT EXISTS "telegram_file_id" TEXT,
+        ADD COLUMN IF NOT EXISTS "telegram_chat_id"  TEXT,
+        ADD COLUMN IF NOT EXISTS "telegram_msg_id"   INTEGER
+    `);
+
+    // 5. Убрать NOT NULL с storage_path чтобы TG-файлы могли иметь пустую строку
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "order_files" ALTER COLUMN "storage_path" SET DEFAULT ''
+    `);
+
+    console.log("✅ Schema migrations applied");
+  } catch (err: any) {
+    console.error("⚠️  Schema migration error:", err.message);
+  }
+}
 
 const app = Fastify({
   logger: {
@@ -80,6 +134,8 @@ declare module "fastify" {
 
 async function start() {
   try {
+    await ensureSchema();
+
     try {
       await initBucket();
       console.log("✅ MinIO connected");
