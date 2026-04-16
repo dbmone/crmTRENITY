@@ -11,6 +11,7 @@ export interface User {
   telegramUsername: string | null;
   role: UserRole;
   avatarUrl: string | null;
+  guideSeenAt?: string | null;
   permissions?: Record<PermissionKey, boolean>;
 }
 

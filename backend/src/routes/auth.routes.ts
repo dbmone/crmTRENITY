@@ -26,6 +26,7 @@ export async function authRoutes(app: FastifyInstance) {
       select: {
         id: true, displayName: true, telegramUsername: true, role: true,
         status: true, avatarUrl: true, isActive: true, createdAt: true,
+        guideSeenAt: true,
         teamLeadId: true,
         teamLead: { select: { id: true, displayName: true, telegramUsername: true, role: true, avatarUrl: true } },
       },

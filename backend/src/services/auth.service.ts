@@ -15,6 +15,7 @@ export async function loginByPin(pin: string, app: FastifyInstance) {
       avatarUrl: true,
       isActive: true,
       teamLeadId: true,
+      guideSeenAt: true,
     },
   });
 

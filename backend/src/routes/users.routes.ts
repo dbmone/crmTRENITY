@@ -20,12 +20,21 @@ export async function usersRoutes(app: FastifyInstance) {
       where: showAll ? {} : { status: UserStatus.APPROVED, isActive: true },
       select: {
         id: true, displayName: true, telegramUsername: true, role: true,
-        status: true, isActive: true, avatarUrl: true, teamLeadId: true, createdAt: true,
+        status: true, isActive: true, avatarUrl: true, teamLeadId: true, createdAt: true, guideSeenAt: true,
         teamLead: { select: { id: true, displayName: true, telegramUsername: true, role: true } },
         _count: { select: { createdOrders: true, assignments: true, subordinates: true } },
       },
       orderBy: { displayName: "asc" },
     });
+  });
+
+  app.post("/guide-seen", async (request) => {
+    const user = await prisma.user.update({
+      where: { id: request.currentUser.id },
+      data: { guideSeenAt: new Date() },
+      select: { id: true, guideSeenAt: true },
+    });
+    return { success: true, guideSeenAt: user.guideSeenAt };
   });
 
   // GET /api/users/pending — заявки на регистрацию
@@ -56,7 +65,7 @@ export async function usersRoutes(app: FastifyInstance) {
       where: { id: request.params.id },
       select: {
         id: true, displayName: true, telegramUsername: true, role: true,
-        status: true, avatarUrl: true, createdAt: true, teamLeadId: true,
+        status: true, avatarUrl: true, createdAt: true, teamLeadId: true, guideSeenAt: true,
         teamLead: { select: { id: true, displayName: true, telegramUsername: true, role: true, avatarUrl: true } },
         subordinates: { select: { id: true, displayName: true, telegramUsername: true, role: true, avatarUrl: true } },
         _count: { select: { createdOrders: true, assignments: true } },
@@ -78,7 +87,7 @@ export async function usersRoutes(app: FastifyInstance) {
         ...(request.body.displayName && { displayName: request.body.displayName }),
         ...(request.body.avatarUrl !== undefined && { avatarUrl: request.body.avatarUrl }),
       },
-      select: { id: true, displayName: true, telegramUsername: true, role: true, avatarUrl: true },
+      select: { id: true, displayName: true, telegramUsername: true, role: true, avatarUrl: true, guideSeenAt: true },
     });
   });
 

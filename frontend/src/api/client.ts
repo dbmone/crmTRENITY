@@ -271,6 +271,10 @@ export async function restoreUser(id: string) {
   return data;
 }
 
+export async function markGuideSeen(): Promise<void> {
+  await api.post("/users/guide-seen");
+}
+
 // ==================== PERMISSIONS ====================
 
 export async function getPermissions() {

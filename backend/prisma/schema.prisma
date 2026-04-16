@@ -37,6 +37,7 @@ model User {
   chatId           BigInt?    @map("chat_id")
   teamLeadId       String?    @map("team_lead_id")
   isActive         Boolean    @default(true) @map("is_active")
+  guideSeenAt      DateTime?  @map("guide_seen_at")
   createdAt        DateTime   @default(now()) @map("created_at")
   updatedAt        DateTime   @updatedAt @map("updated_at")
 

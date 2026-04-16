@@ -91,6 +91,11 @@ async function ensureSchema() {
       ADD COLUMN IF NOT EXISTS "telegram_group_created_at" TIMESTAMP(3)
   `);
 
+  await runSql("users guide_seen_at column", `
+    ALTER TABLE "users"
+      ADD COLUMN IF NOT EXISTS "guide_seen_at" TIMESTAMP(3)
+  `);
+
   // 5. Default для storage_path
   await runSql("order_files storage_path default", `
     ALTER TABLE "order_files" ALTER COLUMN "storage_path" SET DEFAULT ''
