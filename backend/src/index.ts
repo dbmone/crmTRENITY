@@ -25,6 +25,7 @@ import { settingsRoutes } from "./routes/settings.routes";
 import { loadPermissions } from "./services/permissions.service";
 import { PrismaClient } from "@prisma/client";
 import { startOrderGroupSyncLoop } from "./services/order-group.service";
+import { normalizeExistingPins } from "./services/pin.service";
 
 const prisma = new PrismaClient();
 
@@ -271,6 +272,10 @@ async function start() {
       console.log(`Telegram proxy enabled: ${maskEndpoint(config.bot.proxyUrl)}`);
     }
     await ensureSchema();
+    const pinSync = await normalizeExistingPins(prisma);
+    if (pinSync.updated > 0) {
+      console.log(`🔑 Normalized PIN codes: ${pinSync.updated}, notified in Telegram: ${pinSync.notified}`);
+    }
 
     try {
       await initBucket();

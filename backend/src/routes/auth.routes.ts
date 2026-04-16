@@ -2,18 +2,19 @@ import { FastifyInstance } from "fastify";
 import { PrismaClient, UserRole } from "@prisma/client";
 import { loginByPin } from "../services/auth.service";
 import { getUserEffectivePermissions } from "../services/permissions.service";
+import { normalizePin } from "../utils/pin";
 
 const prisma = new PrismaClient();
 
 export async function authRoutes(app: FastifyInstance) {
   // POST /api/auth/login
   app.post<{ Body: { pin: string } }>("/login", async (request, reply) => {
-    const { pin } = request.body;
-    if (!pin || pin.length !== 4) {
+    const normalizedPin = normalizePin(request.body.pin || "");
+    if (!normalizedPin || normalizedPin.length !== 4) {
       return reply.status(400).send({ error: "PIN должен быть 4 символа" });
     }
     try {
-      return await loginByPin(pin, app);
+      return await loginByPin(normalizedPin, app);
     } catch (err: any) {
       return reply.status(err.statusCode || 500).send({ error: err.message || "Ошибка авторизации" });
     }

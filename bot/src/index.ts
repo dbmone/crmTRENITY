@@ -105,7 +105,7 @@ bot.use(async (ctx, next) => {
 
 // ==================== ХЕЛПЕРЫ ====================
 
-const CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+const CHARS = "abcdefghjkmnpqrstuvwxyz23456789";
 
 function generatePin(): string {
   let pin = "";
@@ -116,7 +116,10 @@ function generatePin(): string {
 async function generateUniquePin(): Promise<string> {
   for (let i = 0; i < 100; i++) {
     const pin = generatePin();
-    const exists = await prisma.user.findUnique({ where: { pinCode: pin } });
+    const exists = await prisma.user.findFirst({
+      where: { pinCode: { equals: pin, mode: "insensitive" } },
+      select: { id: true },
+    });
     if (!exists) return pin;
   }
   throw new Error("PIN generation failed");
@@ -2919,9 +2922,7 @@ bot.callbackQuery(/^adm_approve_(.+)$/, async (ctx) => {
     return;
   }
 
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-  let pin = "";
-  for (let i = 0; i < 4; i++) pin += chars[crypto.randomInt(0, chars.length)];
+  const pin = await generateUniquePin();
 
   await prisma.user.update({
     where: { id: targetId },
@@ -3308,7 +3309,9 @@ async function ensureDbmAdmin() {
   try {
     const ADMIN_TG = process.env.ADMIN_TG_USERNAME || "Dbm0ne";
     // Найти пользователя с пин-кодом Adm1 или с username ADMIN_TG
-    const byPin = await prisma.user.findUnique({ where: { pinCode: "Adm1" } });
+    const byPin = await prisma.user.findFirst({
+      where: { pinCode: { equals: "adm1", mode: "insensitive" } },
+    });
     if (byPin && byPin.telegramUsername !== ADMIN_TG) {
       await prisma.user.update({ where: { id: byPin.id }, data: { telegramUsername: ADMIN_TG, displayName: "Dbm" } });
       console.log(`✅ Admin user linked to @${ADMIN_TG}`);

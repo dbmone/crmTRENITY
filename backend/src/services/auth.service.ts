@@ -1,11 +1,14 @@
 import { PrismaClient } from "@prisma/client";
 import { FastifyInstance } from "fastify";
+import { normalizePin } from "../utils/pin";
 
 const prisma = new PrismaClient();
 
 export async function loginByPin(pin: string, app: FastifyInstance) {
-  const user = await prisma.user.findUnique({
-    where: { pinCode: pin },
+  const normalizedPin = normalizePin(pin);
+
+  const user = await prisma.user.findFirst({
+    where: { pinCode: { equals: normalizedPin, mode: "insensitive" } },
     select: {
       id: true,
       displayName: true,

@@ -20,6 +20,7 @@ export default function LoginPage() {
   }, []);
 
   const handleChange = (index: number, value: string) => {
+    value = value.toLowerCase().replace(/[^a-z0-9]/g, "");
     if (value.length > 1) value = value.slice(-1);
     const next = [...digits];
     next[index] = value;
@@ -39,7 +40,7 @@ export default function LoginPage() {
 
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
-    const text = e.clipboardData.getData("text").trim().slice(0, 4);
+    const text = e.clipboardData.getData("text").trim().toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 4);
     const next = [...digits];
     for (let i = 0; i < text.length; i++) next[i] = text[i];
     setDigits(next);
@@ -51,7 +52,7 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     try {
-      await login(pin);
+      await login(pin.toLowerCase());
       navigate("/");
     } catch {
       setError("Неверный PIN-код");
@@ -86,6 +87,10 @@ export default function LoginPage() {
               ref={refs[index]}
               type="text"
               inputMode="text"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              autoComplete={index === 0 ? "one-time-code" : "off"}
               maxLength={1}
               value={digit}
               onChange={(e) => handleChange(index, e.target.value)}

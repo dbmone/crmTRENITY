@@ -3,6 +3,7 @@ import { PrismaClient, UserRole, UserStatus } from "@prisma/client";
 import { requireRole, requirePermission, canManageUser, assignableRoles } from "../middleware/role.middleware";
 import { generateUniquePin } from "../utils/pin";
 import { notifyRegistrationResult } from "../services/notification.service";
+import { sendPinCodeToTelegram } from "../services/pin.service";
 
 const prisma = new PrismaClient();
 
@@ -112,6 +113,7 @@ export async function usersRoutes(app: FastifyInstance) {
     });
 
     await notifyRegistrationResult(target.id, true);
+    await sendPinCodeToTelegram(target.chatId, pin, "approved").catch(() => {});
     return { ...updated, pinCode: pin };
   });
 

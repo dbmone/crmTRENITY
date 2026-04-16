@@ -17,11 +17,11 @@ async function main() {
       role: "ADMIN",
       status: "APPROVED",
       isActive: true,
-      pinCode: "Adm1",
+      pinCode: "adm1",
     },
   });
 
-  console.log("🔑 Admin created, PIN: Adm1");
+  console.log("🔑 Admin created, PIN: adm1");
 }
 
 main()

@@ -15,7 +15,7 @@ async function main() {
       displayName: "Admin",
       role: UserRole.ADMIN,
       status: UserStatus.APPROVED,
-      pinCode: "Adm1",
+      pinCode: "adm1",
       chatId: BigInt(1),
     },
   });
@@ -30,7 +30,7 @@ async function main() {
       displayName: "Анна Маркетолог",
       role: UserRole.HEAD_MARKETER,
       status: UserStatus.APPROVED,
-      pinCode: "A1b2",
+      pinCode: "a1b2",
       // chatId null — тестовый пользователь без реального Telegram чата
     },
   });
@@ -44,7 +44,7 @@ async function main() {
       displayName: "Сергей PM",
       role: UserRole.MARKETER,
       status: UserStatus.APPROVED,
-      pinCode: "C3d4",
+      pinCode: "c3d4",
     },
   });
 
@@ -57,7 +57,7 @@ async function main() {
       displayName: "Дима Видеомейкер",
       role: UserRole.LEAD_CREATOR,
       status: UserStatus.APPROVED,
-      pinCode: "E5f6",
+      pinCode: "e5f6",
     },
   });
 
@@ -70,7 +70,7 @@ async function main() {
       displayName: "Катя Монтажёр",
       role: UserRole.CREATOR,
       status: UserStatus.APPROVED,
-      pinCode: "G7h8",
+      pinCode: "g7h8",
       teamLeadId: dima.id,
     },
   });
@@ -84,7 +84,7 @@ async function main() {
       displayName: "Макс Креатор",
       role: UserRole.CREATOR,
       status: UserStatus.APPROVED,
-      pinCode: "J9k0",
+      pinCode: "j9k0",
       teamLeadId: dima.id,
     },
   });
@@ -177,12 +177,12 @@ async function main() {
   console.log("✅ Orders created");
   console.log("\n🎉 Seed complete!\n");
   console.log("PIN-коды:");
-  console.log("  Admin (@Dbm0ne):         Adm1");
-  console.log("  Анна (глав.маркетолог):  A1b2");
-  console.log("  Сергей (маркетолог):     C3d4");
-  console.log("  Дима (лид-креатор):      E5f6");
-  console.log("  Катя (креатор):          G7h8");
-  console.log("  Макс (креатор):          J9k0");
+  console.log("  Admin (@Dbm0ne):         adm1");
+  console.log("  Анна (глав.маркетолог):  a1b2");
+  console.log("  Сергей (маркетолог):     c3d4");
+  console.log("  Дима (лид-креатор):      e5f6");
+  console.log("  Катя (креатор):          g7h8");
+  console.log("  Макс (креатор):          j9k0");
   console.log("\nCLI-админка: npm run admin -- qwaszx12\\ <command>");
 }
 
