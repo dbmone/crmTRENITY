@@ -376,6 +376,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
       abortRef.current = null;
       setUploading(false);
       setProgress(null);
+      setTimeout(() => setItems([]), 1200);
     }
   };
 
