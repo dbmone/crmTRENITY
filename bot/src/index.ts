@@ -57,7 +57,7 @@ function startHealthServer() {
   if (healthServerStarted) return;
   healthServerStarted = true;
 
-  http.createServer((req, res) => {
+  http.createServer((_req, res) => {
     res.writeHead(200);
     res.end('Bot is running');
   }).listen(PORT, () => {
@@ -1579,16 +1579,6 @@ function orderListKeyboard(orders: any[], page: number, total: number): InlineKe
   return kb;
 }
 
-function orderDetailKeyboard(order: any): InlineKeyboard {
-  return new InlineKeyboard()
-    .text("🎬 Этапы", `ord_stages_${order.id}`)
-    .text(`📝 Отчёты (${order._count?.reports ?? 0})`, `ord_reports_${order.id}`).row()
-    .text(`💬 Комментарии (${order._count?.comments ?? 0})`, `ord_comments_${order.id}`)
-    .text(`📎 Файлы (${order._count?.files ?? 0})`, `ord_files_${order.id}`).row()
-    .text("🔄 Обновить", `ord_open_${order.id}`)
-    .text("🔙 К списку", "ord_list_0");
-}
-
 function orderDetailKeyboardV2(order: any): InlineKeyboard {
   const tzCount = getTzFiles(order).length;
   const nonTzCount = getNonTzFiles(order).length;
@@ -3003,14 +2993,15 @@ bot.callbackQuery(/^adm_users_(\d+)$/, async (ctx) => {
   const kb = new InlineKeyboard();
   for (const u of users) {
     const blocked = u.status === "BLOCKED" ? " 🚫" : "";
-    text += `• ${u.displayName}${blocked} — ${formatRole(u.role)}\n`;
+    text += `• ${esc(u.displayName)}${blocked} — ${formatRole(u.role)}\n`;
     kb.text(`${u.displayName.slice(0, 20)}${blocked}`, `adm_user_${u.id}`).row();
   }
 
-  // Навигация — добавляем к тому же kb
+  // Навигация — добавляем к тому же kb (пустая строка от loop .row() уже есть)
   if (page > 0)              kb.text("← Назад",  `adm_users_${page - 1}`);
   if (page + 1 < totalPages) kb.text("Вперёд →", `adm_users_${page + 1}`);
-  kb.row().text("🔙 Меню", "adm_back");
+  if (page > 0 || page + 1 < totalPages) kb.row();
+  kb.text("🔙 Меню", "adm_back");
 
   await replyOrEdit(ctx, text, { parse_mode: "Markdown", reply_markup: kb });
 });
@@ -3328,14 +3319,6 @@ async function ensureDbmAdmin() {
   }
 }
 
-if (false) bot.start({
-  onStart: async () => {
-    console.log("🤖 TRENITY CRM Bot started");
-    console.log("🛡️  Anti-spam: " + RATE_LIMIT + " msg/" + (RATE_WINDOW / 1000) + "s");
-    console.log("📨 Notification queue: 5s interval");
-    await ensureDbmAdmin();
-  },
-});
 
 async function startTelegramBot() {
   try {
