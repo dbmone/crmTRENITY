@@ -3,6 +3,22 @@ import { FileType, UserRole } from "@prisma/client";
 import { uploadFile, getDownloadUrl, deleteFile, getOrderFiles, sendFileToUserTelegram, addTzTextNote, sendTzBundleToTelegram } from "../services/file.service";
 import { config } from "../config";
 
+const FILE_TYPE_ALIASES: Record<string, FileType> = {
+  TZ: FileType.TZ,
+  CONTRACT: FileType.CONTRACT,
+  STORYBOARD: FileType.STORYBOARD,
+  VIDEO: FileType.VIDEO_FINAL,
+  VIDEO_DRAFT: FileType.VIDEO_DRAFT,
+  VIDEO_FINAL: FileType.VIDEO_FINAL,
+  OTHER: FileType.OTHER,
+};
+
+function normalizeFileType(raw?: string): FileType {
+  if (!raw) return FileType.OTHER;
+  const normalized = raw.trim().toUpperCase();
+  return FILE_TYPE_ALIASES[normalized] ?? FileType.OTHER;
+}
+
 export async function filesRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
 
@@ -47,11 +63,10 @@ export async function filesRoutes(app: FastifyInstance) {
     if (!data) return reply.status(400).send({ error: "Файл не прикреплён" });
 
     const fileTypeField = data.fields?.fileType;
-    let fileType: FileType = FileType.OTHER;
-    if (fileTypeField && "value" in fileTypeField) {
-      const val = fileTypeField.value as string;
-      if (Object.values(FileType).includes(val as FileType)) fileType = val as FileType;
-    }
+    const fileType =
+      fileTypeField && "value" in fileTypeField
+        ? normalizeFileType(fileTypeField.value as string)
+        : FileType.OTHER;
 
     const chunks: Buffer[] = [];
     for await (const chunk of data.file) chunks.push(chunk);

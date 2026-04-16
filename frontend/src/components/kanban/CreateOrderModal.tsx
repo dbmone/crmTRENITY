@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { X, Plus } from "lucide-react";
+import { useRef, useState } from "react";
+import { X, Plus, Paperclip, Trash2 } from "lucide-react";
 import { useOrdersStore } from "../../store/orders.store";
+import * as api from "../../api/client";
 
 interface Props { isOpen: boolean; onClose: () => void; }
 
@@ -11,8 +12,10 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
   const [description, setDescription] = useState("");
   const [deadline,    setDeadline]    = useState("");
   const [reminderDays,setReminderDays]= useState(2);
+  const [tzFiles,      setTzFiles]      = useState<File[]>([]);
   const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const createOrder = useOrdersStore((s) => s.createOrder);
 
@@ -22,12 +25,41 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
     if (!title.trim()) { setError("Введите название заказа"); return; }
     setLoading(true); setError("");
     try {
-      await createOrder({ title: title.trim(), description: description.trim() || undefined, deadline: deadline || undefined, reminderDays });
-      setTitle(""); setDescription(""); setDeadline(""); setReminderDays(2);
+      const order = await createOrder({
+        title: title.trim(),
+        description: description.trim() || undefined,
+        deadline: deadline || undefined,
+        reminderDays
+      });
+
+      let failedUploads = 0;
+      for (const file of tzFiles) {
+        try {
+          await api.uploadFile(order.id, file, "TZ");
+        } catch {
+          failedUploads += 1;
+        }
+      }
+
+      setTitle(""); setDescription(""); setDeadline(""); setReminderDays(2); setTzFiles([]);
       onClose();
+      if (failedUploads > 0) {
+        alert(`Заказ создан, но ${failedUploads} файл(ов) ТЗ не загрузились`);
+      }
     } catch (err: any) {
       setError(err.response?.data?.error || "Ошибка при создании");
     } finally { setLoading(false); }
+  };
+
+  const handlePickFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setTzFiles((prev) => [...prev, ...files]);
+    e.target.value = "";
+  };
+
+  const handleRemoveFile = (index: number) => {
+    setTzFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   return (
@@ -59,6 +91,47 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
               placeholder="Стиль, хронометраж, референсы, пожелания..."
               rows={4} className={`${inputCls} resize-none`}
             />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-medium text-ink-tertiary block">Файлы к ТЗ</label>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-bg-border text-ink-secondary hover:bg-bg-raised transition-colors"
+              >
+                <Paperclip size={12} />
+                Прикрепить
+              </button>
+            </div>
+            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handlePickFiles} />
+
+            {tzFiles.length > 0 ? (
+              <div className="space-y-2">
+                {tzFiles.map((file, index) => (
+                  <div key={`${file.name}-${file.size}-${index}`} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-bg-raised border border-bg-border">
+                    <div className="min-w-0">
+                      <p className="text-sm text-ink-primary truncate">{file.name}</p>
+                      <p className="text-[10px] text-ink-tertiary">
+                        {file.size > 1048576 ? `${(file.size / 1048576).toFixed(1)} МБ` : `${Math.max(1, Math.round(file.size / 1024))} КБ`}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveFile(index)}
+                      className="p-1.5 rounded-lg text-ink-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="px-3 py-2.5 rounded-lg border border-dashed border-bg-border text-xs text-ink-tertiary">
+                Эти файлы сразу попадут во вкладку ТЗ
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">

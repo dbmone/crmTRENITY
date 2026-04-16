@@ -64,7 +64,7 @@ export async function updateStage(
   return updated;
 }
 
-// Переключить "ожидание апрува от клиента" (STORYBOARD и ANIMATION)
+// Переключить "ожидание апрува от клиента" (STORYBOARD, ANIMATION и COMPLETED)
 export async function toggleClientApproval(
   orderId: string,
   stageId: string,
@@ -77,9 +77,9 @@ export async function toggleClientApproval(
   });
   if (!stage) throw { statusCode: 404, message: "Этап не найден" };
 
-  const subStageSupported = (["STORYBOARD", "ANIMATION"] as string[]).includes(stage.name);
+  const subStageSupported = (["STORYBOARD", "ANIMATION", "COMPLETED"] as string[]).includes(stage.name);
   if (!subStageSupported) {
-    throw { statusCode: 400, message: "Подэтап доступен только для Раскадровки и Анимации" };
+    throw { statusCode: 400, message: "Подэтап доступен только для Раскадровки, Анимации и Видео готово" };
   }
 
   if (action === "request") {

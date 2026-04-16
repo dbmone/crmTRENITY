@@ -9,9 +9,46 @@ import * as api from "../../api/client";
 
 const STAGE_ORDER: StageName[] = ["STORYBOARD", "ANIMATION", "EDITING", "REVIEW", "COMPLETED"];
 
-const FILE_TYPE_LABELS: Record<string, string> = { tz: "ТЗ", contract: "Договор", storyboard: "Раскадровка", video: "Видео", other: "Другое" };
-const NON_TZ_FILE_TYPE_LABELS: Record<string, string> = { contract: "Договор", storyboard: "Раскадровка", video: "Видео", other: "Другое" };
-const FILE_TYPE_COLORS: Record<string, string> = { tz: "text-blue-400 bg-blue-400/10", contract: "text-purple-400 bg-purple-400/10", storyboard: "text-amber-400 bg-amber-400/10", video: "text-green-400 bg-green-400/10", other: "text-ink-tertiary bg-bg-raised" };
+type FileBucket = "tz" | "contract" | "storyboard" | "video" | "other";
+type UploadFileType = "TZ" | "CONTRACT" | "STORYBOARD" | "VIDEO_FINAL" | "OTHER";
+
+const FILE_BUCKET_LABELS: Record<FileBucket, string> = {
+  tz: "ТЗ",
+  contract: "Договор",
+  storyboard: "Раскадровка",
+  video: "Видео",
+  other: "Другое",
+};
+
+const FILE_BUCKET_COLORS: Record<FileBucket, string> = {
+  tz: "text-blue-400 bg-blue-400/10",
+  contract: "text-purple-400 bg-purple-400/10",
+  storyboard: "text-amber-400 bg-amber-400/10",
+  video: "text-green-400 bg-green-400/10",
+  other: "text-ink-tertiary bg-bg-raised",
+};
+
+const NON_TZ_FILTER_OPTIONS: Array<{ value: Exclude<FileBucket, "tz">; label: string }> = [
+  { value: "contract", label: "Договор" },
+  { value: "storyboard", label: "Раскадровка" },
+  { value: "video", label: "Видео" },
+  { value: "other", label: "Другое" },
+];
+
+const NON_TZ_UPLOAD_OPTIONS: Array<{ value: Exclude<UploadFileType, "TZ">; label: string }> = [
+  { value: "CONTRACT", label: "Договор" },
+  { value: "STORYBOARD", label: "Раскадровка" },
+  { value: "VIDEO_FINAL", label: "Видео" },
+  { value: "OTHER", label: "Другое" },
+];
+
+function getFileBucket(file: Pick<OrderFile, "fileType" | "mimeType">): FileBucket {
+  if (file.fileType === "TZ" || file.mimeType === "text/plain") return "tz";
+  if (file.fileType === "CONTRACT") return "contract";
+  if (file.fileType === "STORYBOARD") return "storyboard";
+  if (file.fileType === "VIDEO_DRAFT" || file.fileType === "VIDEO_FINAL") return "video";
+  return "other";
+}
 
 type Tab = "stages" | "tz" | "files" | "reports" | "comments";
 
@@ -43,8 +80,8 @@ export default function OrderDetailModal({ order, onClose }: Props) {
 
   // Files
   const [uploadingFile,    setUploadingFile]    = useState(false);
-  const [selectedFileType, setSelectedFileType] = useState("all"); // "all" = фильтр без загрузки
-  const [uploadFileType,   setUploadFileType]   = useState("other");
+  const [selectedFileType, setSelectedFileType] = useState<"all" | Exclude<FileBucket, "tz">>("all");
+  const [uploadFileType,   setUploadFileType]   = useState<Exclude<UploadFileType, "TZ">>("OTHER");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Reports
@@ -53,13 +90,12 @@ export default function OrderDetailModal({ order, onClose }: Props) {
 
   // Edit file attach
   const [editUploadingFile,    setEditUploadingFile]    = useState(false);
-  const [editSelectedFileType, setEditSelectedFileType] = useState("tz");
+  const [editSelectedFileType, setEditSelectedFileType] = useState<UploadFileType>("TZ");
   const editFileInputRef = useRef<HTMLInputElement>(null);
 
   // TZ tab
   const [tzText,        setTzText]        = useState("");
   const [addingTzNote,  setAddingTzNote]  = useState(false);
-  const [tzFileInput,   setTzFileInput]   = useState<HTMLInputElement | null>(null);
   const [uploadingTzFile, setUploadingTzFile] = useState(false);
   // STT placeholder state
   const [recording,    setRecording]    = useState(false);
@@ -170,11 +206,11 @@ export default function OrderDetailModal({ order, onClose }: Props) {
     setSendingReport(false);
   };
 
-  const tzItems    = o.files?.filter(f => f.fileType === "TZ" || f.mimeType === "text/plain") ?? [];
-  const nonTzFiles = o.files?.filter(f => f.fileType !== "TZ" && f.mimeType !== "text/plain") ?? [];
+  const tzItems    = o.files?.filter((f) => getFileBucket(f) === "tz") ?? [];
+  const nonTzFiles = o.files?.filter((f) => getFileBucket(f) !== "tz") ?? [];
   const filteredFiles = selectedFileType === "all"
     ? nonTzFiles
-    : nonTzFiles.filter(f => (f.fileType ?? "other").toLowerCase() === selectedFileType);
+    : nonTzFiles.filter((f) => getFileBucket(f) === selectedFileType);
 
   const tabs: { id: Tab; label: string; count?: number }[] = [
     { id: "stages",   label: "Этапы" },
@@ -247,12 +283,12 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                 placeholder="ТЗ / описание..." rows={3} className={`${inputCls} resize-none`} />
               {/* File attach in edit mode */}
               <div className="flex items-center gap-2">
-                <select value={editSelectedFileType} onChange={(e) => setEditSelectedFileType(e.target.value)}
+                <select value={editSelectedFileType} onChange={(e) => setEditSelectedFileType(e.target.value as UploadFileType)}
                   className="text-xs px-2.5 py-1.5 rounded-lg border border-bg-border bg-bg-raised text-ink-secondary outline-none">
-                  <option value="tz">ТЗ</option>
-                  <option value="contract">Договор</option>
-                  <option value="storyboard">Раскадровка</option>
-                  <option value="other">Другое</option>
+                  <option value="TZ">ТЗ</option>
+                  <option value="CONTRACT">Договор</option>
+                  <option value="STORYBOARD">Раскадровка</option>
+                  <option value="OTHER">Другое</option>
                 </select>
                 <button onClick={() => editFileInputRef.current?.click()} disabled={editUploadingFile}
                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-dashed border-bg-border text-ink-tertiary hover:border-green-500/40 hover:text-green-400 disabled:opacity-50 transition-colors">
@@ -467,17 +503,17 @@ export default function OrderDetailModal({ order, onClose }: Props) {
             <div>
               <div className="flex items-center gap-2 mb-4 flex-wrap">
                 {/* Фильтр по типу */}
-                <select value={selectedFileType} onChange={(e) => setSelectedFileType(e.target.value)}
+                <select value={selectedFileType} onChange={(e) => setSelectedFileType(e.target.value as "all" | Exclude<FileBucket, "tz">)}
                   className="text-sm px-3 py-2 rounded-lg border border-bg-border bg-bg-raised text-ink-primary outline-none flex-1 min-w-0">
                   <option value="all">Все типы</option>
-                  {Object.entries(NON_TZ_FILE_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  {NON_TZ_FILTER_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
                 {isParticipant && (
                   <>
                     {/* Тип для загрузки */}
-                    <select value={uploadFileType} onChange={(e) => setUploadFileType(e.target.value)}
+                    <select value={uploadFileType} onChange={(e) => setUploadFileType(e.target.value as Exclude<UploadFileType, "TZ">)}
                       className="text-sm px-3 py-2 rounded-lg border border-bg-border bg-bg-raised text-ink-primary outline-none">
-                      {Object.entries(NON_TZ_FILE_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      {NON_TZ_UPLOAD_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </select>
                     <button onClick={() => fileInputRef.current?.click()} disabled={uploadingFile}
                       className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500 text-black text-sm font-bold hover:bg-green-400 disabled:opacity-50 transition-colors">
@@ -613,7 +649,7 @@ export default function OrderDetailModal({ order, onClose }: Props) {
 // ─── StagesTab: multi-round stage view with sub-stages ───────────────────────
 
 const STAGE_ORDER_LIST: StageName[] = ["STORYBOARD", "ANIMATION", "EDITING", "REVIEW", "COMPLETED"];
-const SUB_STAGE_NAMES: Partial<Record<StageName, boolean>> = { STORYBOARD: true, ANIMATION: true };
+const SUB_STAGE_NAMES: Partial<Record<StageName, boolean>> = { STORYBOARD: true, ANIMATION: true, COMPLETED: true };
 
 interface StagesTabProps {
   order: Order;
@@ -781,7 +817,7 @@ function StagesTab({ order, user, loading, canApprove, canSubmitReport, isPartic
                     {/* Sub-stage: waiting for client approval */}
                     {hasSubStage && isCurrentRound && (
                       <div className="ml-6 mt-1 p-2 rounded-lg bg-yellow-500/5 border border-yellow-500/15">
-                        <p className="text-[10px] font-medium text-yellow-400 mb-1.5">Подэтап: апрув от клиента</p>
+                        <p className="text-[10px] font-medium text-yellow-400 mb-1.5">Подэтап: апрув от заказчика</p>
                         {!stage.awaitingClientApproval && !stage.clientApprovedAt && !stage.clientApprovalSkipped && (
                           <div className="flex gap-1.5">
                             <button
@@ -854,7 +890,8 @@ function FileRow({ file, canDelete, onDeleted }: { file: OrderFile; canDelete: b
   const [tgOk, setTgOk] = useState(false);
 
   const isTgFile  = !!file.telegramFileId || !!file.telegramMsgId;
-  const isTextMsg = file.mimeType === "text/plain";
+  const fileBucket = getFileBucket(file);
+  const isTextMsg = fileBucket === "tz" && file.mimeType === "text/plain";
 
   const handleDl = async () => {
     setDl(true);
@@ -937,8 +974,8 @@ function FileRow({ file, canDelete, onDeleted }: { file: OrderFile; canDelete: b
         <div className="min-w-0">
           <p className="text-sm text-ink-primary truncate">{file.fileName}</p>
           <div className="flex items-center gap-1.5 mt-0.5">
-            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${FILE_TYPE_COLORS[file.fileType] || FILE_TYPE_COLORS.other}`}>
-              {FILE_TYPE_LABELS[file.fileType] || file.fileType}
+            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${FILE_BUCKET_COLORS[fileBucket] || FILE_BUCKET_COLORS.other}`}>
+              {FILE_BUCKET_LABELS[fileBucket] || file.fileType}
             </span>
             <span className="text-[10px] text-ink-tertiary">{size}</span>
             {isTgFile && <span className="text-[10px] text-[#229ED9]">TG</span>}

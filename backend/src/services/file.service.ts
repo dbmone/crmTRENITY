@@ -93,7 +93,13 @@ async function uploadFileViaTelegram(
     throw { statusCode: 413, message: "Telegram поддерживает файлы до 50 МБ через сайт. Загрузите файл через Telegram-бот." };
   }
 
-  const caption = `📁 ${fileName}\n🗂 Заказ: ${orderId}\n👤 ${uploadedById}`;
+  const [order, uploader] = await Promise.all([
+    prisma.order.findUnique({ where: { id: orderId }, select: { title: true } }),
+    prisma.user.findUnique({ where: { id: uploadedById }, select: { displayName: true, telegramUsername: true } }),
+  ]);
+  const orderLabel = order?.title || orderId;
+  const uploaderLabel = uploader?.displayName || uploader?.telegramUsername || uploadedById;
+  const caption = `📁 ${fileName}\n🗂 Заказ: ${orderLabel}\n👤 ${uploaderLabel}`;
   const tg = await uploadFileToStorage(fileBuffer, fileName, mimeType, caption);
 
   return prisma.orderFile.create({

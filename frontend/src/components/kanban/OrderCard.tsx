@@ -118,7 +118,7 @@ export default function OrderCard({ order, onClick, dim }: Props) {
                 ? <>
                     {STAGE_LABELS[activeStage.name]}
                     {activeStage.awaitingClientApproval && (
-                      <span className="ml-1 text-[9px] text-blue-400 opacity-80">· ожид. клиента</span>
+                      <span className="ml-1 text-[9px] text-blue-400 opacity-80">· апрув заказчика</span>
                     )}
                   </>
                 : pct === 100 ? "Завершено" : `${pct}%`
