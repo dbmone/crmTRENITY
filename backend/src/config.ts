@@ -30,6 +30,7 @@ export const config = {
     storageChatId: process.env.TELEGRAM_STORAGE_CHAT_ID || "",
     // Если true — файлы хранятся в Telegram вместо S3
     useAsTFileStorage: process.env.USE_TELEGRAM_STORAGE === "true",
+    proxyUrl: process.env.TELEGRAM_PROXY_URL || "",
   },
 
   admin: {

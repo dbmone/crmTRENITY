@@ -11,7 +11,8 @@
   "dependencies": {
     "@prisma/client": "^5.19.0",
     "grammy": "^1.30.0",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "proxy-agent": "^6.5.0"
   },
   "devDependencies": {
     "@types/node": "^22.5.0",

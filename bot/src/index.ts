@@ -3,17 +3,39 @@ import { PrismaClient, UserRole, UserStatus, NotificationType } from "@prisma/cl
 import dotenv from "dotenv";
 import crypto from "crypto";
 import http from 'http';
+import { ProxyAgent } from "proxy-agent";
 dotenv.config({ path: "../.env" });
 dotenv.config();
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
+const TELEGRAM_PROXY_URL = process.env.TELEGRAM_PROXY_URL;
+
+function maskEndpoint(value: string): string {
+  try {
+    const url = new URL(value);
+    return `${url.protocol}//${url.hostname}${url.port ? `:${url.port}` : ""}`;
+  } catch {
+    return "configured";
+  }
+}
 
 if (!BOT_TOKEN) {
   console.error("BOT_TOKEN is not set");
   process.exit(1);
 }
 
-const bot = new Bot(BOT_TOKEN);
+const telegramProxyAgent = TELEGRAM_PROXY_URL
+  ? new ProxyAgent({ getProxyForUrl: () => TELEGRAM_PROXY_URL })
+  : null;
+
+const bot = new Bot(BOT_TOKEN, telegramProxyAgent ? {
+  client: {
+    fetch: (
+      input: Parameters<typeof fetch>[0],
+      init?: Parameters<typeof fetch>[1]
+    ) => fetch(input, { ...init, agent: telegramProxyAgent as any } as any),
+  },
+} : undefined);
 const prisma = new PrismaClient();
 // Экранирование спецсимволов Markdown
 function esc(text: string): string {
@@ -1266,6 +1288,9 @@ if (false) bot.start({
 
 async function startTelegramBot() {
   try {
+    if (TELEGRAM_PROXY_URL) {
+      console.log(`Telegram proxy enabled: ${maskEndpoint(TELEGRAM_PROXY_URL)}`);
+    }
     console.log("Checking Telegram bot token...");
     const me = await bot.api.getMe();
     console.log(`Telegram auth OK: @${me.username}`);

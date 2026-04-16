@@ -25,6 +25,15 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+function maskEndpoint(value: string): string {
+  try {
+    const url = new URL(value);
+    return `${url.protocol}//${url.hostname}${url.port ? `:${url.port}` : ""}`;
+  } catch {
+    return "configured";
+  }
+}
+
 // Применяем SQL-миграции вручную (идемпотентно, безопасно для перезапуска)
 async function runSql(label: string, sql: string) {
   try {
@@ -137,6 +146,11 @@ declare module "fastify" {
 
 async function start() {
   try {
+    if (config.bot.proxyUrl && /^https?:\/\//i.test(config.bot.proxyUrl)) {
+      console.log(`Telegram proxy enabled: ${maskEndpoint(config.bot.proxyUrl)}`);
+    } else if (config.bot.proxyUrl) {
+      console.log("Telegram proxy is set but backend supports only http/https proxy URLs");
+    }
     await ensureSchema();
 
     try {
