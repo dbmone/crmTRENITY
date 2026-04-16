@@ -286,3 +286,14 @@ model TaskSubtask {
 
   @@map("task_subtasks")
 }
+
+// ==================== НАСТРОЙКИ ПРИЛОЖЕНИЯ ====================
+
+model AppSetting {
+  key         String   @id
+  value       String   @db.Text
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  updatedById String?  @map("updated_by_id")
+
+  @@map("app_settings")
+}
