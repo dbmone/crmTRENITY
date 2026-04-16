@@ -383,7 +383,7 @@ bot.callbackQuery("my_profile", async (ctx) => {
 });
 
 // Мои заказы
-bot.callbackQuery("my_orders", async (ctx) => {
+bot.callbackQuery("my_orders_legacy_disabled", async (ctx) => {
   const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
   if (!user) { await ctx.answerCallbackQuery("Не найден"); return; }
   await ctx.answerCallbackQuery();
@@ -609,6 +609,463 @@ bot.callbackQuery(/^tsk_del_(.+)$/, async (ctx) => {
   });
 });
 
+bot.callbackQuery("my_orders", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user) { await ctx.answerCallbackQuery("Не найден"); return; }
+  await ctx.answerCallbackQuery();
+
+  const where = getOrderScopeWhere(user);
+
+  const [total, orders] = await Promise.all([
+    prisma.order.count({ where }),
+    prisma.order.findMany({
+      where,
+      orderBy: { updatedAt: "desc" },
+      take: ORDER_PAGE_SIZE,
+      select: { id: true, title: true, status: true },
+    }),
+  ]);
+
+  if (orders.length === 0) {
+    await ctx.reply("📭 Нет активных заказов.");
+    return;
+  }
+
+  await replyOrEdit(ctx, `📋 *Ваши заказы* (${total})`, {
+    parse_mode: "Markdown",
+    reply_markup: orderListKeyboard(orders, 0, total),
+  });
+});
+
+bot.callbackQuery(/^ord_list_(\d+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user) { await ctx.answerCallbackQuery("Не найден"); return; }
+  await ctx.answerCallbackQuery();
+
+  const page = parseInt(ctx.match![1], 10);
+  const isMarketer = ["ADMIN", "HEAD_MARKETER", "MARKETER", "HEAD_CREATOR"].includes(user.role);
+  const where = isMarketer
+    ? { marketerId: user.id, status: { not: "ARCHIVED" } }
+    : { creators: { some: { creatorId: user.id } }, status: { not: "ARCHIVED" } };
+
+  const [total, orders] = await Promise.all([
+    prisma.order.count({ where }),
+    prisma.order.findMany({
+      where,
+      orderBy: { updatedAt: "desc" },
+      skip: page * ORDER_PAGE_SIZE,
+      take: ORDER_PAGE_SIZE,
+      select: { id: true, title: true, status: true },
+    }),
+  ]);
+
+  await replyOrEdit(ctx, `📋 *Ваши заказы* (${total})`, {
+    parse_mode: "Markdown",
+    reply_markup: orderListKeyboard(orders, page, total),
+  });
+});
+
+bot.callbackQuery(/^ord_open_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+  const currentOrder = await fetchOrderForBot(ctx.match![1]);
+  if (!currentOrder || !canAccessOrder(user, currentOrder)) { await ctx.answerCallbackQuery("No access"); return; }
+  if (!currentOrder) { await ctx.answerCallbackQuery("Заказ не найден"); return; }
+
+  await ctx.answerCallbackQuery();
+  await replyOrEdit(ctx, await getOrderSummaryText(currentOrder), {
+    parse_mode: "Markdown",
+    reply_markup: orderDetailKeyboardV2(currentOrder),
+  });
+});
+
+bot.callbackQuery(/^ord_stages_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+  const order = await fetchOrderForBot(ctx.match![1]);
+  if (!order) { await ctx.answerCallbackQuery("Заказ не найден"); return; }
+
+  await ctx.answerCallbackQuery();
+  await replyOrEdit(ctx, await getOrderStagesText(order), {
+    parse_mode: "Markdown",
+    reply_markup: orderStagesKeyboard(order, user),
+  });
+});
+
+bot.callbackQuery(/^ord_reports_(.+)$/, async (ctx) => {
+  const order = await fetchOrderForBot(ctx.match![1]);
+  if (!order) { await ctx.answerCallbackQuery("Заказ не найден"); return; }
+
+  let text = `📝 *Отчёты: ${esc(order.title)}*`;
+  if (!order.reports?.length) {
+    text += `\n\nОтчётов пока нет.`;
+  } else {
+    for (const report of order.reports.slice(0, 8)) {
+      text += `\n\n*${esc(report.creator.displayName)}* • ${new Date(report.reportDate).toLocaleDateString("ru-RU")}\n${esc(report.reportText)}`;
+    }
+  }
+
+  const kb = new InlineKeyboard()
+    .text("➕ Добавить отчёт", `rpt_${order.id}`).row()
+    .text("🔙 К заказу", `ord_open_${order.id}`);
+  await ctx.answerCallbackQuery();
+  await replyOrEdit(ctx, text, { parse_mode: "Markdown", reply_markup: kb });
+});
+
+bot.callbackQuery(/^ord_comments_(.+)$/, async (ctx) => {
+  const order = await fetchOrderForBot(ctx.match![1]);
+  if (!order) { await ctx.answerCallbackQuery("Заказ не найден"); return; }
+
+  let text = `💬 *Комментарии: ${esc(order.title)}*`;
+  if (!order.comments?.length) {
+    text += `\n\nКомментариев пока нет.`;
+  } else {
+    for (const comment of order.comments.slice(-8)) {
+      text += `\n\n*${esc(comment.author.displayName)}*:\n${esc(comment.text)}`;
+    }
+  }
+
+  const kb = new InlineKeyboard()
+    .text("✍️ Написать", `ord_cadd_${order.id}`).row()
+    .text("🔙 К заказу", `ord_open_${order.id}`);
+  await ctx.answerCallbackQuery();
+  await replyOrEdit(ctx, text, { parse_mode: "Markdown", reply_markup: kb });
+});
+
+bot.callbackQuery(/^ord_tz_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  const order = await fetchOrderForBot(ctx.match![1]);
+  if (!user || !order || !canAccessOrder(user, order)) { await ctx.answerCallbackQuery("No access"); return; }
+
+  const tzFiles = getTzFiles(order);
+  const kb = new InlineKeyboard()
+    .text("🎙 AI из голоса", `ord_tzvoice_${order.id}`)
+    .text("📝 Текст в ТЗ", `ord_tztext_${order.id}`).row()
+    .text("📎 Файл в ТЗ", `ord_tzadd_${order.id}`)
+    .text("📨 Отправить всё ТЗ", `ord_tzsend_${order.id}`);
+  for (const file of tzFiles.slice(0, 8)) {
+    const title = file.fileName.length > 26 ? `${file.fileName.slice(0, 26)}…` : file.fileName;
+    kb.row().text(`📤 ${title}`, `ord_file_${file.id}`);
+  }
+  kb.row().text("🔙 Назад", `ord_open_${order.id}`);
+  await ctx.answerCallbackQuery();
+  await replyOrEdit(ctx, buildOrderFilesText(order, tzFiles, "📋 *ТЗ*", "Материалов ТЗ пока нет."), {
+    parse_mode: "Markdown",
+    reply_markup: buildOrderFilesKeyboard(
+      order.id,
+      tzFiles,
+      `ord_tzadd_${order.id}`,
+      `ord_open_${order.id}`,
+      { text: "📨 Отправить всё ТЗ", callback: `ord_tzsend_${order.id}` }
+    ),
+  });
+});
+
+bot.callbackQuery(/^ord_files_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  const currentOrder = await fetchOrderForBot(ctx.match![1]);
+  if (!user || !currentOrder || !canAccessOrder(user, currentOrder)) { await ctx.answerCallbackQuery("No access"); return; }
+
+  const files = getNonTzFiles(currentOrder);
+  const order = currentOrder;
+  await ctx.answerCallbackQuery();
+  await replyOrEdit(ctx, buildOrderFilesText(order, files, "📎 *Файлы*", "Обычных файлов пока нет."), {
+    parse_mode: "Markdown",
+    reply_markup: buildOrderFilesKeyboard(order.id, files, `ord_fadd_${order.id}`, `ord_open_${order.id}`),
+  });
+  return;
+
+  const unusedOrder = await fetchOrderForBot(ctx.match![1]);
+  const legacyOrder = unusedOrder;
+  if (!order) { await ctx.answerCallbackQuery("Заказ не найден"); return; }
+
+  let text = `📎 *Файлы: ${esc(order.title)}*`;
+  if (!order.files?.length) {
+    text += `\n\nФайлов пока нет.`;
+  } else {
+    for (const file of order.files.slice(0, 12)) {
+      text += `\n• ${esc(file.fileName)} _(${file.fileType})_`;
+    }
+  }
+
+  await ctx.answerCallbackQuery();
+  await replyOrEdit(ctx, text, {
+    parse_mode: "Markdown",
+    reply_markup: orderBackKeyboard(order.id),
+  });
+});
+
+bot.callbackQuery(/^ord_tzadd_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  const order = await fetchOrderForBot(ctx.match![1]);
+  if (!user || !order || !canUploadToOrder(user, order)) { await ctx.answerCallbackQuery("No access"); return; }
+  await ctx.answerCallbackQuery();
+  await startOrderFileCollection(ctx, order.id, "TZ", "📝 Добавление в ТЗ");
+});
+
+bot.callbackQuery(/^ord_fadd_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  const order = await fetchOrderForBot(ctx.match![1]);
+  if (!user || !order || !canUploadToOrder(user, order)) { await ctx.answerCallbackQuery("No access"); return; }
+  await ctx.answerCallbackQuery();
+  await ctx.reply("Выберите тип файла:", {
+    reply_markup: fileTypePickerKeyboard(order.id, `ord_files_${order.id}`, false),
+  });
+});
+
+bot.callbackQuery(/^ord_tzsend_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  const order = await fetchOrderForBot(ctx.match![1]);
+  if (!user || !order || !canAccessOrder(user, order)) { await ctx.answerCallbackQuery("No access"); return; }
+
+  const tzFiles = getTzFiles(order);
+  if (!tzFiles.length) { await ctx.answerCallbackQuery("Нет ТЗ"); return; }
+
+  let sent = 0;
+  await ctx.reply(`📨 Отправляю ТЗ по заказу *${esc(order.title)}*...`, { parse_mode: "Markdown" });
+  for (const file of tzFiles) {
+    if (await sendOrderFileToChat(ctx.chat!.id, file)) sent += 1;
+  }
+  await ctx.answerCallbackQuery(sent > 0 ? `Отправлено: ${sent}` : "Не удалось отправить");
+});
+
+bot.callbackQuery(/^ord_file_(.+)$/, async (ctx) => {
+  const file = await prisma.orderFile.findUnique({ where: { id: ctx.match![1] } });
+  if (!file) { await ctx.answerCallbackQuery("Файл не найден"); return; }
+  const sent = await sendOrderFileToChat(ctx.chat!.id, file);
+  await ctx.answerCallbackQuery(sent ? "Файл отправлен" : "Не удалось отправить");
+});
+
+bot.callbackQuery(/^ord_tztext_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  const order = await fetchOrderForBot(ctx.match![1]);
+  if (!user || !order || !canUploadToOrder(user, order)) { await ctx.answerCallbackQuery("No access"); return; }
+  waitingForTzNote.set(ctx.from!.id, order.id);
+  await ctx.answerCallbackQuery();
+  await ctx.reply(`📝 Пришлите текст для ТЗ по заказу «${order.title}».`);
+});
+
+bot.callbackQuery(/^ord_tzvoice_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  const order = await fetchOrderForBot(ctx.match![1]);
+  if (!user || !order || !canUploadToOrder(user, order)) { await ctx.answerCallbackQuery("No access"); return; }
+  waitingForTzVoice.set(ctx.from!.id, order.id);
+  await ctx.answerCallbackQuery();
+  await ctx.reply(`🎙 Отправьте голосовое, и я превращу его в структурированное ТЗ для «${order.title}».`);
+});
+
+bot.callbackQuery("ord_tzvoice_ok", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  const draft = tzVoiceDraft.get(ctx.from!.id);
+  if (!user || !draft) { await ctx.answerCallbackQuery("Черновик не найден"); return; }
+
+  tzVoiceDraft.delete(ctx.from!.id);
+  await prisma.orderFile.create({
+    data: {
+      orderId: draft.orderId,
+      uploadedById: user.id,
+      fileType: "TZ",
+      fileName: draft.text.slice(0, 500),
+      fileSize: BigInt(Buffer.byteLength(draft.text, "utf8")),
+      mimeType: "text/plain",
+      storagePath: "",
+      telegramFileId: null,
+      telegramChatId: null,
+      telegramMsgId: null,
+    },
+  });
+
+  await ctx.answerCallbackQuery("ТЗ сохранено");
+  const order = await fetchOrderForBot(draft.orderId);
+  if (!order) return;
+  const tzFiles = getTzFiles(order);
+  await replyOrEdit(ctx, buildOrderFilesText(order, tzFiles, "📋 *ТЗ*", "Материалов ТЗ пока нет."), {
+    parse_mode: "Markdown",
+    reply_markup: buildOrderFilesKeyboard(
+      order.id,
+      tzFiles,
+      `ord_tzadd_${order.id}`,
+      `ord_open_${order.id}`,
+      { text: "📨 Отправить всё ТЗ", callback: `ord_tzsend_${order.id}` }
+    ),
+  });
+});
+
+bot.callbackQuery("ord_tzvoice_cancel", async (ctx) => {
+  waitingForTzVoice.delete(ctx.from!.id);
+  tzVoiceDraft.delete(ctx.from!.id);
+  await ctx.answerCallbackQuery("Отменено");
+});
+
+bot.callbackQuery(/^ord_cadd_(.+)$/, async (ctx) => {
+  const order = await fetchOrderForBot(ctx.match![1]);
+  if (!order) { await ctx.answerCallbackQuery("Заказ не найден"); return; }
+  waitingForOrderComment.set(ctx.from!.id, order.id);
+  await ctx.answerCallbackQuery();
+  await ctx.reply(`✍️ Напишите комментарий к заказу «${order.title}».`);
+});
+
+bot.callbackQuery(/^ord_sstart_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  const stage = await prisma.orderStage.findUnique({ where: { id: ctx.match![1] }, include: { order: { include: { creators: true } } } });
+  if (!user || !stage || !canManageOrder(user, stage.order)) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+
+  await prisma.orderStage.update({
+    where: { id: stage.id },
+    data: { status: "IN_PROGRESS", startedAt: stage.startedAt ?? new Date() },
+  });
+  await syncOrderStatusBot(stage.orderId);
+  const order = await fetchOrderForBot(stage.orderId);
+  if (!order) return;
+  await ctx.answerCallbackQuery("Этап начат");
+  await replyOrEdit(ctx, await getOrderStagesText(order), {
+    parse_mode: "Markdown",
+    reply_markup: orderStagesKeyboard(order, user),
+  });
+});
+
+bot.callbackQuery(/^ord_sdone_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  const stage = await prisma.orderStage.findUnique({ where: { id: ctx.match![1] }, include: { order: { include: { creators: true } } } });
+  if (!user || !stage) { await ctx.answerCallbackQuery("Этап не найден"); return; }
+
+  const canDone = stage.name === "REVIEW" ? canApproveReviewStage(user, stage.order) : (canManageOrder(user, stage.order) || canApproveReviewStage(user, stage.order));
+  if (!canDone || stage.awaitingClientApproval) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+
+  await prisma.orderStage.update({
+    where: { id: stage.id },
+    data: {
+      status: "DONE",
+      completedAt: new Date(),
+      awaitingClientApproval: false,
+    },
+  });
+  await syncOrderStatusBot(stage.orderId);
+  const order = await fetchOrderForBot(stage.orderId);
+  if (!order) return;
+  await ctx.answerCallbackQuery("Этап завершён");
+  await replyOrEdit(ctx, await getOrderStagesText(order), {
+    parse_mode: "Markdown",
+    reply_markup: orderStagesKeyboard(order, user),
+  });
+});
+
+bot.callbackQuery(/^ord_sreset_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  const stage = await prisma.orderStage.findUnique({ where: { id: ctx.match![1] }, include: { order: true } });
+  if (!user || !stage || !canManageOrder(user, stage.order)) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+
+  await prisma.orderStage.update({
+    where: { id: stage.id },
+    data: {
+      status: "PENDING",
+      startedAt: null,
+      completedAt: null,
+      awaitingClientApproval: false,
+      clientApprovalSkipped: false,
+      clientApprovedAt: null,
+    },
+  });
+  await syncOrderStatusBot(stage.orderId);
+  const order = await fetchOrderForBot(stage.orderId);
+  if (!order) return;
+  await ctx.answerCallbackQuery("Этап откатан");
+  await replyOrEdit(ctx, await getOrderStagesText(order), {
+    parse_mode: "Markdown",
+    reply_markup: orderStagesKeyboard(order, user),
+  });
+});
+
+bot.callbackQuery(/^ord_careq_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  const stage = await prisma.orderStage.findUnique({ where: { id: ctx.match![1] }, include: { order: true } });
+  if (!user || !stage || !canManageOrder(user, stage.order)) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+
+  await prisma.orderStage.update({
+    where: { id: stage.id },
+    data: { awaitingClientApproval: true, clientApprovalSkipped: false, clientApprovedAt: null },
+  });
+  const order = await fetchOrderForBot(stage.orderId);
+  if (!order) return;
+  await ctx.answerCallbackQuery("Апрув запрошен");
+  await replyOrEdit(ctx, await getOrderStagesText(order), {
+    parse_mode: "Markdown",
+    reply_markup: orderStagesKeyboard(order, user),
+  });
+});
+
+bot.callbackQuery(/^ord_caskip_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  const stage = await prisma.orderStage.findUnique({ where: { id: ctx.match![1] }, include: { order: true } });
+  if (!user || !stage || !canManageOrder(user, stage.order)) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+
+  await prisma.orderStage.update({
+    where: { id: stage.id },
+    data: { awaitingClientApproval: false, clientApprovalSkipped: true, clientApprovedAt: null },
+  });
+  const order = await fetchOrderForBot(stage.orderId);
+  if (!order) return;
+  await ctx.answerCallbackQuery("Апрув пропущен");
+  await replyOrEdit(ctx, await getOrderStagesText(order), {
+    parse_mode: "Markdown",
+    reply_markup: orderStagesKeyboard(order, user),
+  });
+});
+
+bot.callbackQuery(/^ord_caok_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  const stage = await prisma.orderStage.findUnique({ where: { id: ctx.match![1] }, include: { order: { include: { creators: true } } } });
+  if (!user || !stage || !canApproveReviewStage(user, stage.order)) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+
+  await prisma.orderStage.update({
+    where: { id: stage.id },
+    data: { awaitingClientApproval: false, clientApprovalSkipped: false, clientApprovedAt: new Date() },
+  });
+  const order = await fetchOrderForBot(stage.orderId);
+  if (!order) return;
+  await ctx.answerCallbackQuery("Апрув подтверждён");
+  await replyOrEdit(ctx, await getOrderStagesText(order), {
+    parse_mode: "Markdown",
+    reply_markup: orderStagesKeyboard(order, user),
+  });
+});
+
+bot.callbackQuery(/^ord_rev_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  const order = await fetchOrderForBot(ctx.match![1]);
+  if (!user || !order || !canManageOrder(user, order)) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+
+  const currentStages = getCurrentRoundStages(order.stages ?? []);
+  const currentRoundDone = currentStages.length > 0 && currentStages.every((stage: any) => stage.status === "DONE");
+  if (!currentRoundDone) { await ctx.answerCallbackQuery("Раунд ещё не завершён"); return; }
+
+  const newRound = (currentStages[0]?.revisionRound ?? 0) + 1;
+  const defaults = [
+    { name: "STORYBOARD", sortOrder: 1 },
+    { name: "ANIMATION", sortOrder: 2 },
+    { name: "EDITING", sortOrder: 3 },
+    { name: "REVIEW", sortOrder: 4 },
+    { name: "COMPLETED", sortOrder: 5 },
+  ];
+  await prisma.orderStage.createMany({
+    data: defaults.map((stage) => ({
+      orderId: order.id,
+      name: stage.name,
+      sortOrder: stage.sortOrder,
+      revisionRound: newRound,
+    })),
+  });
+  await prisma.order.update({ where: { id: order.id }, data: { status: "IN_PROGRESS" } });
+
+  const updatedOrder = await fetchOrderForBot(order.id);
+  if (!updatedOrder) return;
+  await ctx.answerCallbackQuery("Новый раунд создан");
+  await replyOrEdit(ctx, await getOrderStagesText(updatedOrder), {
+    parse_mode: "Markdown",
+    reply_markup: orderStagesKeyboard(updatedOrder, user),
+  });
+});
+
 bot.callbackQuery("back_menu", async (ctx) => {
   const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
   await ctx.answerCallbackQuery();
@@ -624,6 +1081,9 @@ const waitingForOrderTitle = new Map<number, true>();
 const waitingForTaskTitle  = new Set<number>();
 const waitingForTaskVoice  = new Set<number>();
 const waitingForSubtaskForTask = new Map<number, string>();
+const waitingForOrderComment = new Map<number, string>();
+const waitingForTzNote = new Map<number, string>();
+const waitingForTzVoice = new Map<number, string>();
 const taskVoiceDraft = new Map<number, {
   title: string;
   description?: string;
@@ -631,8 +1091,14 @@ const taskVoiceDraft = new Map<number, {
   subtasks: string[];
   rawText: string;
 }>();
+const tzVoiceDraft = new Map<number, {
+  orderId: string;
+  text: string;
+  rawText: string;
+}>();
 
 const TASK_PAGE_SIZE = 8;
+const ORDER_PAGE_SIZE = 8;
 
 function taskStatusLabel(status: TaskStatusValue): string {
   return ({
@@ -771,6 +1237,356 @@ async function replyOrEdit(ctx: any, text: string, extra: Record<string, any>) {
   await ctx.reply(text, extra);
 }
 
+function orderStatusEmoji(status: string): string {
+  return {
+    NEW: "🆕",
+    IN_PROGRESS: "🔄",
+    ON_REVIEW: "👀",
+    DONE: "✅",
+    ARCHIVED: "📦",
+  }[status] || "📋";
+}
+
+function stageLabel(name: string): string {
+  return {
+    STORYBOARD: "Раскадровка",
+    ANIMATION: "Анимация",
+    EDITING: "Монтаж",
+    REVIEW: "На правках",
+    COMPLETED: "Видео готово",
+  }[name] || name;
+}
+
+function stageEmoji(status: string): string {
+  return {
+    PENDING: "⬜",
+    IN_PROGRESS: "🟡",
+    DONE: "✅",
+  }[status] || "⬜";
+}
+
+function fileTypeLabel(fileType: string): string {
+  return {
+    TZ: "ТЗ",
+    CONTRACT: "Договор",
+    STORYBOARD: "Раскадровка",
+    VIDEO_DRAFT: "Черновик видео",
+    VIDEO_FINAL: "Финальное видео",
+    OTHER: "Файл",
+  }[fileType] || fileType;
+}
+
+function getOrderScopeWhere(user: any): any {
+  if (user.role === "ADMIN" || user.role === "HEAD_MARKETER" || user.role === "HEAD_CREATOR") {
+    return { status: { not: "ARCHIVED" } };
+  }
+  if (user.role === "MARKETER") {
+    return { marketerId: user.id, status: { not: "ARCHIVED" } };
+  }
+  return { creators: { some: { creatorId: user.id } }, status: { not: "ARCHIVED" } };
+}
+
+function getTzFiles(order: any): any[] {
+  return (order.files ?? []).filter((file: any) => file.fileType === "TZ");
+}
+
+function getNonTzFiles(order: any): any[] {
+  return (order.files ?? []).filter((file: any) => file.fileType !== "TZ");
+}
+
+function canManageOrder(user: any, order: any): boolean {
+  return (
+    user?.role === "ADMIN" ||
+    user?.role === "HEAD_MARKETER" ||
+    user?.role === "HEAD_CREATOR" ||
+    order?.marketerId === user?.id
+  );
+}
+
+function canAccessOrder(user: any, order: any): boolean {
+  if (!user || !order) return false;
+  if (canManageOrder(user, order)) return true;
+  return !!order.creators?.some((creator: any) => creator.creatorId === user.id);
+}
+
+function canUploadToOrder(user: any, order: any): boolean {
+  return canAccessOrder(user, order);
+}
+
+function canApproveReviewStage(user: any, order: any): boolean {
+  if (!user || !order) return false;
+  if (["ADMIN", "HEAD_MARKETER", "MARKETER"].includes(user.role)) return true;
+  return !!order.creators?.some((creator: any) => creator.creatorId === user.id && creator.isLead);
+}
+
+function getCurrentRoundStages(stages: any[]): any[] {
+  const maxRound = stages.length ? Math.max(...stages.map((stage: any) => stage.revisionRound ?? 0)) : 0;
+  return stages
+    .filter((stage: any) => (stage.revisionRound ?? 0) === maxRound)
+    .sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+}
+
+async function fetchOrderForBot(orderId: string) {
+  return prisma.order.findUnique({
+    where: { id: orderId },
+    include: {
+      marketer: { select: { id: true, displayName: true, telegramUsername: true, role: true } },
+      creators: {
+        include: {
+          creator: { select: { id: true, displayName: true, telegramUsername: true, role: true } },
+        },
+      },
+      stages: { orderBy: [{ revisionRound: "asc" }, { sortOrder: "asc" }] },
+      reports: {
+        include: { creator: { select: { id: true, displayName: true, telegramUsername: true } } },
+        orderBy: { reportDate: "desc" },
+        take: 10,
+      },
+      comments: {
+        include: { author: { select: { id: true, displayName: true, telegramUsername: true, role: true } } },
+        orderBy: { createdAt: "asc" },
+        take: 10,
+      },
+      files: {
+        select: {
+          id: true,
+          fileName: true,
+          fileType: true,
+          uploadedAt: true,
+          uploadedById: true,
+          mimeType: true,
+          telegramFileId: true,
+          telegramChatId: true,
+          telegramMsgId: true,
+        },
+        orderBy: { uploadedAt: "desc" },
+        take: 20,
+      },
+      _count: { select: { reports: true, comments: true, files: true } },
+    },
+  });
+}
+
+function orderListKeyboard(orders: any[], page: number, total: number): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  for (const order of orders) {
+    const title = order.title.length > 26 ? `${order.title.slice(0, 26)}…` : order.title;
+    kb.text(`${orderStatusEmoji(order.status)} ${title}`, `ord_open_${order.id}`).row();
+  }
+
+  const totalPages = Math.max(1, Math.ceil(total / ORDER_PAGE_SIZE));
+  if (page > 0) kb.text("← Назад", `ord_list_${page - 1}`);
+  if (page + 1 < totalPages) kb.text("Вперёд →", `ord_list_${page + 1}`);
+  if (page > 0 || page + 1 < totalPages) kb.row();
+  kb.text("🔙 В меню", "back_menu");
+  return kb;
+}
+
+function orderDetailKeyboard(order: any): InlineKeyboard {
+  return new InlineKeyboard()
+    .text("🎬 Этапы", `ord_stages_${order.id}`)
+    .text(`📝 Отчёты (${order._count?.reports ?? 0})`, `ord_reports_${order.id}`).row()
+    .text(`💬 Комментарии (${order._count?.comments ?? 0})`, `ord_comments_${order.id}`)
+    .text(`📎 Файлы (${order._count?.files ?? 0})`, `ord_files_${order.id}`).row()
+    .text("🔄 Обновить", `ord_open_${order.id}`)
+    .text("🔙 К списку", "ord_list_0");
+}
+
+function orderBackKeyboard(orderId: string, backTo: "detail" | "stages" | "reports" | "comments" | "files" = "detail"): InlineKeyboard {
+  return new InlineKeyboard().text("🔙 Назад", `ord_${backTo}_${orderId}`);
+}
+
+function orderDetailKeyboardV2(order: any): InlineKeyboard {
+  const tzCount = getTzFiles(order).length;
+  const nonTzCount = getNonTzFiles(order).length;
+
+  return new InlineKeyboard()
+    .text("🎬 Этапы", `ord_stages_${order.id}`)
+    .text(`📝 Отчёты (${order._count?.reports ?? 0})`, `ord_reports_${order.id}`).row()
+    .text(`💬 Комментарии (${order._count?.comments ?? 0})`, `ord_comments_${order.id}`)
+    .text(`📋 ТЗ (${tzCount})`, `ord_tz_${order.id}`).row()
+    .text(`📎 Файлы (${nonTzCount})`, `ord_files_${order.id}`)
+    .text("🔄 Обновить", `ord_open_${order.id}`).row()
+    .text("🔙 К списку", "ord_list_0");
+}
+
+function fileTypePickerKeyboard(orderId: string, backCallback = "back_menu", includeTz = false): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  if (includeTz) kb.text("📝 ТЗ", `upl_type_${orderId}_TZ`).row();
+  kb
+    .text("🎞 Раскадровка", `upl_type_${orderId}_STORYBOARD`).row()
+    .text("🎬 Черновик видео", `upl_type_${orderId}_VIDEO_DRAFT`).row()
+    .text("✅ Финальное видео", `upl_type_${orderId}_VIDEO_FINAL`).row()
+    .text("📄 Договор", `upl_type_${orderId}_CONTRACT`).row()
+    .text("📎 Другое", `upl_type_${orderId}_OTHER`).row()
+    .text("🔙 Назад", backCallback);
+  return kb;
+}
+
+function buildOrderFilesText(order: any, files: any[], title: string, emptyText: string): string {
+  let text = `${title}: *${esc(order.title)}*`;
+  if (!files.length) return `${text}\n\n${emptyText}`;
+
+  for (const file of files.slice(0, 10)) {
+    const uploadedAt = new Date(file.uploadedAt).toLocaleDateString("ru-RU");
+    text += `\n\n• *${esc(file.fileName)}*\nТип: ${esc(fileTypeLabel(file.fileType))}\nДата: ${uploadedAt}`;
+  }
+
+  if (files.length > 10) {
+    text += `\n\nИ ещё ${files.length - 10} файлов.`;
+  }
+
+  return text;
+}
+
+function buildOrderFilesKeyboard(
+  orderId: string,
+  files: any[],
+  addCallback: string,
+  backCallback: string,
+  extraTopButton?: { text: string; callback: string }
+): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  if (extraTopButton) kb.text(extraTopButton.text, extraTopButton.callback).row();
+  if (addCallback.startsWith("ord_tzadd_")) {
+    kb.text("🎙 AI из голоса", `ord_tzvoice_${orderId}`)
+      .text("📝 Текст в ТЗ", `ord_tztext_${orderId}`).row();
+  }
+  kb.text("➕ Добавить", addCallback).row();
+  for (const file of files.slice(0, 8)) {
+    const title = file.fileName.length > 28 ? `${file.fileName.slice(0, 28)}…` : file.fileName;
+    kb.text(`📤 ${title}`, `ord_file_${file.id}`).row();
+  }
+  kb.text("🔙 Назад", backCallback);
+  return kb;
+}
+
+async function sendOrderFileToChat(chatId: number, file: any) {
+  if (file.mimeType === "text/plain") {
+    await bot.api.sendMessage(chatId, file.fileName);
+    return true;
+  }
+
+  if (file.telegramChatId && file.telegramMsgId) {
+    await bot.api.copyMessage(chatId, file.telegramChatId, file.telegramMsgId);
+    return true;
+  }
+
+  if (file.telegramFileId) {
+    if (file.mimeType?.startsWith("image/")) {
+      await bot.api.sendPhoto(chatId, file.telegramFileId, { caption: file.fileName });
+    } else if (file.mimeType?.startsWith("video/")) {
+      await bot.api.sendVideo(chatId, file.telegramFileId, { caption: file.fileName });
+    } else {
+      await bot.api.sendDocument(chatId, file.telegramFileId, { caption: file.fileName });
+    }
+    return true;
+  }
+
+  return false;
+}
+
+async function startOrderFileCollection(ctx: any, orderId: string, targetFileType: string, promptTitle: string) {
+  collectingState.set(ctx.from!.id, { mode: "attach_files", orderId, targetFileType, items: [] });
+  const order = await prisma.order.findUnique({ where: { id: orderId }, select: { title: true } });
+  await ctx.reply(
+    `${promptTitle}: *${order?.title || orderId}*\n\nОтправляйте файлы, фото, видео, голосовые или текст. Когда закончите — нажмите Готово.`,
+    { parse_mode: "Markdown", reply_markup: collectingKeyboard() }
+  );
+}
+
+async function getOrderSummaryText(order: any): Promise<string> {
+  const currentStages = getCurrentRoundStages(order.stages ?? []);
+  const doneStages = currentStages.filter((stage: any) => stage.status === "DONE").length;
+  const totalStages = currentStages.length;
+  const bar = "▓".repeat(doneStages) + "░".repeat(Math.max(0, totalStages - doneStages));
+  const creatorNames = order.creators?.map((creator: any) => creator.creator.displayName).join(", ") || "—";
+  const deadlineText = order.deadline
+    ? new Date(order.deadline).toLocaleDateString("ru-RU")
+    : "не задан";
+
+  let text =
+    `${orderStatusEmoji(order.status)} *${esc(order.title)}*\n` +
+    `Маркетолог: ${esc(order.marketer?.displayName || "—")}\n` +
+    `Креаторы: ${esc(creatorNames)}\n` +
+    `Дедлайн: ${deadlineText}\n` +
+    `Прогресс: ${bar} (${doneStages}/${totalStages})`;
+
+  if (order.description) text += `\n\n${esc(order.description)}`;
+  return text;
+}
+
+async function getOrderStagesText(order: any): Promise<string> {
+  const currentStages = getCurrentRoundStages(order.stages ?? []);
+  const currentRound = currentStages.length ? (currentStages[0].revisionRound ?? 0) : 0;
+  let text = `🎬 *Этапы: ${esc(order.title)}*\nТекущий раунд: ${currentRound === 0 ? "основной" : `правка #${currentRound}`}`;
+
+  for (const stage of currentStages) {
+    text += `\n\n${stageEmoji(stage.status)} *${stageLabel(stage.name)}*`;
+    if (stage.awaitingClientApproval) text += `\nОжидает апрув заказчика`;
+    if (stage.clientApprovedAt) text += `\nАпрув получен`;
+    if (stage.clientApprovalSkipped) text += `\nАпрув пропущен`;
+  }
+
+  return text;
+}
+
+function orderStagesKeyboard(order: any, user: any): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  const currentStages = getCurrentRoundStages(order.stages ?? []);
+  const canManage = canManageOrder(user, order);
+  const canApprove = canApproveReviewStage(user, order);
+
+  for (const stage of currentStages) {
+    if (stage.status === "PENDING" && canManage) {
+      kb.text(`▶️ ${stageLabel(stage.name)}`, `ord_sstart_${stage.id}`).row();
+    } else if (stage.status === "IN_PROGRESS") {
+      if (stage.name === "REVIEW" ? canApprove : canManage || canApprove) {
+        kb.text(`✅ ${stageLabel(stage.name)}`, `ord_sdone_${stage.id}`).row();
+      }
+      if (["STORYBOARD", "ANIMATION", "COMPLETED"].includes(stage.name)) {
+        if (!stage.awaitingClientApproval && !stage.clientApprovedAt && !stage.clientApprovalSkipped && canManage) {
+          kb.text(`📨 Апрув: ${stageLabel(stage.name)}`, `ord_careq_${stage.id}`).row();
+        }
+        if (stage.awaitingClientApproval && canApprove) {
+          kb.text(`👍 Подтвердить апрув`, `ord_caok_${stage.id}`).row();
+        }
+        if (!stage.clientApprovedAt && !stage.clientApprovalSkipped && canManage) {
+          kb.text(`⏭ Пропустить апрув`, `ord_caskip_${stage.id}`).row();
+        }
+      }
+    } else if (stage.status === "DONE" && canManage) {
+      kb.text(`↺ Откатить ${stageLabel(stage.name)}`, `ord_sreset_${stage.id}`).row();
+    }
+  }
+
+  const currentRoundDone = currentStages.length > 0 && currentStages.every((stage: any) => stage.status === "DONE");
+  if (currentRoundDone && canManage) {
+    kb.text("🌀 Новый раунд правок", `ord_rev_${order.id}`).row();
+  }
+
+  kb.text("🔙 К заказу", `ord_open_${order.id}`);
+  return kb;
+}
+
+async function syncOrderStatusBot(orderId: string) {
+  const stages = await prisma.orderStage.findMany({
+    where: { orderId },
+    orderBy: [{ revisionRound: "asc" }, { sortOrder: "asc" }],
+  });
+  const currentStages = getCurrentRoundStages(stages);
+  const allDone = currentStages.length > 0 && currentStages.every((stage: any) => stage.status === "DONE");
+  const allPending = currentStages.length > 0 && currentStages.every((stage: any) => stage.status === "PENDING");
+  const reviewStage = currentStages.find((stage: any) => stage.name === "REVIEW");
+
+  let newStatus = "IN_PROGRESS";
+  if (allDone) newStatus = "DONE";
+  else if (allPending) newStatus = "NEW";
+  else if (reviewStage?.status === "IN_PROGRESS") newStatus = "ON_REVIEW";
+
+  await prisma.order.update({ where: { id: orderId }, data: { status: newStatus } });
+}
+
 // ==================== STT (Groq Whisper) ====================
 
 const DEFAULT_TASK_PROMPT = `Голосовая заметка пользователя: "{{TEXT}}"
@@ -788,6 +1604,26 @@ const DEFAULT_TASK_PROMPT = `Голосовая заметка пользова�
 - subtasks: 0-8 конкретных шагов из текста. Если шагов нет — []
 - priority: HIGH если слова "срочно/сегодня/важно", LOW если не срочно, иначе MEDIUM
 - Отвечай на русском`;
+
+const DEFAULT_TZ_PROMPT = `Голосовая заметка заказчика: "{{TEXT}}"
+
+Структурируй это как техническое задание для контент-создателей. Отвечай только структурированным текстом, без вводных слов и без JSON.
+
+Используй только те разделы, которые реально есть в исходном тексте:
+• Цель / задача
+• Формат контента
+• Целевая аудитория
+• Ключевые тезисы
+• Технические требования
+• Что не делать
+• Сроки
+• Дополнительно
+
+Правила:
+- пиши кратко и конкретно
+- не выдумывай детали, которых нет в голосе
+- если раздел не упомянут — пропусти его
+- отвечай на русском языке`;
 
 async function getTelegramFileBuffer(fileUrl: string): Promise<Buffer | null> {
   try {
@@ -868,6 +1704,61 @@ async function callTaskAi(prompt: string): Promise<any | null> {
   return null;
 }
 
+async function callTextAi(prompt: string, systemPrompt: string): Promise<string | null> {
+  const g4fUrl = process.env.G4F_API_URL?.trim();
+  const g4fModel = process.env.G4F_MODEL?.trim() || "gpt-4o-mini";
+  const groqKey = process.env.GROQ_API_KEY?.trim();
+
+  if (g4fUrl) {
+    try {
+      const response = await fetch(`${g4fUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: g4fModel,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: prompt },
+          ],
+          temperature: 0.3,
+          max_tokens: 1200,
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json() as any;
+        return String(data.choices?.[0]?.message?.content || "").trim() || null;
+      }
+    } catch {}
+  }
+
+  if (groqKey) {
+    try {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${groqKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: prompt },
+          ],
+          temperature: 0.3,
+          max_tokens: 1200,
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json() as any;
+        return String(data.choices?.[0]?.message?.content || "").trim() || null;
+      }
+    } catch {}
+  }
+
+  return null;
+}
+
 async function transcribeVoiceGroq(fileId: string): Promise<string | null> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey || !BOT_TOKEN) return null;
@@ -930,6 +1821,23 @@ async function parseVoiceToTaskDraft(fileId: string): Promise<{
   };
 }
 
+async function parseVoiceToTzDraft(fileId: string): Promise<{ text: string; rawText: string } | null> {
+  const rawText = await transcribeVoiceGroq(fileId);
+  if (!rawText) return null;
+
+  const promptTemplate = (await getAppSettingValue("tz_structure_prompt")) ?? DEFAULT_TZ_PROMPT;
+  const prompt = promptTemplate.replace("{{TEXT}}", rawText);
+  const structured = await callTextAi(
+    prompt,
+    "Ты помощник по созданию технических заданий. Отвечай только структурированным текстом на русском языке, без JSON и без лишних вводных слов."
+  );
+
+  return {
+    text: structured || rawText,
+    rawText,
+  };
+}
+
 // Батч-сбор ТЗ / файлов
 interface CollectedItem {
   fileName: string;
@@ -942,6 +1850,7 @@ interface CollectingState {
   mode: "create_order" | "attach_files";
   title?: string;   // для create_order
   orderId?: string; // для attach_files
+  targetFileType?: string;
   items: CollectedItem[];
 }
 const collectingState = new Map<number, CollectingState>();
@@ -1057,7 +1966,7 @@ bot.callbackQuery("tz_done", async (ctx) => {
       data: state.items.map((item) => ({
         orderId,
         uploadedById: user.id,
-        fileType: "TZ" as any,
+        fileType: (state.mode === "create_order" ? "TZ" : (state.targetFileType || "OTHER")) as any,
         fileName: item.fileName,
         fileSize: BigInt(item.fileSize),
         mimeType: item.mimeType,
@@ -1070,9 +1979,12 @@ bot.callbackQuery("tz_done", async (ctx) => {
     });
   }
 
+  const targetTypeLabel = fileTypeLabel(state.targetFileType || "OTHER");
   const what = state.mode === "create_order"
     ? `✅ Заказ *${orderTitle}* создан!`
-    : `✅ Файлы добавлены к заказу *${orderTitle}*!`;
+    : state.targetFileType === "TZ"
+      ? `✅ Материалы добавлены в ТЗ заказа *${orderTitle}*!`
+      : `✅ Файлы типа *${targetTypeLabel}* добавлены к заказу *${orderTitle}*!`;
 
   await ctx.reply(
     `${what}\n📎 Прикреплено: ${state.items.length} элем.`,
@@ -1119,8 +2031,12 @@ bot.callbackQuery("upload_file_menu", async (ctx) => {
 bot.callbackQuery(/^upl_ord_(.+)$/, async (ctx) => {
   const orderId = ctx.match![1];
   await ctx.answerCallbackQuery();
-  collectingState.set(ctx.from!.id, { mode: "attach_files", orderId, items: [] });
   const order = await prisma.order.findUnique({ where: { id: orderId }, select: { title: true } });
+  await ctx.reply(`📎 Заказ: *${order?.title || orderId}*\n\nВыберите тип файла:`, {
+    parse_mode: "Markdown",
+    reply_markup: fileTypePickerKeyboard(orderId, "upload_file_menu", true),
+  });
+  return;
   await ctx.reply(
     `📎 Заказ: *${order?.title}*\n\nОтправляйте файлы, фото, видео или текст.\nМожно сколько угодно — всё сохранится.\nКогда закончите:`,
     { parse_mode: "Markdown", reply_markup: collectingKeyboard() }
@@ -1128,6 +2044,18 @@ bot.callbackQuery(/^upl_ord_(.+)$/, async (ctx) => {
 });
 
 // ==================== ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ ====================
+
+bot.callbackQuery(/^upl_type_(.+)_(TZ|CONTRACT|STORYBOARD|VIDEO_DRAFT|VIDEO_FINAL|OTHER)$/, async (ctx) => {
+  const orderId = ctx.match![1];
+  const fileType = ctx.match![2];
+  await ctx.answerCallbackQuery();
+  await startOrderFileCollection(
+    ctx,
+    orderId,
+    fileType,
+    fileType === "TZ" ? "📝 Добавление в ТЗ" : `📎 ${fileTypeLabel(fileType)}`
+  );
+});
 
 bot.on("message:text", async (ctx, next) => {
   const userId = ctx.from!.id;
@@ -1210,6 +2138,112 @@ bot.on("message:text", async (ctx, next) => {
     if (text && kb) {
       await ctx.reply(text, { parse_mode: "Markdown", reply_markup: kb });
     }
+    return;
+  }
+
+  if (waitingForOrderComment.has(userId)) {
+    const text = ctx.message.text.trim();
+    if (!text) {
+      await ctx.reply("❌ Комментарий не может быть пустым.");
+      return;
+    }
+
+    const orderId = waitingForOrderComment.get(userId)!;
+    waitingForOrderComment.delete(userId);
+
+    const user = await prisma.user.findUnique({ where: { telegramId: BigInt(userId) } });
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { creators: { select: { creatorId: true } } },
+    });
+    if (!user || !order) {
+      await ctx.reply("❌ Заказ не найден.");
+      return;
+    }
+
+    await prisma.orderComment.create({
+      data: { orderId, authorId: user.id, text },
+    });
+
+    const recipientIds = [...new Set([order.marketerId, ...order.creators.map((c: any) => c.creatorId)])]
+      .filter((id) => id !== user.id);
+    const preview = text.length > 80 ? `${text.slice(0, 77)}...` : text;
+    if (recipientIds.length) {
+      await prisma.notification.createMany({
+        data: recipientIds.map((recipientId) => ({
+          userId: recipientId,
+          orderId: order.id,
+          type: "COMMENT_ADDED",
+          message: `💬 ${user.displayName} → «${order.title}»${preview ? `:\n${preview}` : ""}`,
+        })),
+      });
+    }
+
+    const refreshedOrder = await fetchOrderForBot(orderId);
+    if (!refreshedOrder) {
+      await ctx.reply("✅ Комментарий сохранён.");
+      return;
+    }
+
+    let commentsText = `💬 *Комментарии: ${esc(refreshedOrder.title)}*`;
+    if (!refreshedOrder.comments?.length) {
+      commentsText += `\n\nКомментариев пока нет.`;
+    } else {
+      for (const comment of refreshedOrder.comments.slice(-8)) {
+        commentsText += `\n\n*${esc(comment.author.displayName)}*:\n${esc(comment.text)}`;
+      }
+    }
+
+    const kb = new InlineKeyboard()
+      .text("✍️ Написать", `ord_cadd_${refreshedOrder.id}`).row()
+      .text("🔙 К заказу", `ord_open_${refreshedOrder.id}`);
+    await ctx.reply(commentsText, { parse_mode: "Markdown", reply_markup: kb });
+    return;
+  }
+
+  if (waitingForTzNote.has(userId)) {
+    const text = ctx.message.text.trim();
+    if (!text) {
+      await ctx.reply("❌ Текст не может быть пустым.");
+      return;
+    }
+
+    const orderId = waitingForTzNote.get(userId)!;
+    waitingForTzNote.delete(userId);
+    const user = await prisma.user.findUnique({ where: { telegramId: BigInt(userId) } });
+    if (!user) return;
+
+    await prisma.orderFile.create({
+      data: {
+        orderId,
+        uploadedById: user.id,
+        fileType: "TZ",
+        fileName: text.slice(0, 500),
+        fileSize: BigInt(Buffer.byteLength(text, "utf8")),
+        mimeType: "text/plain",
+        storagePath: "",
+        telegramFileId: null,
+        telegramChatId: null,
+        telegramMsgId: null,
+      },
+    });
+
+    const order = await fetchOrderForBot(orderId);
+    if (!order) {
+      await ctx.reply("✅ Текст добавлен в ТЗ.");
+      return;
+    }
+    const tzFiles = getTzFiles(order);
+    await ctx.reply(buildOrderFilesText(order, tzFiles, "📋 *ТЗ*", "Материалов ТЗ пока нет."), {
+      parse_mode: "Markdown",
+      reply_markup: buildOrderFilesKeyboard(
+        order.id,
+        tzFiles,
+        `ord_tzadd_${order.id}`,
+        `ord_open_${order.id}`,
+        { text: "📨 Отправить всё ТЗ", callback: `ord_tzsend_${order.id}` }
+      ),
+    });
     return;
   }
 
@@ -1442,6 +2476,35 @@ bot.on("message:photo", async (ctx) => {
 // Голосовые сообщения — попадают в TZ как аудио
 bot.on("message:voice", async (ctx) => {
   const voice = ctx.message.voice;
+
+  if (waitingForTzVoice.has(ctx.from!.id)) {
+    const orderId = waitingForTzVoice.get(ctx.from!.id);
+    waitingForTzVoice.delete(ctx.from!.id);
+    await ctx.reply("⏳ Превращаю голос в структурированное ТЗ...");
+
+    const draft = await parseVoiceToTzDraft(voice.file_id);
+    if (!draft || !orderId) {
+      await ctx.reply("❌ Не удалось обработать голосовое сообщение.");
+      return;
+    }
+
+    tzVoiceDraft.set(ctx.from!.id, {
+      orderId,
+      text: draft.text,
+      rawText: draft.rawText,
+    });
+
+    let preview = `🎙 *Черновик ТЗ из голоса*\n\n${esc(draft.text)}`;
+    preview += `\n\n*Расшифровка:*\n_${esc(draft.rawText)}_`;
+
+    await ctx.reply(preview, {
+      parse_mode: "Markdown",
+      reply_markup: new InlineKeyboard()
+        .text("✅ Сохранить в ТЗ", "ord_tzvoice_ok")
+        .text("❌ Отмена", "ord_tzvoice_cancel"),
+    });
+    return;
+  }
 
   if (waitingForTaskVoice.has(ctx.from!.id)) {
     waitingForTaskVoice.delete(ctx.from!.id);
