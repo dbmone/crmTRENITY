@@ -14,7 +14,9 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/seed.js ./seed.js
 
 EXPOSE 3000
-# prisma db push создаёт таблицы на чистой БД, ensureSchema() применяет доп. миграции
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss && node dist/index.js"]
+# db push creates tables on a fresh DB, seed.js creates a bootstrap admin,
+# and ensureSchema() in the app applies the extra idempotent SQL patches.
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss && node seed.js && node dist/index.js"]
