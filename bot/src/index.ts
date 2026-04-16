@@ -38,7 +38,10 @@ const bot = new Bot(BOT_TOKEN, telegramProxyAgent ? {
     ) => nodeFetch(input as any, { ...init, agent: telegramProxyAgent as any } as any) as any,
   },
 } : undefined);
-const prisma = new PrismaClient();
+type TaskStatusValue = "TODO" | "IN_PROGRESS" | "DONE";
+type TaskPriorityValue = "LOW" | "MEDIUM" | "HIGH";
+
+const prisma = new PrismaClient() as any;
 // Экранирование спецсимволов Markdown
 function esc(text: string): string {
   return text.replace(/([_*`\[\]])/g, '\\$1');
@@ -138,6 +141,7 @@ function mainMenuKeyboard(status: UserStatus, role?: UserRole): InlineKeyboard {
     kb.text("🔑 Мой PIN", "show_pin").text("🔄 Сменить PIN", "change_pin").row();
     kb.text("📋 Мои заказы", "my_orders").text("👤 Профиль", "my_profile").row();
     kb.text("📝 Отправить отчёт", "send_report");
+    kb.row().text("🗂 Мои задачи", "tasks_menu");
     if (role && MARKETER_ROLES.includes(role)) {
       kb.row().text("➕ Создать заказ", "create_order");
     }
@@ -406,7 +410,7 @@ bot.callbackQuery("my_orders", async (ctx) => {
 
   let text = `📋 *Ваши заказы* (${orders.length}):\n\n`;
   for (const o of orders) {
-    const done = o.stages.filter((s) => s.status === "DONE").length;
+    const done = o.stages.filter((s: any) => s.status === "DONE").length;
     const total = o.stages.length;
     const bar = "▓".repeat(done) + "░".repeat(total - done);
 
@@ -424,6 +428,187 @@ bot.callbackQuery("my_orders", async (ctx) => {
 });
 
 // Назад в меню
+// ==================== ЗАДАЧИ ====================
+
+bot.callbackQuery("tasks_menu", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || user.status !== "APPROVED") { await ctx.answerCallbackQuery("Недоступно"); return; }
+  await ctx.answerCallbackQuery();
+  await replyOrEdit(ctx, await getTaskMenuText(user.id), {
+    parse_mode: "Markdown",
+    reply_markup: taskMenuKeyboard(),
+  });
+});
+
+bot.callbackQuery(/^tsk_list_(\d+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || user.status !== "APPROVED") { await ctx.answerCallbackQuery("Недоступно"); return; }
+
+  const page = parseInt(ctx.match![1], 10);
+  const [total, tasks] = await Promise.all([
+    prisma.task.count({ where: { userId: user.id } }),
+    prisma.task.findMany({
+      where: { userId: user.id },
+      orderBy: [{ updatedAt: "desc" }],
+      skip: page * TASK_PAGE_SIZE,
+      take: TASK_PAGE_SIZE,
+      select: { id: true, title: true, status: true },
+    }),
+  ]);
+
+  await ctx.answerCallbackQuery();
+  await replyOrEdit(ctx, `🗂 *Список задач* (${total})`, {
+    parse_mode: "Markdown",
+    reply_markup: taskListKeyboard(tasks, page, total),
+  });
+});
+
+bot.callbackQuery(/^tsk_open_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || user.status !== "APPROVED") { await ctx.answerCallbackQuery("Недоступно"); return; }
+
+  const taskId = ctx.match![1];
+  const text = await getTaskDetailText(taskId, user.id);
+  const kb = await taskDetailKeyboard(taskId, user.id);
+  if (!text || !kb) { await ctx.answerCallbackQuery("Задача не найдена"); return; }
+
+  await ctx.answerCallbackQuery();
+  await replyOrEdit(ctx, text, { parse_mode: "Markdown", reply_markup: kb });
+});
+
+bot.callbackQuery("tsk_new", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || user.status !== "APPROVED") { await ctx.answerCallbackQuery("Недоступно"); return; }
+
+  waitingForTaskTitle.add(ctx.from!.id);
+  await ctx.answerCallbackQuery();
+  await ctx.reply("✍️ Введите название новой задачи:");
+});
+
+bot.callbackQuery("tsk_voice", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || user.status !== "APPROVED") { await ctx.answerCallbackQuery("Недоступно"); return; }
+
+  waitingForTaskVoice.add(ctx.from!.id);
+  taskVoiceDraft.delete(ctx.from!.id);
+  await ctx.answerCallbackQuery();
+  await ctx.reply("🎙 Отправьте голосовое сообщение, и я превращу его в задачу.");
+});
+
+bot.callbackQuery("tsk_voice_ok", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  const draft = taskVoiceDraft.get(ctx.from!.id);
+  if (!user || !draft) { await ctx.answerCallbackQuery("Черновик не найден"); return; }
+
+  const task = await prisma.task.create({
+    data: {
+      userId: user.id,
+      title: draft.title.trim(),
+      description: draft.description?.trim() || undefined,
+      priority: draft.priority,
+      aiGenerated: true,
+      subtasks: draft.subtasks.length
+        ? { create: draft.subtasks.map((title, index) => ({ title: title.trim(), sortOrder: index })) }
+        : undefined,
+    },
+  });
+
+  taskVoiceDraft.delete(ctx.from!.id);
+  await ctx.answerCallbackQuery("Задача создана");
+
+  const text = await getTaskDetailText(task.id, user.id);
+  const kb = await taskDetailKeyboard(task.id, user.id);
+  if (text && kb) {
+    await replyOrEdit(ctx, text, { parse_mode: "Markdown", reply_markup: kb });
+  }
+});
+
+bot.callbackQuery("tsk_voice_cancel", async (ctx) => {
+  taskVoiceDraft.delete(ctx.from!.id);
+  waitingForTaskVoice.delete(ctx.from!.id);
+  await ctx.answerCallbackQuery("Отменено");
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user) return;
+  await replyOrEdit(ctx, await getTaskMenuText(user.id), {
+    parse_mode: "Markdown",
+    reply_markup: taskMenuKeyboard(),
+  });
+});
+
+bot.callbackQuery(/^tsk_cycle_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+
+  const taskId = ctx.match![1];
+  const task = await prisma.task.findFirst({ where: { id: taskId, userId: user.id } });
+  if (!task) { await ctx.answerCallbackQuery("Задача не найдена"); return; }
+
+  await prisma.task.update({
+    where: { id: task.id },
+    data: { status: nextTaskStatus(task.status) },
+  });
+
+  await ctx.answerCallbackQuery("Статус обновлён");
+  const text = await getTaskDetailText(task.id, user.id);
+  const kb = await taskDetailKeyboard(task.id, user.id);
+  if (text && kb) {
+    await replyOrEdit(ctx, text, { parse_mode: "Markdown", reply_markup: kb });
+  }
+});
+
+bot.callbackQuery(/^tsk_addsub_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+
+  const taskId = ctx.match![1];
+  const task = await prisma.task.findFirst({ where: { id: taskId, userId: user.id } });
+  if (!task) { await ctx.answerCallbackQuery("Задача не найдена"); return; }
+
+  waitingForSubtaskForTask.set(ctx.from!.id, task.id);
+  await ctx.answerCallbackQuery();
+  await ctx.reply(`➕ Отправьте текст новой подзадачи для «${task.title}».`);
+});
+
+bot.callbackQuery(/^tsk_sub_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+
+  const subtaskId = ctx.match![1];
+  const subtask = await prisma.taskSubtask.findUnique({
+    where: { id: subtaskId },
+    include: { task: true },
+  });
+  if (!subtask || subtask.task.userId !== user.id) { await ctx.answerCallbackQuery("Подзадача не найдена"); return; }
+
+  await prisma.taskSubtask.update({
+    where: { id: subtask.id },
+    data: { done: !subtask.done },
+  });
+
+  await ctx.answerCallbackQuery(subtask.done ? "Снято" : "Отмечено");
+  const text = await getTaskDetailText(subtask.taskId, user.id);
+  const kb = await taskDetailKeyboard(subtask.taskId, user.id);
+  if (text && kb) {
+    await replyOrEdit(ctx, text, { parse_mode: "Markdown", reply_markup: kb });
+  }
+});
+
+bot.callbackQuery(/^tsk_del_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+
+  const taskId = ctx.match![1];
+  const task = await prisma.task.findFirst({ where: { id: taskId, userId: user.id } });
+  if (!task) { await ctx.answerCallbackQuery("Задача не найдена"); return; }
+
+  await prisma.task.delete({ where: { id: task.id } });
+  await ctx.answerCallbackQuery("Удалено");
+  await replyOrEdit(ctx, await getTaskMenuText(user.id), {
+    parse_mode: "Markdown",
+    reply_markup: taskMenuKeyboard(),
+  });
+});
+
 bot.callbackQuery("back_menu", async (ctx) => {
   const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
   await ctx.answerCallbackQuery();
@@ -436,8 +621,252 @@ bot.callbackQuery("back_menu", async (ctx) => {
 const waitingForReport     = new Map<number, string>();
 const waitingForName       = new Set<number>();
 const waitingForOrderTitle = new Map<number, true>();
+const waitingForTaskTitle  = new Set<number>();
+const waitingForTaskVoice  = new Set<number>();
+const waitingForSubtaskForTask = new Map<number, string>();
+const taskVoiceDraft = new Map<number, {
+  title: string;
+  description?: string;
+  priority: TaskPriorityValue;
+  subtasks: string[];
+  rawText: string;
+}>();
+
+const TASK_PAGE_SIZE = 8;
+
+function taskStatusLabel(status: TaskStatusValue): string {
+  return ({
+    TODO: "К выполнению",
+    IN_PROGRESS: "В работе",
+    DONE: "Выполнено",
+  })[status];
+}
+
+function taskStatusEmoji(status: TaskStatusValue): string {
+  return ({
+    TODO: "⬜",
+    IN_PROGRESS: "🔄",
+    DONE: "✅",
+  })[status];
+}
+
+function taskPriorityLabel(priority: TaskPriorityValue): string {
+  return ({
+    LOW: "Низкий",
+    MEDIUM: "Средний",
+    HIGH: "Высокий",
+  })[priority];
+}
+
+function taskPriorityEmoji(priority: TaskPriorityValue): string {
+  return ({
+    LOW: "⚪",
+    MEDIUM: "🟡",
+    HIGH: "🔴",
+  })[priority];
+}
+
+function nextTaskStatus(status: TaskStatusValue): TaskStatusValue {
+  if (status === "TODO") return "IN_PROGRESS";
+  if (status === "IN_PROGRESS") return "DONE";
+  return "TODO";
+}
+
+function taskMenuKeyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text("📋 Список задач", "tsk_list_0").row()
+    .text("➕ Новая задача", "tsk_new")
+    .text("🎙 AI из голоса", "tsk_voice").row()
+    .text("🔙 В меню", "back_menu");
+}
+
+function taskListKeyboard(tasks: Array<{ id: string; title: string; status: TaskStatusValue }>, page: number, total: number): InlineKeyboard {
+  const kb = new InlineKeyboard();
+
+  for (const task of tasks) {
+    const title = task.title.length > 28 ? `${task.title.slice(0, 28)}…` : task.title;
+    kb.text(`${taskStatusEmoji(task.status)} ${title}`, `tsk_open_${task.id}`).row();
+  }
+
+  const totalPages = Math.max(1, Math.ceil(total / TASK_PAGE_SIZE));
+  if (page > 0) kb.text("← Назад", `tsk_list_${page - 1}`);
+  if (page + 1 < totalPages) kb.text("Вперёд →", `tsk_list_${page + 1}`);
+  if (page > 0 || page + 1 < totalPages) kb.row();
+  kb.text("➕ Новая", "tsk_new").text("🎙 AI", "tsk_voice").row();
+  kb.text("🔙 К задачам", "tasks_menu");
+  return kb;
+}
+
+async function getTaskMenuText(userDbId: string): Promise<string> {
+  const [todo, inProgress, done] = await Promise.all([
+    prisma.task.count({ where: { userId: userDbId, status: "TODO" } }),
+    prisma.task.count({ where: { userId: userDbId, status: "IN_PROGRESS" } }),
+    prisma.task.count({ where: { userId: userDbId, status: "DONE" } }),
+  ]);
+
+  return (
+    `🗂 *Мои задачи*\n\n` +
+    `⬜ К выполнению: *${todo}*\n` +
+    `🔄 В работе: *${inProgress}*\n` +
+    `✅ Выполнено: *${done}*`
+  );
+}
+
+async function getTaskDetailText(taskId: string, userDbId: string): Promise<string | null> {
+  const task = await prisma.task.findFirst({
+    where: { id: taskId, userId: userDbId },
+    include: { subtasks: { orderBy: { sortOrder: "asc" } } },
+  });
+  if (!task) return null;
+
+  let text =
+    `${taskStatusEmoji(task.status)} *${esc(task.title)}*\n` +
+    `Приоритет: ${taskPriorityEmoji(task.priority)} ${taskPriorityLabel(task.priority)}\n` +
+    `Статус: ${taskStatusLabel(task.status)}`;
+
+  if (task.aiGenerated) text += `\nAI: да`;
+  if (task.description) text += `\n\n${esc(task.description)}`;
+
+  if (task.subtasks.length > 0) {
+    text += "\n\n*Подзадачи:*";
+    for (const subtask of task.subtasks) {
+      text += `\n${subtask.done ? "✅" : "⬜"} ${esc(subtask.title)}`;
+    }
+  }
+
+  return text;
+}
+
+async function taskDetailKeyboard(taskId: string, userDbId: string): Promise<InlineKeyboard | null> {
+  const task = await prisma.task.findFirst({
+    where: { id: taskId, userId: userDbId },
+    include: { subtasks: { orderBy: { sortOrder: "asc" } } },
+  });
+  if (!task) return null;
+
+  const kb = new InlineKeyboard()
+    .text(
+      task.status === "TODO" ? "▶️ Начать" : task.status === "IN_PROGRESS" ? "✅ Завершить" : "↺ Вернуть в TODO",
+      `tsk_cycle_${task.id}`
+    ).row()
+    .text("➕ Подзадача", `tsk_addsub_${task.id}`)
+    .text("🗑 Удалить", `tsk_del_${task.id}`).row();
+
+  for (const subtask of task.subtasks) {
+    const title = subtask.title.length > 24 ? `${subtask.title.slice(0, 24)}…` : subtask.title;
+    kb.text(`${subtask.done ? "✅" : "⬜"} ${title}`, `tsk_sub_${subtask.id}`).row();
+  }
+
+  kb.text("🔙 К списку", "tsk_list_0");
+  return kb;
+}
+
+async function replyOrEdit(ctx: any, text: string, extra: Record<string, any>) {
+  if (ctx.callbackQuery?.message) {
+    try {
+      await ctx.editMessageText(text, extra);
+      return;
+    } catch {}
+  }
+  await ctx.reply(text, extra);
+}
 
 // ==================== STT (Groq Whisper) ====================
+
+const DEFAULT_TASK_PROMPT = `Голосовая заметка пользователя: "{{TEXT}}"
+
+Создай структурированную задачу. Отвечай ТОЛЬКО валидным JSON без пояснений:
+{
+  "title": "краткое название задачи (до 80 символов)",
+  "description": "подробное описание или null",
+  "priority": "LOW|MEDIUM|HIGH",
+  "subtasks": ["шаг 1", "шаг 2"]
+}
+
+Правила:
+- title: ёмкое название на русском
+- subtasks: 0-8 конкретных шагов из текста. Если шагов нет — []
+- priority: HIGH если слова "срочно/сегодня/важно", LOW если не срочно, иначе MEDIUM
+- Отвечай на русском`;
+
+async function getTelegramFileBuffer(fileUrl: string): Promise<Buffer | null> {
+  try {
+    const response = await nodeFetch(
+      fileUrl,
+      telegramProxyAgent ? ({ agent: telegramProxyAgent as any } as any) : undefined
+    );
+    if (!response.ok) return null;
+    return Buffer.from(await response.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
+async function getAppSettingValue(key: string): Promise<string | null> {
+  try {
+    const setting = await prisma.appSetting.findUnique({ where: { key } });
+    return setting?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function callTaskAi(prompt: string): Promise<any | null> {
+  const g4fUrl = process.env.G4F_API_URL?.trim();
+  const g4fModel = process.env.G4F_MODEL?.trim() || "gpt-4o-mini";
+  const groqKey = process.env.GROQ_API_KEY?.trim();
+  const systemPrompt = "Ты помощник по управлению задачами. Отвечай только валидным JSON без markdown.";
+
+  if (g4fUrl) {
+    try {
+      const response = await fetch(`${g4fUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: g4fModel,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: prompt },
+          ],
+          temperature: 0.3,
+          max_tokens: 800,
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json() as any;
+        return JSON.parse(data.choices[0].message.content);
+      }
+    } catch {}
+  }
+
+  if (groqKey) {
+    try {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${groqKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: prompt },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.3,
+          max_tokens: 800,
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json() as any;
+        return JSON.parse(data.choices[0].message.content);
+      }
+    } catch {}
+  }
+
+  return null;
+}
 
 async function transcribeVoiceGroq(fileId: string): Promise<string | null> {
   const apiKey = process.env.GROQ_API_KEY;
@@ -446,9 +875,8 @@ async function transcribeVoiceGroq(fileId: string): Promise<string | null> {
     const fileInfo = await bot.api.getFile(fileId);
     if (!fileInfo.file_path) return null;
     const audioUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileInfo.file_path}`;
-    const audioRes = await fetch(audioUrl);
-    if (!audioRes.ok) return null;
-    const buffer = Buffer.from(await audioRes.arrayBuffer());
+    const buffer = await getTelegramFileBuffer(audioUrl);
+    if (!buffer) return null;
 
     const form = new FormData();
     form.append("file", new Blob([buffer], { type: "audio/ogg" }), "voice.ogg");
@@ -466,6 +894,40 @@ async function transcribeVoiceGroq(fileId: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+async function parseVoiceToTaskDraft(fileId: string): Promise<{
+  title: string;
+  description?: string;
+  priority: TaskPriorityValue;
+  subtasks: string[];
+  rawText: string;
+} | null> {
+  const rawText = await transcribeVoiceGroq(fileId);
+  if (!rawText) return null;
+
+  const promptTemplate = (await getAppSettingValue("task_parse_prompt")) ?? DEFAULT_TASK_PROMPT;
+  const prompt = promptTemplate.replace("{{TEXT}}", rawText);
+  const parsed = await callTaskAi(prompt);
+
+  if (!parsed) {
+    return {
+      title: rawText.slice(0, 80),
+      priority: "MEDIUM",
+      subtasks: [],
+      rawText,
+    };
+  }
+
+  return {
+    title: String(parsed.title || rawText).slice(0, 80),
+    description: parsed.description ? String(parsed.description) : undefined,
+    priority: ["LOW", "MEDIUM", "HIGH"].includes(parsed.priority) ? parsed.priority : "MEDIUM",
+    subtasks: Array.isArray(parsed.subtasks)
+      ? parsed.subtasks.filter((item: unknown) => typeof item === "string").slice(0, 8)
+      : [],
+    rawText,
+  };
 }
 
 // Батч-сбор ТЗ / файлов
@@ -687,6 +1149,70 @@ bot.on("message:text", async (ctx, next) => {
   }
 
   // Создание заказа — ввод названия
+  if (waitingForTaskTitle.has(userId)) {
+    const title = ctx.message.text.trim();
+    if (title.length < 2 || title.length > 120) {
+      await ctx.reply("❌ Название задачи: от 2 до 120 символов. Попробуйте снова:");
+      return;
+    }
+
+    waitingForTaskTitle.delete(userId);
+    const user = await prisma.user.findUnique({ where: { telegramId: BigInt(userId) } });
+    if (!user) return;
+
+    const task = await prisma.task.create({
+      data: {
+        userId: user.id,
+        title,
+        priority: "MEDIUM",
+      },
+    });
+
+    const text = await getTaskDetailText(task.id, user.id);
+    const kb = await taskDetailKeyboard(task.id, user.id);
+    if (text && kb) {
+      await ctx.reply(text, { parse_mode: "Markdown", reply_markup: kb });
+    }
+    return;
+  }
+
+  if (waitingForSubtaskForTask.has(userId)) {
+    const title = ctx.message.text.trim();
+    if (title.length < 1 || title.length > 120) {
+      await ctx.reply("❌ Подзадача: от 1 до 120 символов. Попробуйте снова:");
+      return;
+    }
+
+    const taskId = waitingForSubtaskForTask.get(userId)!;
+    waitingForSubtaskForTask.delete(userId);
+    const user = await prisma.user.findUnique({ where: { telegramId: BigInt(userId) } });
+    if (!user) return;
+
+    const task = await prisma.task.findFirst({
+      where: { id: taskId, userId: user.id },
+      include: { subtasks: true },
+    });
+    if (!task) {
+      await ctx.reply("❌ Задача не найдена.");
+      return;
+    }
+
+    await prisma.taskSubtask.create({
+      data: {
+        taskId: task.id,
+        title,
+        sortOrder: task.subtasks.length,
+      },
+    });
+
+    const text = await getTaskDetailText(task.id, user.id);
+    const kb = await taskDetailKeyboard(task.id, user.id);
+    if (text && kb) {
+      await ctx.reply(text, { parse_mode: "Markdown", reply_markup: kb });
+    }
+    return;
+  }
+
   if (waitingForOrderTitle.has(userId)) {
     const title = ctx.message.text.trim();
     if (title.length < 2 || title.length > 100) {
@@ -916,6 +1442,40 @@ bot.on("message:photo", async (ctx) => {
 // Голосовые сообщения — попадают в TZ как аудио
 bot.on("message:voice", async (ctx) => {
   const voice = ctx.message.voice;
+
+  if (waitingForTaskVoice.has(ctx.from!.id)) {
+    waitingForTaskVoice.delete(ctx.from!.id);
+    await ctx.reply("⏳ Разбираю голос в задачу...");
+
+    const draft = await parseVoiceToTaskDraft(voice.file_id);
+    if (!draft) {
+      await ctx.reply("❌ Не удалось обработать голосовое сообщение. Проверьте GROQ_API_KEY и попробуйте ещё раз.");
+      return;
+    }
+
+    taskVoiceDraft.set(ctx.from!.id, draft);
+
+    let preview =
+      `🎙 *Черновик задачи из голоса*\n\n` +
+      `*${esc(draft.title)}*\n` +
+      `Приоритет: ${taskPriorityEmoji(draft.priority)} ${taskPriorityLabel(draft.priority)}`;
+
+    if (draft.description) preview += `\n\n${esc(draft.description)}`;
+    if (draft.subtasks.length > 0) {
+      preview += "\n\n*Подзадачи:*";
+      for (const subtask of draft.subtasks) preview += `\n• ${esc(subtask)}`;
+    }
+    preview += `\n\n*Расшифровка:*\n_${esc(draft.rawText)}_`;
+
+    await ctx.reply(preview, {
+      parse_mode: "Markdown",
+      reply_markup: new InlineKeyboard()
+        .text("✅ Создать", "tsk_voice_ok")
+        .text("❌ Отмена", "tsk_voice_cancel"),
+    });
+    return;
+  }
+
   await handleFileMessage(ctx, {
     fileId:   voice.file_id,
     fileName: `voice_${Date.now()}.ogg`,
@@ -1266,6 +1826,18 @@ bot.command("menu", async (ctx) => {
 });
 
 // ==================== ОТПРАВКА УВЕДОМЛЕНИЙ ИЗ ОЧЕРЕДИ ====================
+
+bot.command("tasks", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || user.status !== "APPROVED") {
+    await ctx.reply("Нажмите /start чтобы начать");
+    return;
+  }
+  await ctx.reply(await getTaskMenuText(user.id), {
+    parse_mode: "Markdown",
+    reply_markup: taskMenuKeyboard(),
+  });
+});
 
 async function processNotifications() {
   try {
