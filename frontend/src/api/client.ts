@@ -124,8 +124,8 @@ export type UploadFileOptions = {
 
 export async function uploadFile(orderId: string, file: File, fileType: string, options?: UploadFileOptions) {
   const form = new FormData();
-  form.append("file", file);
   form.append("fileType", fileType);
+  form.append("file", file);
   const { data } = await api.post(`/orders/${orderId}/files`, form, {
     headers: { "Content-Type": "multipart/form-data" },
     signal: options?.signal,

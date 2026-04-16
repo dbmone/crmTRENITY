@@ -90,6 +90,9 @@ export default function AdminPage() {
     if (!tourActive || tourStep?.route !== "/admin") return;
 
     switch (tourStep.target) {
+      case "admin-pending-tab":
+        setTab("pending");
+        break;
       case "admin-team-tab":
         setTab("team");
         break;
@@ -176,7 +179,7 @@ export default function AdminPage() {
     try {
       await api.updateSetting("kanban_drag_enabled", nextValue ? "true" : "false");
       setDragEnabled(nextValue);
-    } catch (e: any) { alert(e.response?.data?.error || "РћС€РёР±РєР°"); }
+    } catch (e: any) { alert(e.response?.data?.error || "Ошибка"); }
     setDragSettingSaving(false);
   };
 
@@ -269,6 +272,7 @@ export default function AdminPage() {
               onClick={() => setTab(id)}
               data-tour={
                 id === "users" ? "admin-users-tab"
+                : id === "pending" ? "admin-pending-tab"
                 : id === "team" ? "admin-team-tab"
                 : id === "access" ? "admin-access-tab"
                 : id === "rights" ? "admin-rights-tab"

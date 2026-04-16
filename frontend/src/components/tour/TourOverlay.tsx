@@ -4,7 +4,14 @@ import { X } from "lucide-react";
 import { TOUR_STEPS, type TourStep } from "../../data/tourSteps";
 import { useTourStore } from "../../store/tour.store";
 
-type RectLike = { top: number; left: number; width: number; height: number; right: number; bottom: number };
+type RectLike = {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+  right: number;
+  bottom: number;
+};
 
 const TOOLTIP_WIDTH = 380;
 const TARGET_PADDING = 10;
@@ -43,39 +50,59 @@ function getTooltipPosition(rect: RectLike | null, placement: TourStep["placemen
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
   const tooltipWidth = Math.min(TOOLTIP_WIDTH, viewportWidth - VIEWPORT_PADDING * 2);
+  const tooltipHeight = 360;
 
   if (!rect || placement === "center") {
     return {
       top: Math.max(80, viewportHeight / 2 - 180),
-      left: clamp((viewportWidth - tooltipWidth) / 2, VIEWPORT_PADDING, Math.max(VIEWPORT_PADDING, viewportWidth - tooltipWidth - VIEWPORT_PADDING)),
+      left: clamp(
+        (viewportWidth - tooltipWidth) / 2,
+        VIEWPORT_PADDING,
+        Math.max(VIEWPORT_PADDING, viewportWidth - tooltipWidth - VIEWPORT_PADDING)
+      ),
     };
   }
 
   const gap = 18;
-  const topDefault = clamp(rect.bottom + gap, VIEWPORT_PADDING, viewportHeight - 320);
-  const leftDefault = clamp(rect.left, VIEWPORT_PADDING, Math.max(VIEWPORT_PADDING, viewportWidth - tooltipWidth - VIEWPORT_PADDING));
+  const maxTop = Math.max(VIEWPORT_PADDING, viewportHeight - tooltipHeight - VIEWPORT_PADDING);
+  const maxLeft = Math.max(VIEWPORT_PADDING, viewportWidth - tooltipWidth - VIEWPORT_PADDING);
+  const fitsAbove = rect.top >= tooltipHeight + gap + VIEWPORT_PADDING;
+  const fitsBelow = viewportHeight - rect.bottom >= tooltipHeight + gap + VIEWPORT_PADDING;
+  const fitsLeft = rect.left >= tooltipWidth + gap + VIEWPORT_PADDING;
+  const fitsRight = viewportWidth - rect.right >= tooltipWidth + gap + VIEWPORT_PADDING;
 
-  switch (placement) {
+  const resolvedPlacement =
+    placement === "top" && !fitsAbove && fitsBelow ? "bottom"
+    : placement === "bottom" && !fitsBelow && fitsAbove ? "top"
+    : placement === "left" && !fitsLeft && fitsRight ? "right"
+    : placement === "right" && !fitsRight && fitsLeft ? "left"
+    : !fitsBelow && fitsAbove ? "top"
+    : !fitsAbove && fitsBelow ? "bottom"
+    : !fitsRight && fitsLeft ? "left"
+    : !fitsLeft && fitsRight ? "right"
+    : placement;
+
+  switch (resolvedPlacement) {
     case "top":
       return {
-        top: clamp(rect.top - 260, VIEWPORT_PADDING, viewportHeight - 320),
-        left: clamp(rect.left + rect.width / 2 - tooltipWidth / 2, VIEWPORT_PADDING, Math.max(VIEWPORT_PADDING, viewportWidth - tooltipWidth - VIEWPORT_PADDING)),
+        top: clamp(rect.top - 280, VIEWPORT_PADDING, maxTop),
+        left: clamp(rect.left + rect.width / 2 - tooltipWidth / 2, VIEWPORT_PADDING, maxLeft),
       };
     case "left":
       return {
-        top: clamp(rect.top + rect.height / 2 - 140, VIEWPORT_PADDING, viewportHeight - 320),
-        left: clamp(rect.left - tooltipWidth - gap, VIEWPORT_PADDING, Math.max(VIEWPORT_PADDING, viewportWidth - tooltipWidth - VIEWPORT_PADDING)),
+        top: clamp(rect.top + rect.height / 2 - 160, VIEWPORT_PADDING, maxTop),
+        left: clamp(rect.left - tooltipWidth - gap, VIEWPORT_PADDING, maxLeft),
       };
     case "right":
       return {
-        top: clamp(rect.top + rect.height / 2 - 140, VIEWPORT_PADDING, viewportHeight - 320),
-        left: clamp(rect.right + gap, VIEWPORT_PADDING, Math.max(VIEWPORT_PADDING, viewportWidth - tooltipWidth - VIEWPORT_PADDING)),
+        top: clamp(rect.top + rect.height / 2 - 160, VIEWPORT_PADDING, maxTop),
+        left: clamp(rect.right + gap, VIEWPORT_PADDING, maxLeft),
       };
     case "bottom":
     default:
       return {
-        top: topDefault,
-        left: leftDefault,
+        top: clamp(rect.bottom + gap, VIEWPORT_PADDING, maxTop),
+        left: clamp(rect.left, VIEWPORT_PADDING, maxLeft),
       };
   }
 }
@@ -83,6 +110,7 @@ function getTooltipPosition(rect: RectLike | null, placement: TourStep["placemen
 export default function TourOverlay() {
   const navigate = useNavigate();
   const location = useLocation();
+
   const active = useTourStore((s) => s.active);
   const role = useTourStore((s) => s.role);
   const stepIndex = useTourStore((s) => s.stepIndex);
@@ -147,13 +175,15 @@ export default function TourOverlay() {
 
   const position = getTooltipPosition(targetRect, targetFound ? step.placement : "center");
   const progress = Math.round(((stepIndex + 1) / steps.length) * 100);
-  const desktopTop = clamp(position.top, VIEWPORT_PADDING, Math.max(VIEWPORT_PADDING, window.innerHeight - 440));
+  const desktopTop = clamp(position.top, VIEWPORT_PADDING, Math.max(VIEWPORT_PADDING, window.innerHeight - 460));
   const desktopLeft = clamp(
     position.left,
     VIEWPORT_PADDING,
-    Math.max(VIEWPORT_PADDING, window.innerWidth - Math.min(TOOLTIP_WIDTH, window.innerWidth - VIEWPORT_PADDING * 2) - VIEWPORT_PADDING)
+    Math.max(
+      VIEWPORT_PADDING,
+      window.innerWidth - Math.min(TOOLTIP_WIDTH, window.innerWidth - VIEWPORT_PADDING * 2) - VIEWPORT_PADDING
+    )
   );
-  const waitingForClick = false;
 
   return (
     <div className="pointer-events-none fixed inset-0 z-[120]">
@@ -181,26 +211,31 @@ export default function TourOverlay() {
 
       <aside
         className="pointer-events-auto fixed rounded-3xl border border-bg-border bg-bg-surface/95 p-4 shadow-[0_24px_90px_rgba(0,0,0,0.45)] backdrop-blur sm:p-5"
-        style={isMobile
-          ? {
-              top: VIEWPORT_PADDING,
-              left: VIEWPORT_PADDING,
-              right: VIEWPORT_PADDING,
-              maxHeight: `calc(100vh - ${VIEWPORT_PADDING * 2}px)`,
-              overflowY: "auto",
-            }
-          : {
-              top: desktopTop,
-              left: desktopLeft,
-              width: "min(380px, calc(100vw - 32px))",
-              maxHeight: `calc(100vh - ${VIEWPORT_PADDING * 2}px)`,
-              overflowY: "auto",
-            }}
+        style={
+          isMobile
+            ? {
+                left: VIEWPORT_PADDING,
+                right: VIEWPORT_PADDING,
+                bottom: VIEWPORT_PADDING,
+                top: "auto",
+                maxHeight: "48vh",
+                overflowY: "auto",
+              }
+            : {
+                top: desktopTop,
+                left: desktopLeft,
+                width: "min(380px, calc(100vw - 32px))",
+                maxHeight: `calc(100vh - ${VIEWPORT_PADDING * 2}px)`,
+                overflowY: "auto",
+              }
+        }
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="mb-2 flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-ink-tertiary">
-              <span>Шаг {stepIndex + 1} из {steps.length}</span>
+              <span>
+                Шаг {stepIndex + 1} из {steps.length}
+              </span>
               <span>{progress}%</span>
             </div>
             <div className="h-2 rounded-full bg-bg-raised">
@@ -243,12 +278,6 @@ export default function TourOverlay() {
           </div>
         )}
 
-        {waitingForClick && (
-          <div className="mb-4 rounded-2xl border border-green-500/20 bg-green-500/8 p-3 text-sm leading-5 text-green-200">
-            Нажми на подсвеченный элемент, и тур сам перейдёт дальше.
-          </div>
-        )}
-
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"
@@ -267,6 +296,7 @@ export default function TourOverlay() {
             >
               Пропустить
             </button>
+
             {isLast ? (
               <button
                 type="button"

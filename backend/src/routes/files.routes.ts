@@ -1,18 +1,18 @@
-import { FastifyInstance } from "fastify";
 import { FileType, UserRole } from "@prisma/client";
+import { FastifyInstance } from "fastify";
+import { config } from "../config";
 import {
-  uploadFile,
+  addTzTextNote,
+  deleteFile,
   getDownloadUrl,
   getFileContentStream,
-  deleteFile,
   getOrderFiles,
   sendFileToUserTelegram,
-  addTzTextNote,
   sendTzBundleToTelegram,
+  uploadFile,
 } from "../services/file.service";
 import { transcribeAudio } from "../services/stt.service";
 import { structureToTz } from "../services/task.service";
-import { config } from "../config";
 
 const FILE_TYPE_ALIASES: Record<string, FileType> = {
   TZ: FileType.TZ,
@@ -47,6 +47,7 @@ export async function filesRoutes(app: FastifyInstance) {
   app.post<{ Params: { orderId: string }; Body: { text: string } }>("/tz-note", async (req, reply) => {
     const { text } = req.body;
     if (!text?.trim()) return reply.status(400).send({ error: "Текст не может быть пустым" });
+
     try {
       const file = await addTzTextNote(req.params.orderId, req.currentUser.id, text.trim());
       return reply.status(201).send(file);
@@ -58,8 +59,10 @@ export async function filesRoutes(app: FastifyInstance) {
   app.post<{ Params: { orderId: string } }>("/tz-voice-structure", async (req, reply) => {
     const data = await req.file();
     if (!data) return reply.status(400).send({ error: "Аудиофайл не прикреплён" });
+
     const chunks: Buffer[] = [];
     for await (const chunk of data.file) chunks.push(chunk);
+
     try {
       const rawText = await transcribeAudio(Buffer.concat(chunks), data.filename || "voice.ogg");
       const text = await structureToTz(rawText);
@@ -72,8 +75,10 @@ export async function filesRoutes(app: FastifyInstance) {
   app.post<{ Params: { orderId: string } }>("/tz-transcribe", async (req, reply) => {
     const data = await req.file();
     if (!data) return reply.status(400).send({ error: "Аудиофайл не прикреплён" });
+
     const chunks: Buffer[] = [];
     for await (const chunk of data.file) chunks.push(chunk);
+
     try {
       const text = await transcribeAudio(Buffer.concat(chunks), data.filename || "voice.ogg");
       return reply.status(200).send({ text });
@@ -96,17 +101,24 @@ export async function filesRoutes(app: FastifyInstance) {
     for await (const chunk of data.file) chunks.push(chunk);
     const buffer = Buffer.concat(chunks);
 
-    const maxSize = config.bot.useAsTFileStorage ? 50 * 1024 * 1024 : 100 * 1024 * 1024;
+    const maxSize = config.bot.useAsTFileStorage ? 50 * 1024 * 1024 : 1024 * 1024 * 1024;
     if (buffer.length > maxSize) {
       return reply.status(413).send({
         error: config.bot.useAsTFileStorage
-          ? "Максимальный размер файла через сайт — 50 МБ. Большие файлы загружайте через Telegram-бот."
-          : "Макс. 100 МБ",
+          ? "При хранении файлов в Telegram через сайт можно загрузить только до 50 МБ. Для больших файлов переключите хранилище на S3/MinIO или отправляйте их другим способом."
+          : "Через сайт можно загрузить файл до 1 ГБ.",
       });
     }
 
     try {
-      const file = await uploadFile(req.params.orderId, req.currentUser.id, fileType, data.filename, buffer, data.mimetype);
+      const file = await uploadFile(
+        req.params.orderId,
+        req.currentUser.id,
+        fileType,
+        data.filename,
+        buffer,
+        data.mimetype
+      );
       return reply.status(201).send(file);
     } catch (err: any) {
       return reply.status(err.statusCode || 500).send({ error: err.message });
@@ -137,7 +149,10 @@ export async function filesGlobalRoutes(app: FastifyInstance) {
       return { url };
     } catch (err: any) {
       if (err.message === "TG_FILE") {
-        return reply.status(400).send({ error: "TG_FILE", message: "Этот файл хранится в Telegram. Используйте кнопку отправки в TG." });
+        return reply.status(400).send({
+          error: "TG_FILE",
+          message: "Этот файл хранится в Telegram. Используйте кнопку отправки в Telegram.",
+        });
       }
       return reply.status(err.statusCode || 500).send({ error: err.message });
     }
@@ -146,7 +161,7 @@ export async function filesGlobalRoutes(app: FastifyInstance) {
   app.post<{ Params: { fileId: string } }>("/:fileId/send-to-tg", async (req, reply) => {
     try {
       await sendFileToUserTelegram(req.params.fileId, req.currentUser.id);
-      return { success: true, message: "Файл отправлен в ваш Telegram!" };
+      return { success: true, message: "Файл отправлен в ваш Telegram" };
     } catch (err: any) {
       return reply.status(err.statusCode || 500).send({ error: err.message });
     }

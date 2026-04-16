@@ -234,7 +234,7 @@ app.register(cors, {
 
 app.register(jwt, { secret: config.jwt.secret });
 app.decorate("authenticate", authMiddleware);
-app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024 } });
+app.register(multipart, { limits: { fileSize: 1024 * 1024 * 1024 } });
 
 // ==================== РОУТЫ ====================
 
