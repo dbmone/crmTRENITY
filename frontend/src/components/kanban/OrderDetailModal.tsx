@@ -6,6 +6,7 @@ import { useAuthStore } from "../../store/auth.store";
 import { useOrdersStore } from "../../store/orders.store";
 import UserProfileCard from "../UserProfileCard";
 import * as api from "../../api/client";
+import OrderFileRow from "./OrderFileRow";
 
 const STAGE_ORDER: StageName[] = ["STORYBOARD", "ANIMATION", "EDITING", "REVIEW", "COMPLETED"];
 
@@ -694,7 +695,7 @@ export default function OrderDetailModal({ order, onClose }: Props) {
               ) : (
                 <div className="space-y-2">
                   {tzItems.map((f) => (
-                    <FileRow
+                    <OrderFileRow
                       key={f.id}
                       file={f}
                       canDelete={isMarketer || (f.uploadedBy?.id === user?.id)}
@@ -804,7 +805,7 @@ export default function OrderDetailModal({ order, onClose }: Props) {
               ) : (
                 <div className="space-y-2">
                   {filteredFiles.map((f) => (
-                    <FileRow
+                    <OrderFileRow
                       key={f.id}
                       file={f}
                       canDelete={isMarketer || (f.uploadedBy?.id === user?.id)}

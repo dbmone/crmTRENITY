@@ -149,3 +149,32 @@ export async function sendBufferToChat(
 export async function sendMessageToUser(chatId: string, text: string): Promise<void> {
   await sendTextToChat(chatId, text);
 }
+
+export async function getTelegramFileStream(fileId: string): Promise<{
+  stream: NodeJS.ReadableStream;
+  contentType: string | null;
+  contentLength: number | null;
+}> {
+  const metaRes = await tgFetch(`${getTG()}/getFile`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ file_id: fileId }),
+  });
+  const meta: any = await metaRes.json();
+  if (!meta.ok || !meta.result?.file_path) {
+    throw new Error(`Telegram API error: ${meta.description || "getFile failed"}`);
+  }
+
+  const downloadUrl = `https://api.telegram.org/file/bot${config.bot.token}/${meta.result.file_path}`;
+  const fileRes: any = await tgFetch(downloadUrl, { method: "GET" });
+  if (!fileRes.ok || !fileRes.body) {
+    throw new Error(`Telegram file download failed: ${fileRes.status}`);
+  }
+
+  const lengthHeader = fileRes.headers?.get?.("content-length");
+  return {
+    stream: fileRes.body,
+    contentType: fileRes.headers?.get?.("content-type") || null,
+    contentLength: lengthHeader ? Number(lengthHeader) : null,
+  };
+}

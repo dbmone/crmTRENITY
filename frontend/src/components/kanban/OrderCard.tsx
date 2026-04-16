@@ -8,6 +8,7 @@ interface Props {
   order: Order;
   onClick: (order: Order) => void;
   dim?: boolean;
+  dragEnabled?: boolean;
 }
 
 const STAGE_ORDER: StageName[] = ["STORYBOARD", "ANIMATION", "EDITING", "REVIEW", "COMPLETED"];
@@ -18,13 +19,13 @@ function shortName(displayName: string): string {
   return first.length > 8 ? first.slice(0, 7) + "…" : first;
 }
 
-export default function OrderCard({ order, onClick, dim }: Props) {
+export default function OrderCard({ order, onClick, dim, dragEnabled = true }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: order.id });
+    useSortable({ id: order.id, disabled: !dragEnabled });
 
   const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+    transform: dragEnabled ? CSS.Transform.toString(transform) : undefined,
+    transition: dragEnabled ? transition : undefined,
     opacity: isDragging ? 0 : 1,
   };
 
@@ -52,8 +53,8 @@ export default function OrderCard({ order, onClick, dim }: Props) {
     <div
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
+      {...(dragEnabled ? attributes : {})}
+      {...(dragEnabled ? listeners : {})}
       data-tour="order-card"
       onClick={() => onClick(order)}
       className={`group relative bg-bg-raised border rounded-xl p-3 cursor-pointer select-none transition-all duration-150 ${

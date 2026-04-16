@@ -10,7 +10,7 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { config } from "../config";
 import { randomUUID } from "crypto";
-import { uploadFileToStorage, forwardFileToUser } from "./telegram.service";
+import { uploadFileToStorage, forwardFileToUser, getTelegramFileStream } from "./telegram.service";
 import {
   mirrorBufferFileToOrderGroup,
   mirrorStoredTelegramMessageToOrderGroup,
@@ -171,6 +171,43 @@ export async function getDownloadUrl(fileId: string): Promise<string> {
   const client = getS3Client();
   const command = new GetObjectCommand({ Bucket: config.minio.bucket, Key: file.storagePath });
   return getSignedUrl(client, command, { expiresIn: 3600 });
+}
+
+export async function getFileContentStream(fileId: string): Promise<{
+  stream: NodeJS.ReadableStream;
+  mimeType: string;
+  fileName: string;
+  fileSize: bigint | number | null;
+}> {
+  const file = await prisma.orderFile.findUnique({ where: { id: fileId } });
+  if (!file) throw { statusCode: 404, message: "Р¤Р°Р№Р» РЅРµ РЅР°Р№РґРµРЅ" };
+
+  if (file.telegramFileId) {
+    const result = await getTelegramFileStream(file.telegramFileId);
+    return {
+      stream: result.stream,
+      mimeType: result.contentType || file.mimeType || "application/octet-stream",
+      fileName: file.fileName,
+      fileSize: result.contentLength ?? file.fileSize,
+    };
+  }
+
+  if (!file.storagePath) {
+    throw { statusCode: 404, message: "Р¤Р°Р№Р» РЅРµРґРѕСЃС‚СѓРїРµРЅ" };
+  }
+
+  const client = getS3Client();
+  const object = await client.send(new GetObjectCommand({ Bucket: config.minio.bucket, Key: file.storagePath }));
+  if (!object.Body) {
+    throw { statusCode: 404, message: "Р¤Р°Р№Р» РЅРµРґРѕСЃС‚СѓРїРµРЅ" };
+  }
+
+  return {
+    stream: object.Body as NodeJS.ReadableStream,
+    mimeType: file.mimeType || object.ContentType || "application/octet-stream",
+    fileName: file.fileName,
+    fileSize: typeof object.ContentLength === "number" ? object.ContentLength : file.fileSize,
+  };
 }
 
 // Отправить файл пользователю в Telegram

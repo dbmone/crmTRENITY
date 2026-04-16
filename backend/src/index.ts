@@ -26,6 +26,7 @@ import { loadPermissions } from "./services/permissions.service";
 import { PrismaClient } from "@prisma/client";
 import { startOrderGroupSyncLoop } from "./services/order-group.service";
 import { normalizeExistingPins } from "./services/pin.service";
+import { DEFAULT_KANBAN_DRAG_ENABLED } from "./services/settings.service";
 
 const prisma = new PrismaClient();
 
@@ -206,6 +207,13 @@ async function ensureSchema() {
   `);
 
   console.log("✅ Schema migrations done");
+  await runSql("seed default kanban_drag_enabled", `
+    INSERT INTO "app_settings" ("key", "value", "updated_at")
+    VALUES ('kanban_drag_enabled', '${DEFAULT_KANBAN_DRAG_ENABLED}', NOW())
+    ON CONFLICT ("key") DO NOTHING
+  `);
+
+  console.log("вњ… Schema migrations done");
 }
 
 const app = Fastify({

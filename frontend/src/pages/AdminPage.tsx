@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "../store/auth.store";
 import Header from "../components/layout/Header";
-import { Check, X, Shield, RefreshCw, UserX, Crown, Users, ChevronRight, Trash2, UserPlus, RotateCcw, Lock, Unlock } from "lucide-react";
+import { Check, X, Shield, RefreshCw, UserX, Crown, Users, ChevronRight, Trash2, UserPlus, RotateCcw, Lock, Unlock, MoveHorizontal } from "lucide-react";
 import * as api from "../api/client";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -38,6 +38,9 @@ export default function AdminPage() {
   );
   const [working,  setWorking]  = useState<string | null>(null);
   const [cleaning, setCleaning] = useState(false);
+  const [dragEnabled, setDragEnabled] = useState(false);
+  const [dragSettingLoading, setDragSettingLoading] = useState(false);
+  const [dragSettingSaving, setDragSettingSaving] = useState(false);
 
   const isAdmin    = user?.role === "ADMIN";
   const isHeadMark = user?.role === "HEAD_MARKETER" || isAdmin;
@@ -61,6 +64,18 @@ export default function AdminPage() {
     if (!canAccess) { navigate("/"); return; }
     load();
   }, [canAccess]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    (async () => {
+      setDragSettingLoading(true);
+      try {
+        const settings = await api.getSettings();
+        setDragEnabled(settings.kanban_drag_enabled === "true");
+      } catch {}
+      setDragSettingLoading(false);
+    })();
+  }, [isAdmin]);
 
   const approve = async (id: string, role?: string) => {
     setWorking(id);
@@ -128,6 +143,15 @@ export default function AdminPage() {
     setWorking(null);
   };
 
+  const saveDragSetting = async (nextValue: boolean) => {
+    setDragSettingSaving(true);
+    try {
+      await api.updateSetting("kanban_drag_enabled", nextValue ? "true" : "false");
+      setDragEnabled(nextValue);
+    } catch (e: any) { alert(e.response?.data?.error || "РћС€РёР±РєР°"); }
+    setDragSettingSaving(false);
+  };
+
   if (!canAccess) return null;
 
   type TabId = "users" | "pending" | "team" | "access" | "rights";
@@ -168,6 +192,46 @@ export default function AdminPage() {
             </button>
           </div>
         </div>
+
+        {isAdmin && (
+          <div className="mb-6 bg-bg-surface border border-bg-border rounded-xl p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-sm font-semibold text-ink-primary flex items-center gap-2">
+                  <MoveHorizontal size={15} className="text-amber-400" />
+                  Ручное перетаскивание заказов на доске
+                </h2>
+                <p className="text-xs text-ink-tertiary mt-1 max-w-2xl">
+                  Если выключено, карточки сами переходят по столбцам от этапов и статуса. Если включено, пользователи снова смогут двигать их вручную мышкой.
+                </p>
+              </div>
+              <button
+                onClick={() => saveDragSetting(!dragEnabled)}
+                disabled={dragSettingLoading || dragSettingSaving}
+                className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full border transition-colors ${
+                  dragEnabled ? "bg-green-500 border-green-500" : "bg-bg-raised border-bg-border"
+                } disabled:opacity-50`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                    dragEnabled ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+            <div className="mt-3 text-xs">
+              {dragSettingLoading ? (
+                <span className="text-ink-tertiary">Загружаю настройку...</span>
+              ) : dragSettingSaving ? (
+                <span className="text-ink-tertiary">Сохраняю...</span>
+              ) : dragEnabled ? (
+                <span className="text-green-400">Сейчас ручное перетаскивание включено.</span>
+              ) : (
+                <span className="text-amber-400">Сейчас колонка заказа определяется автоматически по этапу.</span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-bg-border mb-6">

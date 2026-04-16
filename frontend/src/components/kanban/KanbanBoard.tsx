@@ -8,9 +8,10 @@ import { useState } from "react";
 interface Props {
   orders: Order[];
   onCardClick: (order: Order) => void;
+  dragEnabled?: boolean;
 }
 
-export default function KanbanBoard({ orders, onCardClick }: Props) {
+export default function KanbanBoard({ orders, onCardClick, dragEnabled = true }: Props) {
   const moveOrder = useOrdersStore((s) => s.moveOrder);
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -20,6 +21,10 @@ export default function KanbanBoard({ orders, onCardClick }: Props) {
   );
 
   const handleDragEnd = (event: DragEndEvent) => {
+    if (!dragEnabled) {
+      setActiveId(null);
+      return;
+    }
     setActiveId(null);
     const { active, over } = event;
     if (!over) return;
@@ -42,8 +47,8 @@ export default function KanbanBoard({ orders, onCardClick }: Props) {
 
   return (
     <DndContext
-      sensors={sensors}
-      onDragStart={(e) => setActiveId(e.active.id as string)}
+      sensors={dragEnabled ? sensors : undefined}
+      onDragStart={dragEnabled ? (e) => setActiveId(e.active.id as string) : undefined}
       onDragEnd={handleDragEnd}
       onDragCancel={() => setActiveId(null)}
     >
@@ -55,6 +60,7 @@ export default function KanbanBoard({ orders, onCardClick }: Props) {
             label={col.label}
             orders={grouped[col.status] || []}
             onCardClick={onCardClick}
+            dragEnabled={dragEnabled}
           />
         ))}
       </div>
@@ -62,7 +68,7 @@ export default function KanbanBoard({ orders, onCardClick }: Props) {
       <DragOverlay>
         {activeOrder && (
           <div className="w-[280px] rotate-1 opacity-90 pointer-events-none shadow-glow">
-            <OrderCard order={activeOrder} onClick={() => {}} />
+            <OrderCard order={activeOrder} onClick={() => {}} dragEnabled={dragEnabled} />
           </div>
         )}
       </DragOverlay>

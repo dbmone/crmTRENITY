@@ -7,6 +7,7 @@ import CreateOrderModal from "../components/kanban/CreateOrderModal";
 import OrderDetailModal from "../components/kanban/OrderDetailModal";
 import Header from "../components/layout/Header";
 import { Plus, RefreshCw, Search, X, SlidersHorizontal } from "lucide-react";
+import * as api from "../api/client";
 
 export default function BoardPage() {
   const user = useAuthStore((s) => s.user);
@@ -16,10 +17,19 @@ export default function BoardPage() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [search,        setSearch]        = useState("");
   const [searchTimer,   setSearchTimer]   = useState<ReturnType<typeof setTimeout> | null>(null);
+  const [dragEnabled,   setDragEnabled]   = useState(false);
 
   const isMarketer = user?.permissions?.create_order ?? ["MARKETER", "HEAD_MARKETER", "ADMIN", "HEAD_CREATOR"].includes(user?.role ?? "");
 
-  useEffect(() => { fetchOrders(); }, []);
+  useEffect(() => {
+    fetchOrders();
+    (async () => {
+      try {
+        const settings = await api.getSettings();
+        setDragEnabled(settings.kanban_drag_enabled === "true");
+      } catch {}
+    })();
+  }, []);
 
   const handleSearch = (val: string) => {
     setSearch(val);
@@ -144,7 +154,7 @@ export default function BoardPage() {
         )}
 
         {(!isLoading || orders.length > 0) && orders.length > 0 && (
-          <KanbanBoard orders={orders} onCardClick={setSelectedOrder} />
+          <KanbanBoard orders={orders} onCardClick={setSelectedOrder} dragEnabled={dragEnabled} />
         )}
       </div>
 

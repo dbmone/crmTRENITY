@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
+export const DEFAULT_KANBAN_DRAG_ENABLED = "false";
 
 export const DEFAULT_TZ_PROMPT = `Голосовая заметка заказчика: "{{TEXT}}"
 

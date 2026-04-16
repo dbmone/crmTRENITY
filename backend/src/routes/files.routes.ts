@@ -1,6 +1,15 @@
 import { FastifyInstance } from "fastify";
 import { FileType, UserRole } from "@prisma/client";
-import { uploadFile, getDownloadUrl, deleteFile, getOrderFiles, sendFileToUserTelegram, addTzTextNote, sendTzBundleToTelegram } from "../services/file.service";
+import {
+  uploadFile,
+  getDownloadUrl,
+  getFileContentStream,
+  deleteFile,
+  getOrderFiles,
+  sendFileToUserTelegram,
+  addTzTextNote,
+  sendTzBundleToTelegram,
+} from "../services/file.service";
 import { transcribeAudio } from "../services/stt.service";
 import { structureToTz } from "../services/task.service";
 import { config } from "../config";
@@ -26,26 +35,26 @@ export async function filesRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { orderId: string } }>("/", async (req) => getOrderFiles(req.params.orderId));
 
-  // Отправить всё ТЗ пачкой в Telegram пользователя
   app.post<{ Params: { orderId: string } }>("/tz-to-tg", async (req, reply) => {
     try {
       const result = await sendTzBundleToTelegram(req.params.orderId, req.currentUser.id);
       return { success: true, sent: result.sent };
-    } catch (err: any) { return reply.status(err.statusCode || 500).send({ error: err.message }); }
+    } catch (err: any) {
+      return reply.status(err.statusCode || 500).send({ error: err.message });
+    }
   });
 
-  // Добавить текстовую заметку к ТЗ (с сайта)
   app.post<{ Params: { orderId: string }; Body: { text: string } }>("/tz-note", async (req, reply) => {
     const { text } = req.body;
     if (!text?.trim()) return reply.status(400).send({ error: "Текст не может быть пустым" });
     try {
       const file = await addTzTextNote(req.params.orderId, req.currentUser.id, text.trim());
       return reply.status(201).send(file);
-    } catch (err: any) { return reply.status(err.statusCode || 500).send({ error: err.message }); }
+    } catch (err: any) {
+      return reply.status(err.statusCode || 500).send({ error: err.message });
+    }
   });
 
-  // Голос → структурированное ТЗ (STT + LLM)
-  // Возвращает { text, rawText } — text это готовое ТЗ, rawText — исходная расшифровка
   app.post<{ Params: { orderId: string } }>("/tz-voice-structure", async (req, reply) => {
     const data = await req.file();
     if (!data) return reply.status(400).send({ error: "Аудиофайл не прикреплён" });
@@ -53,15 +62,13 @@ export async function filesRoutes(app: FastifyInstance) {
     for await (const chunk of data.file) chunks.push(chunk);
     try {
       const rawText = await transcribeAudio(Buffer.concat(chunks), data.filename || "voice.ogg");
-      const text    = await structureToTz(rawText);
+      const text = await structureToTz(rawText);
       return { text, rawText };
     } catch (err: any) {
       return reply.status(err.statusCode || 500).send({ error: err.message });
     }
   });
 
-  // Расшифровка голосового → текст (Groq Whisper, бесплатно)
-  // Возвращает { text } — фронтенд показывает его в поле для редактирования перед сохранением
   app.post<{ Params: { orderId: string } }>("/tz-transcribe", async (req, reply) => {
     const data = await req.file();
     if (!data) return reply.status(400).send({ error: "Аудиофайл не прикреплён" });
@@ -94,21 +101,36 @@ export async function filesRoutes(app: FastifyInstance) {
       return reply.status(413).send({
         error: config.bot.useAsTFileStorage
           ? "Максимальный размер файла через сайт — 50 МБ. Большие файлы загружайте через Telegram-бот."
-          : "Макс. 100 МБ"
+          : "Макс. 100 МБ",
       });
     }
 
     try {
       const file = await uploadFile(req.params.orderId, req.currentUser.id, fileType, data.filename, buffer, data.mimetype);
       return reply.status(201).send(file);
-    } catch (err: any) { return reply.status(err.statusCode || 500).send({ error: err.message }); }
+    } catch (err: any) {
+      return reply.status(err.statusCode || 500).send({ error: err.message });
+    }
   });
 }
 
 export async function filesGlobalRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
 
-  // Получить ссылку для скачивания (S3)
+  app.get<{ Params: { fileId: string } }>("/:fileId/content", async (req, reply) => {
+    try {
+      const file = await getFileContentStream(req.params.fileId);
+      reply.header("Content-Type", file.mimeType);
+      reply.header("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(file.fileName)}`);
+      if (file.fileSize !== null && file.fileSize !== undefined) {
+        reply.header("Content-Length", String(file.fileSize));
+      }
+      return reply.send(file.stream);
+    } catch (err: any) {
+      return reply.status(err.statusCode || 500).send({ error: err.message });
+    }
+  });
+
   app.get<{ Params: { fileId: string } }>("/:fileId/download", async (req, reply) => {
     try {
       const url = await getDownloadUrl(req.params.fileId);
@@ -121,16 +143,20 @@ export async function filesGlobalRoutes(app: FastifyInstance) {
     }
   });
 
-  // Отправить файл пользователю в Telegram
   app.post<{ Params: { fileId: string } }>("/:fileId/send-to-tg", async (req, reply) => {
     try {
       await sendFileToUserTelegram(req.params.fileId, req.currentUser.id);
       return { success: true, message: "Файл отправлен в ваш Telegram!" };
-    } catch (err: any) { return reply.status(err.statusCode || 500).send({ error: err.message }); }
+    } catch (err: any) {
+      return reply.status(err.statusCode || 500).send({ error: err.message });
+    }
   });
 
   app.delete<{ Params: { fileId: string } }>("/:fileId", async (req, reply) => {
-    try { return await deleteFile(req.params.fileId, req.currentUser.id, req.currentUser.role as UserRole); }
-    catch (err: any) { return reply.status(err.statusCode || 500).send({ error: err.message }); }
+    try {
+      return await deleteFile(req.params.fileId, req.currentUser.id, req.currentUser.role as UserRole);
+    } catch (err: any) {
+      return reply.status(err.statusCode || 500).send({ error: err.message });
+    }
   });
 }

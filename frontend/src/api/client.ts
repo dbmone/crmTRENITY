@@ -143,6 +143,11 @@ export async function getDownloadUrl(fileId: string) {
   return data.url;
 }
 
+export async function getFileContent(fileId: string): Promise<Blob> {
+  const { data } = await api.get(`/files/${fileId}/content`, { responseType: "blob" });
+  return data;
+}
+
 export async function sendFileToTelegram(fileId: string) {
   const { data } = await api.post(`/files/${fileId}/send-to-tg`);
   return data as { success: boolean; message: string };
