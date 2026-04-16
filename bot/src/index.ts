@@ -5,6 +5,7 @@ import crypto from "crypto";
 import http from 'http';
 import { ProxyAgent } from "proxy-agent";
 const nodeFetch = require("node-fetch") as typeof fetch;
+const FormDataNode = require("form-data") as typeof import("form-data");
 dotenv.config({ path: "../.env" });
 dotenv.config();
 
@@ -1680,7 +1681,7 @@ async function startOrderFileCollection(ctx: any, orderId: string, targetFileTyp
 
 async function getOrderSummaryText(order: any): Promise<string> {
   const currentStages = getCurrentRoundStages(order.stages ?? []);
-  const doneStages = currentStages.filter((stage: any) => stage.status === "DONE").length;
+  const doneStages = currentStages.filter((stage: any) => stage.status !== "PENDING").length;
   const totalStages = currentStages.length;
   const bar = "▓".repeat(doneStages) + "░".repeat(Math.max(0, totalStages - doneStages));
   const creatorNames = order.creators?.map((creator: any) => creator.creator.displayName).join(", ") || "—";
@@ -1864,7 +1865,7 @@ async function callJsonAi(prompt: string, systemPrompt: string): Promise<any | n
 
   if (groqKey) {
     try {
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      const response = await nodeFetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${groqKey}`,
@@ -1880,7 +1881,8 @@ async function callJsonAi(prompt: string, systemPrompt: string): Promise<any | n
           temperature: 0.3,
           max_tokens: 800,
         }),
-      });
+        ...(telegramProxyAgent ? { agent: telegramProxyAgent as any } : {}),
+      } as any);
       if (response.ok) {
         const data = await response.json() as any;
         return JSON.parse(data.choices[0].message.content);
@@ -1920,7 +1922,7 @@ async function callTextAi(prompt: string, systemPrompt: string): Promise<string 
 
   if (groqKey) {
     try {
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      const response = await nodeFetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${groqKey}`,
@@ -1935,7 +1937,8 @@ async function callTextAi(prompt: string, systemPrompt: string): Promise<string 
           temperature: 0.3,
           max_tokens: 1200,
         }),
-      });
+        ...(telegramProxyAgent ? { agent: telegramProxyAgent as any } : {}),
+      } as any);
       if (response.ok) {
         const data = await response.json() as any;
         return String(data.choices?.[0]?.message?.content || "").trim() || null;
@@ -1956,17 +1959,18 @@ async function transcribeVoiceGroq(fileId: string): Promise<string | null> {
     const buffer = await getTelegramFileBuffer(audioUrl);
     if (!buffer) return null;
 
-    const form = new FormData();
-    form.append("file", new Blob([buffer], { type: "audio/ogg" }), "voice.ogg");
+    const form = new FormDataNode();
+    form.append("file", buffer, { filename: "voice.ogg", contentType: "audio/ogg" });
     form.append("model", "whisper-large-v3");
     form.append("language", "ru");
     form.append("response_format", "text");
 
-    const groqRes = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    const groqRes = await nodeFetch("https://api.groq.com/openai/v1/audio/transcriptions", {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}` },
+      headers: { Authorization: `Bearer ${apiKey}`, ...form.getHeaders() },
       body: form,
-    });
+      ...(telegramProxyAgent ? { agent: telegramProxyAgent as any } : {}),
+    } as any);
     if (!groqRes.ok) return null;
     return (await groqRes.text()).trim() || null;
   } catch {
