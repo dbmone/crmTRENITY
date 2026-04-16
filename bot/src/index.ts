@@ -841,7 +841,7 @@ bot.callbackQuery(/^ord_tzvoice_(.+)$/, async (ctx) => {
   await ctx.reply(`🎙 Отправьте голосовое, и я превращу его в структурированное ТЗ для «${order.title}».`);
 });
 
-bot.callbackQuery("ord_tzvoice_ok", async (ctx) => {
+bot.callbackQuery("tz_vdraft_ok", async (ctx) => {
   const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
   const draft = tzVoiceDraft.get(ctx.from!.id);
   if (!user || !draft) { await ctx.answerCallbackQuery("Черновик не найден"); return; }
@@ -879,7 +879,7 @@ bot.callbackQuery("ord_tzvoice_ok", async (ctx) => {
   });
 });
 
-bot.callbackQuery("ord_tzvoice_cancel", async (ctx) => {
+bot.callbackQuery("tz_vdraft_cancel", async (ctx) => {
   waitingForTzVoice.delete(ctx.from!.id);
   tzVoiceDraft.delete(ctx.from!.id);
   await ctx.answerCallbackQuery("Отменено");
@@ -2730,8 +2730,8 @@ bot.on("message:voice", async (ctx) => {
     await ctx.reply(preview, {
       parse_mode: "Markdown",
       reply_markup: new InlineKeyboard()
-        .text("✅ Сохранить в ТЗ", "ord_tzvoice_ok")
-        .text("❌ Отмена", "ord_tzvoice_cancel"),
+        .text("✅ Сохранить в ТЗ", "tz_vdraft_ok")
+        .text("❌ Отмена", "tz_vdraft_cancel"),
     });
     return;
   }
