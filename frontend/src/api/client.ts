@@ -362,4 +362,20 @@ export async function parseVoiceTask(blob: Blob, ext: string): Promise<ParsedTas
   return data;
 }
 
+// ==================== SETTINGS ====================
+
+export async function getSettings(): Promise<Record<string, string>> {
+  const { data } = await api.get("/settings");
+  return data;
+}
+
+export async function updateSetting(key: string, value: string): Promise<void> {
+  await api.put(`/settings/${key}`, { value });
+}
+
+export async function resetSetting(key: string): Promise<{ value: string }> {
+  const { data } = await api.delete(`/settings/${key}`);
+  return data;
+}
+
 export default api;

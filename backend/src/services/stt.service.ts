@@ -4,6 +4,7 @@
  * Регистрация: https://console.groq.com
  * Env: GROQ_API_KEY=gsk_...
  */
+import FormDataNode from "form-data";
 import { proxyFetch } from "../utils/proxy-fetch";
 
 export async function transcribeAudio(buffer: Buffer, filename: string): Promise<string> {
@@ -26,15 +27,19 @@ export async function transcribeAudio(buffer: Buffer, filename: string): Promise
   };
   const mimeType = mimeMap[ext] ?? "audio/ogg";
 
-  const form = new FormData();
-  form.append("file", new Blob([buffer], { type: mimeType }), filename);
+  // Используем npm form-data — корректно работает с node-fetch (в отличие от нативного FormData)
+  const form = new FormDataNode();
+  form.append("file", buffer, { filename, contentType: mimeType });
   form.append("model", "whisper-large-v3");
   form.append("language", "ru");
   form.append("response_format", "text");
 
   const res = await proxyFetch("https://api.groq.com/openai/v1/audio/transcriptions", {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      ...form.getHeaders(),
+    },
     body: form as any,
   });
 

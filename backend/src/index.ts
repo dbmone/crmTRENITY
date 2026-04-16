@@ -21,6 +21,7 @@ import { notificationsRoutes } from "./routes/notifications.routes";
 import { dashboardRoutes } from "./routes/dashboard.routes";
 import { permissionsRoutes } from "./routes/permissions.routes";
 import { tasksRoutes } from "./routes/tasks.routes";
+import { settingsRoutes } from "./routes/settings.routes";
 import { loadPermissions } from "./services/permissions.service";
 import { PrismaClient } from "@prisma/client";
 
@@ -119,6 +120,42 @@ async function ensureSchema() {
     )
   `);
 
+  // 8. Таблица настроек приложения (промпты AI и др.)
+  await runSql("create app_settings table", `
+    CREATE TABLE IF NOT EXISTS "app_settings" (
+      "key"            TEXT NOT NULL,
+      "value"          TEXT NOT NULL,
+      "updated_at"     TIMESTAMP(3) NOT NULL DEFAULT NOW(),
+      "updated_by_id"  TEXT,
+      CONSTRAINT "app_settings_pkey" PRIMARY KEY ("key")
+    )
+  `);
+
+  // 9. Дефолтный промпт для разбора задач голосом (если ещё нет)
+  await runSql("seed default task_parse_prompt", `
+    INSERT INTO "app_settings" ("key", "value", "updated_at")
+    VALUES (
+      'task_parse_prompt',
+      'Голосовая заметка пользователя: "{{TEXT}}"
+
+Создай структурированную задачу. Отвечай ТОЛЬКО валидным JSON без пояснений:
+{
+  "title": "краткое название задачи (до 80 символов)",
+  "description": "подробное описание или null",
+  "priority": "LOW|MEDIUM|HIGH",
+  "subtasks": ["шаг 1", "шаг 2"]
+}
+
+Правила:
+- title: ёмкое название на русском
+- subtasks: 0-8 конкретных шагов из текста. Если шагов нет — []
+- priority: HIGH если слова "срочно/сегодня/важно", LOW если не срочно, иначе MEDIUM
+- Отвечай на русском',
+      NOW()
+    )
+    ON CONFLICT ("key") DO NOTHING
+  `);
+
   console.log("✅ Schema migrations done");
 }
 
@@ -152,6 +189,7 @@ app.register(dashboardRoutes, { prefix: "/api/dashboard" });
 app.register(permissionsRoutes, { prefix: "/api/permissions" });
 app.register(filesGlobalRoutes, { prefix: "/api/files" });
 app.register(tasksRoutes,      { prefix: "/api/tasks" });
+app.register(settingsRoutes,   { prefix: "/api/settings" });
 
 // Вложенные под /api/orders/:orderId/
 app.register(async (instance) => {

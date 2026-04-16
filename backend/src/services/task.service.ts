@@ -1,10 +1,11 @@
 import { PrismaClient } from "@prisma/client";
 import { transcribeAudio } from "./stt.service";
+import { getSetting, DEFAULT_TASK_PROMPT } from "./settings.service";
 import { proxyFetch } from "../utils/proxy-fetch";
 
 const prisma = new PrismaClient();
 
-// Groq LLM бесплатно. Можно заменить на openai/claude через AI_PROVIDER
+// Groq LLM бесплатно. Если задан G4F_API_URL — используем g4f (без прокси, внутренний сервис)
 const GROQ_LLM_MODEL = "llama-3.3-70b-versatile";
 
 export interface ParsedTask {
@@ -16,56 +17,100 @@ export interface ParsedTask {
 }
 
 /**
+ * Формирует промпт из шаблона в БД (или DEFAULT_TASK_PROMPT), подставляя {{TEXT}}.
+ */
+async function buildPrompt(rawText: string): Promise<string> {
+  const template = (await getSetting("task_parse_prompt")) ?? DEFAULT_TASK_PROMPT;
+  return template.replace("{{TEXT}}", rawText);
+}
+
+/**
+ * Вызов LLM: сначала проверяем G4F_API_URL (внутренний Docker-сервис, без прокси),
+ * затем Groq (через прокси, если GROQ_API_KEY задан).
+ */
+async function callLLM(prompt: string): Promise<any | null> {
+  const g4fUrl = process.env.G4F_API_URL?.trim();
+  const g4fModel = process.env.G4F_MODEL?.trim() || "gpt-4o-mini";
+
+  const groqKey = process.env.GROQ_API_KEY?.trim();
+
+  if (g4fUrl) {
+    try {
+      // G4F — OpenAI-compatible API, внутренний сервис (не нужен прокси)
+      const res = await fetch(`${g4fUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: g4fModel,
+          messages: [
+            { role: "system", content: "Ты помощник по управлению задачами. Отвечай ТОЛЬКО валидным JSON без markdown." },
+            { role: "user", content: prompt },
+          ],
+          temperature: 0.3,
+          max_tokens: 800,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json() as any;
+        return JSON.parse(data.choices[0].message.content);
+      }
+      console.warn("G4F LLM failed:", res.status, await res.text().catch(() => ""));
+    } catch (e: any) {
+      console.warn("G4F LLM error:", e.message);
+    }
+  }
+
+  if (groqKey) {
+    try {
+      const res = await proxyFetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${groqKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: GROQ_LLM_MODEL,
+          messages: [
+            { role: "system", content: "Ты помощник по управлению задачами. Отвечай ТОЛЬКО валидным JSON без markdown." },
+            { role: "user", content: prompt },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.3,
+          max_tokens: 800,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json() as any;
+        return JSON.parse(data.choices[0].message.content);
+      }
+      console.warn("Groq LLM failed:", res.status, await res.text().catch(() => ""));
+    } catch (e: any) {
+      console.warn("Groq LLM error:", e.message);
+    }
+  }
+
+  return null;
+}
+
+/**
  * STT → LLM → структурированная задача с подзадачами.
- * Если GROQ_API_KEY не задан — возвращает rawText как title.
- * TODO: поддержка AI_PROVIDER=openai|claude через env
+ * Если нет ни G4F_API_URL ни GROQ_API_KEY — возвращает rawText как title.
  */
 export async function parseVoiceToTask(buffer: Buffer, filename: string): Promise<ParsedTask> {
   const rawText = await transcribeAudio(buffer, filename);
 
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) {
+  const g4fUrl = process.env.G4F_API_URL?.trim();
+  const groqKey = process.env.GROQ_API_KEY?.trim();
+
+  if (!g4fUrl && !groqKey) {
     return { title: rawText.slice(0, 80), rawText, priority: "MEDIUM", subtasks: [] };
   }
 
-  const prompt = `Голосовая заметка: "${rawText}"
-
-Создай структурированную задачу. Отвечай ТОЛЬКО валидным JSON:
-{
-  "title": "краткое название (до 80 символов)",
-  "description": "подробное описание или null",
-  "priority": "LOW|MEDIUM|HIGH",
-  "subtasks": ["шаг 1", "шаг 2"]
-}
-
-Правила:
-- title: ёмкое название задачи на русском
-- subtasks: выдели 0-8 конкретных шагов из текста. Если шаги не упомянуты — пустой массив []
-- priority: LOW если не срочно, HIGH если есть слова "срочно/сегодня/важно/ASAP"
-- Отвечай на русском языке`;
+  const prompt = await buildPrompt(rawText);
 
   try {
-    const res = await proxyFetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: GROQ_LLM_MODEL,
-        messages: [
-          { role: "system", content: "Ты помощник по управлению задачами. Отвечай ТОЛЬКО валидным JSON без markdown." },
-          { role: "user", content: prompt },
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.3,
-        max_tokens: 800,
-      }),
-    });
-
-    if (res.ok) {
-      const data = await res.json() as any;
-      const parsed = JSON.parse(data.choices[0].message.content);
+    const parsed = await callLLM(prompt);
+    if (parsed) {
       return {
         title:       String(parsed.title || rawText).slice(0, 80),
         description: parsed.description || undefined,

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "../store/auth.store";
 import Header from "../components/layout/Header";
-import { Check, X, Shield, RefreshCw, UserX, Crown, Users, ChevronRight, Trash2, UserPlus, RotateCcw, Lock, Unlock } from "lucide-react";
+import { Check, X, Shield, RefreshCw, UserX, Crown, Users, ChevronRight, Trash2, UserPlus, RotateCcw, Lock, Unlock, Bot, RotateCw } from "lucide-react";
 import * as api from "../api/client";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -33,7 +33,7 @@ export default function AdminPage() {
   const [pending,  setPending]  = useState<UserRow[]>([]);
   const [blocked,  setBlocked]  = useState<UserRow[]>([]);
   const [loading,  setLoading]  = useState(true);
-  const [tab,      setTab]      = useState<"users" | "pending" | "team" | "access" | "rights">(
+  const [tab,      setTab]      = useState<"users" | "pending" | "team" | "access" | "rights" | "ai">(
     searchParams.get("tab") === "pending" ? "pending" : "users"
   );
   const [working,  setWorking]  = useState<string | null>(null);
@@ -130,7 +130,7 @@ export default function AdminPage() {
 
   if (!canAccess) return null;
 
-  type TabId = "users" | "pending" | "team" | "access" | "rights";
+  type TabId = "users" | "pending" | "team" | "access" | "rights" | "ai";
   const TABS: { id: TabId; label: string }[] = (
     [
       { id: "users"   as TabId, label: "Пользователи" },
@@ -138,6 +138,7 @@ export default function AdminPage() {
       { id: "team"    as TabId, label: "Иерархия" },
       { id: "access"  as TabId, label: "Доступ" },
       ...(isAdmin ? [{ id: "rights" as TabId, label: "Права" }] : []),
+      ...((isAdmin || isHeadCreator) ? [{ id: "ai" as TabId, label: "AI" }] : []),
     ]
   );
 
@@ -201,6 +202,8 @@ export default function AdminPage() {
           <PreApproveTab isAdmin={isAdmin} isHeadMark={isHeadMark} isHeadCreator={isHeadCreator} />
         ) : tab === "rights" ? (
           <PermissionsTab users={[...users, ...blocked]} />
+        ) : tab === "ai" ? (
+          <AISettingsTab />
         ) : (
           <UsersList rows={users} blocked={blocked} onChangeRole={changeRole} onDeactivate={deactivate} onRestore={restore} working={working} currentUser={user} isAdmin={isAdmin} />
         )}
@@ -997,6 +1000,152 @@ function PermissionsTab({ users }: { users: UserRow[] }) {
           </div>
         )}
         {!selUserId && <p className="text-sm text-ink-tertiary text-center py-4">Выберите пользователя для настройки</p>}
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// AI Settings Tab
+// ──────────────────────────────────────────────────────────────────────────────
+
+const DEFAULT_PROMPT_HINT = `{{TEXT}} — сюда подставляется расшифрованный голос пользователя.
+
+Пример шаблона:
+Голосовая заметка пользователя: "{{TEXT}}"
+
+Создай структурированную задачу. Отвечай ТОЛЬКО валидным JSON:
+{
+  "title": "краткое название (до 80 символов)",
+  "description": "подробное описание или null",
+  "priority": "LOW|MEDIUM|HIGH",
+  "subtasks": ["шаг 1", "шаг 2"]
+}`;
+
+function AISettingsTab() {
+  const [prompt,   setPrompt]   = useState("");
+  const [original, setOriginal] = useState("");
+  const [loading,  setLoading]  = useState(true);
+  const [saving,   setSaving]   = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [saved,    setSaved]    = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const settings = await api.getSettings();
+        const val = settings.task_parse_prompt ?? "";
+        setPrompt(val);
+        setOriginal(val);
+      } catch {}
+      setLoading(false);
+    })();
+  }, []);
+
+  const save = async () => {
+    if (!prompt.trim()) return;
+    setSaving(true);
+    try {
+      await api.updateSetting("task_parse_prompt", prompt);
+      setOriginal(prompt);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e: any) {
+      alert(e.response?.data?.error || "Ошибка сохранения");
+    }
+    setSaving(false);
+  };
+
+  const reset = async () => {
+    if (!confirm("Сбросить промпт к значению по умолчанию?")) return;
+    setResetting(true);
+    try {
+      const res = await api.resetSetting("task_parse_prompt");
+      setPrompt(res.value);
+      setOriginal(res.value);
+    } catch (e: any) {
+      alert(e.response?.data?.error || "Ошибка сброса");
+    }
+    setResetting(false);
+  };
+
+  const isDirty = prompt !== original;
+
+  if (loading) return (
+    <div className="flex justify-center py-16">
+      <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-bg-surface border border-bg-border rounded-xl p-5">
+        <div className="flex items-start justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <Bot size={15} className="text-purple-400" />
+            <h2 className="text-sm font-semibold text-ink-primary">Промпт разбора задач (голос → AI)</h2>
+          </div>
+          <button
+            onClick={reset}
+            disabled={resetting}
+            title="Сбросить к умолчанию"
+            className="flex items-center gap-1 text-xs text-ink-tertiary hover:text-ink-primary transition-colors disabled:opacity-40"
+          >
+            <RotateCw size={12} className={resetting ? "animate-spin" : ""} />
+            Сбросить
+          </button>
+        </div>
+        <p className="text-xs text-ink-tertiary mb-4">
+          Этот шаблон отправляется в LLM после расшифровки голосовой заметки.
+          Используй <code className="bg-bg-raised px-1 rounded text-purple-300">{"{{TEXT}}"}</code> — туда подставится текст голоса.
+          LLM должна вернуть JSON с полями: <code className="bg-bg-raised px-1 rounded text-ink-secondary">title</code>,{" "}
+          <code className="bg-bg-raised px-1 rounded text-ink-secondary">description</code>,{" "}
+          <code className="bg-bg-raised px-1 rounded text-ink-secondary">priority</code>,{" "}
+          <code className="bg-bg-raised px-1 rounded text-ink-secondary">subtasks</code>.
+        </p>
+
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder={DEFAULT_PROMPT_HINT}
+          rows={16}
+          className="w-full px-3.5 py-2.5 rounded-lg border border-bg-border bg-bg-raised text-sm text-ink-primary placeholder-ink-tertiary outline-none focus:border-purple-500/50 transition-colors resize-y font-mono"
+        />
+
+        <div className="flex items-center justify-between mt-3">
+          <span className="text-xs text-ink-tertiary">
+            {prompt.includes("{{TEXT}}") ? (
+              <span className="text-green-400">✓ Содержит {"{{TEXT}}"}</span>
+            ) : (
+              <span className="text-amber-400">⚠ Нет {"{{TEXT}}"} — голос не подставится</span>
+            )}
+          </span>
+          <div className="flex items-center gap-2">
+            {saved && <span className="text-xs text-green-400">Сохранено</span>}
+            <button
+              onClick={save}
+              disabled={saving || !isDirty || !prompt.trim()}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-purple-500 text-white text-sm font-bold hover:bg-purple-400 disabled:opacity-50 transition-colors"
+            >
+              {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : null}
+              {saving ? "Сохраняю..." : "Сохранить"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-bg-surface border border-bg-border rounded-xl p-5">
+        <h3 className="text-sm font-semibold text-ink-primary mb-3 flex items-center gap-2">
+          <Bot size={14} className="text-ink-tertiary" />
+          Провайдер LLM (из переменных окружения)
+        </h3>
+        <div className="space-y-2 text-xs text-ink-tertiary">
+          <p><span className="text-ink-secondary font-mono">G4F_API_URL</span> — URL gpt4free Docker-сервиса (напр. <span className="font-mono">http://g4f:1337</span>). Если задан — используется в первую очередь.</p>
+          <p><span className="text-ink-secondary font-mono">G4F_MODEL</span> — модель g4f (по умолчанию <span className="font-mono">gpt-4o-mini</span>).</p>
+          <p><span className="text-ink-secondary font-mono">GROQ_API_KEY</span> — ключ Groq (LLaMA 3.3 70B). Используется если G4F недоступен.</p>
+          <p className="text-ink-tertiary/60 pt-1">STT (расшифровка голоса) всегда через Groq Whisper (GROQ_API_KEY).</p>
+        </div>
       </div>
     </div>
   );

@@ -31,6 +31,8 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
       NODE_ENV: ${NODE_ENV:-production}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
+      G4F_API_URL: ${G4F_API_URL:-}
+      G4F_MODEL: ${G4F_MODEL:-gpt-4o-mini}
     ports:
       - "3000:3000"
     depends_on:
@@ -64,6 +66,12 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+
+  g4f:
+    image: hlohaus789/g4f:latest
+    restart: unless-stopped
+    ports:
+      - "1337:1337"
 
   frontend:
     build: ./frontend
