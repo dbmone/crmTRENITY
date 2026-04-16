@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuthStore } from "../../store/auth.store";
-import { LogOut, Bell, X, LayoutDashboard, Archive, Users, Menu, UserCircle, ListTodo } from "lucide-react";
+import { LogOut, Bell, X, LayoutDashboard, Archive, Users, Menu, UserCircle, ListTodo, Bot } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Notification } from "../../types";
 import * as api from "../../api/client";
@@ -21,11 +21,12 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 const NAV = [
-  { path: "/",         label: "Доска",     icon: LayoutDashboard },
-  { path: "/tasks",    label: "Задачи",    icon: ListTodo },
-  { path: "/archive",  label: "Архив",     icon: Archive },
-  { path: "/dashboard",label: "Аналитика", icon: LayoutDashboard },
-  { path: "/admin",    label: "Команда",   icon: Users, adminOnly: true },
+  { path: "/",          label: "Доска",     icon: LayoutDashboard },
+  { path: "/tasks",     label: "Задачи",    icon: ListTodo },
+  { path: "/archive",   label: "Архив",     icon: Archive },
+  { path: "/dashboard", label: "Аналитика", icon: LayoutDashboard },
+  { path: "/admin",     label: "Команда",   icon: Users,            adminOnly: true },
+  { path: "/ai",        label: "AI",        icon: Bot,              aiOnly: true },
 ];
 
 export default function Header() {
@@ -46,6 +47,7 @@ export default function Header() {
   const isHeadCreator = user?.role === "HEAD_CREATOR"  || isAdmin;
   const isLeadCreate  = user?.role === "LEAD_CREATOR"  || isAdmin;
   const canSeeAdmin   = isAdmin || isHeadMark || isHeadCreator || isLeadCreate;
+  const canSeeAi      = isAdmin || isHeadCreator;
 
   // Close mobile menu on route change
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
@@ -89,7 +91,11 @@ export default function Header() {
   const initials = user?.displayName
     ?.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
 
-  const navItems = NAV.filter((n) => !n.adminOnly || canSeeAdmin);
+  const navItems = NAV.filter((n) => {
+    if (n.adminOnly) return canSeeAdmin;
+    if ((n as any).aiOnly) return canSeeAi;
+    return true;
+  });
 
   return (
     <header className="sticky top-0 z-50 bg-bg-surface border-b border-bg-border">

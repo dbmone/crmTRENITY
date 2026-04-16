@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "../store/auth.store";
 import Header from "../components/layout/Header";
-import { Check, X, Shield, RefreshCw, UserX, Crown, Users, ChevronRight, Trash2, UserPlus, RotateCcw, Lock, Unlock, Bot, RotateCw } from "lucide-react";
+import { Check, X, Shield, RefreshCw, UserX, Crown, Users, ChevronRight, Trash2, UserPlus, RotateCcw, Lock, Unlock } from "lucide-react";
 import * as api from "../api/client";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -33,7 +33,7 @@ export default function AdminPage() {
   const [pending,  setPending]  = useState<UserRow[]>([]);
   const [blocked,  setBlocked]  = useState<UserRow[]>([]);
   const [loading,  setLoading]  = useState(true);
-  const [tab,      setTab]      = useState<"users" | "pending" | "team" | "access" | "rights" | "ai">(
+  const [tab,      setTab]      = useState<"users" | "pending" | "team" | "access" | "rights">(
     searchParams.get("tab") === "pending" ? "pending" : "users"
   );
   const [working,  setWorking]  = useState<string | null>(null);
@@ -130,7 +130,7 @@ export default function AdminPage() {
 
   if (!canAccess) return null;
 
-  type TabId = "users" | "pending" | "team" | "access" | "rights" | "ai";
+  type TabId = "users" | "pending" | "team" | "access" | "rights";
   const TABS: { id: TabId; label: string }[] = (
     [
       { id: "users"   as TabId, label: "Пользователи" },
@@ -138,7 +138,6 @@ export default function AdminPage() {
       { id: "team"    as TabId, label: "Иерархия" },
       { id: "access"  as TabId, label: "Доступ" },
       ...(isAdmin ? [{ id: "rights" as TabId, label: "Права" }] : []),
-      ...((isAdmin || isHeadCreator) ? [{ id: "ai" as TabId, label: "AI" }] : []),
     ]
   );
 
@@ -202,8 +201,6 @@ export default function AdminPage() {
           <PreApproveTab isAdmin={isAdmin} isHeadMark={isHeadMark} isHeadCreator={isHeadCreator} />
         ) : tab === "rights" ? (
           <PermissionsTab users={[...users, ...blocked]} />
-        ) : tab === "ai" ? (
-          <AISettingsTab />
         ) : (
           <UsersList rows={users} blocked={blocked} onChangeRole={changeRole} onDeactivate={deactivate} onRestore={restore} working={working} currentUser={user} isAdmin={isAdmin} />
         )}
@@ -1005,156 +1002,4 @@ function PermissionsTab({ users }: { users: UserRow[] }) {
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// AI Settings Tab
-// ──────────────────────────────────────────────────────────────────────────────
-
-function PromptEditor({ settingKey, title, description, jsonOutput, placeholder }: {
-  settingKey: string;
-  title: string;
-  description: React.ReactNode;
-  jsonOutput?: boolean;
-  placeholder?: string;
-}) {
-  const [prompt,    setPrompt]    = useState("");
-  const [original,  setOriginal]  = useState("");
-  const [loading,   setLoading]   = useState(true);
-  const [saving,    setSaving]    = useState(false);
-  const [resetting, setResetting] = useState(false);
-  const [saved,     setSaved]     = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const s = await api.getSettings();
-        const val = s[settingKey] ?? "";
-        setPrompt(val);
-        setOriginal(val);
-      } catch {}
-      setLoading(false);
-    })();
-  }, [settingKey]);
-
-  const save = async () => {
-    if (!prompt.trim()) return;
-    setSaving(true);
-    try {
-      await api.updateSetting(settingKey, prompt);
-      setOriginal(prompt);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (e: any) { alert(e.response?.data?.error || "Ошибка"); }
-    setSaving(false);
-  };
-
-  const reset = async () => {
-    if (!confirm("Сбросить к значению по умолчанию?")) return;
-    setResetting(true);
-    try {
-      const res = await api.resetSetting(settingKey);
-      setPrompt(res.value);
-      setOriginal(res.value);
-    } catch (e: any) { alert(e.response?.data?.error || "Ошибка"); }
-    setResetting(false);
-  };
-
-  if (loading) return (
-    <div className="flex justify-center py-8">
-      <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
-
-  const isDirty = prompt !== original;
-
-  return (
-    <div className="bg-bg-surface border border-bg-border rounded-xl p-5">
-      <div className="flex items-start justify-between mb-1">
-        <h3 className="text-sm font-semibold text-ink-primary flex items-center gap-2">
-          <Bot size={14} className="text-purple-400" />
-          {title}
-        </h3>
-        <button onClick={reset} disabled={resetting} title="Сбросить к умолчанию"
-          className="flex items-center gap-1 text-xs text-ink-tertiary hover:text-ink-primary transition-colors disabled:opacity-40">
-          <RotateCw size={12} className={resetting ? "animate-spin" : ""} />
-          Сбросить
-        </button>
-      </div>
-      <p className="text-xs text-ink-tertiary mb-3">{description}</p>
-
-      <textarea
-        value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
-        placeholder={placeholder}
-        rows={14}
-        className="w-full px-3.5 py-2.5 rounded-lg border border-bg-border bg-bg-raised text-sm text-ink-primary placeholder-ink-tertiary outline-none focus:border-purple-500/50 transition-colors resize-y font-mono"
-      />
-
-      <div className="flex items-center justify-between mt-3">
-        <span className="text-xs">
-          {prompt.includes("{{TEXT}}") ? (
-            <span className="text-green-400">✓ Содержит {"{{TEXT}}"}</span>
-          ) : (
-            <span className="text-amber-400">⚠ Нет {"{{TEXT}}"} — голос не подставится</span>
-          )}
-          {jsonOutput && !prompt.includes("JSON") && (
-            <span className="text-amber-400 ml-2">⚠ Напомни LLM вернуть JSON</span>
-          )}
-        </span>
-        <div className="flex items-center gap-2">
-          {saved && <span className="text-xs text-green-400">Сохранено</span>}
-          <button
-            onClick={save}
-            disabled={saving || !isDirty || !prompt.trim()}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-purple-500 text-white text-sm font-bold hover:bg-purple-400 disabled:opacity-50 transition-colors"
-          >
-            {saving && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
-            {saving ? "Сохраняю..." : "Сохранить"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AISettingsTab() {
-  return (
-    <div className="space-y-6">
-      <PromptEditor
-        settingKey="task_parse_prompt"
-        title="Промпт: Голос → Личная задача"
-        description={<>
-          Используется когда записываешь голос на странице{" "}
-          <span className="text-ink-secondary">Задачи</span>.
-          Используй <code className="bg-bg-raised px-1 rounded text-purple-300">{"{{TEXT}}"}</code> — туда подставится расшифровка.
-          LLM должна вернуть JSON:{" "}
-          <code className="bg-bg-raised px-1 rounded text-ink-secondary">title, description, priority, subtasks[]</code>.
-        </>}
-        jsonOutput
-      />
-
-      <PromptEditor
-        settingKey="tz_structure_prompt"
-        title="Промпт: Голос → Структурированное ТЗ"
-        description={<>
-          Используется в кнопке <span className="text-ink-secondary">🪄 Голос → ТЗ</span> внутри заказа.
-          Используй <code className="bg-bg-raised px-1 rounded text-purple-300">{"{{TEXT}}"}</code> — туда подставится расшифровка.
-          LLM должна вернуть форматированный текст (не JSON).
-        </>}
-      />
-
-      <div className="bg-bg-surface border border-bg-border rounded-xl p-5">
-        <h3 className="text-sm font-semibold text-ink-primary mb-3 flex items-center gap-2">
-          <Bot size={14} className="text-ink-tertiary" />
-          Провайдер LLM (из переменных окружения)
-        </h3>
-        <div className="space-y-2 text-xs text-ink-tertiary">
-          <p><span className="text-ink-secondary font-mono">G4F_API_URL</span> — URL gpt4free Docker-сервиса (напр. <span className="font-mono">http://g4f:1337</span>). Если задан — используется в первую очередь.</p>
-          <p><span className="text-ink-secondary font-mono">G4F_MODEL</span> — модель g4f (по умолчанию <span className="font-mono">gpt-4o-mini</span>).</p>
-          <p><span className="text-ink-secondary font-mono">GROQ_API_KEY</span> — ключ Groq (LLaMA 3.3 70B). Используется если G4F недоступен.</p>
-          <p className="text-ink-tertiary/60 pt-1">STT (расшифровка голоса) всегда через Groq Whisper (GROQ_API_KEY).</p>
-        </div>
-      </div>
-    </div>
-  );
-}
+// AI Settings moved to /ai page — see AiPage.tsx
