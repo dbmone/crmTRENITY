@@ -13,7 +13,7 @@ type RectLike = {
   bottom: number;
 };
 
-const TOOLTIP_WIDTH = 380;
+const TOOLTIP_WIDTH = 340;
 const TARGET_PADDING = 10;
 const VIEWPORT_PADDING = 16;
 
@@ -89,12 +89,12 @@ function getTooltipPosition(rect: RectLike | null, placement: TourStep["placemen
       };
     case "left":
       return {
-        top: clamp(rect.top + rect.height / 2 - 160, VIEWPORT_PADDING, maxTop),
+        top: clamp(rect.top + rect.height / 2 - tooltipHeight / 2, VIEWPORT_PADDING, maxTop),
         left: clamp(rect.left - tooltipWidth - gap, VIEWPORT_PADDING, maxLeft),
       };
     case "right":
       return {
-        top: clamp(rect.top + rect.height / 2 - 160, VIEWPORT_PADDING, maxTop),
+        top: clamp(rect.top + rect.height / 2 - tooltipHeight / 2, VIEWPORT_PADDING, maxTop),
         left: clamp(rect.right + gap, VIEWPORT_PADDING, maxLeft),
       };
     case "bottom":
@@ -221,7 +221,7 @@ export default function TourOverlay() {
           right: VIEWPORT_PADDING,
           top: VIEWPORT_PADDING,
           bottom: "auto" as const,
-          maxHeight: "42vh",
+          maxHeight: "34vh",
           overflowY: "auto" as const,
         }
       : {
@@ -229,7 +229,7 @@ export default function TourOverlay() {
           right: VIEWPORT_PADDING,
           bottom: VIEWPORT_PADDING,
           top: "auto" as const,
-          maxHeight: "42vh",
+          maxHeight: "34vh",
           overflowY: "auto" as const,
         }
     : null;
@@ -267,7 +267,7 @@ export default function TourOverlay() {
             : {
                 top: desktopTop,
                 left: desktopLeft,
-                width: "min(380px, calc(100vw - 32px))",
+                width: "min(340px, calc(100vw - 32px))",
                 maxHeight: `calc(100vh - ${VIEWPORT_PADDING * 2}px)`,
                 overflowY: "auto",
               }

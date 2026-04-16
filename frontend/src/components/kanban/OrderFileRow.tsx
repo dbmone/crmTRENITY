@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Download, Paperclip, Trash2 } from "lucide-react";
 import * as api from "../../api/client";
 import { OrderFile } from "../../types";
@@ -75,7 +75,6 @@ export default function OrderFileRow({
   const [sentToTelegram, setSentToTelegram] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const isTelegramFile = !!file.telegramFileId || !!file.telegramMsgId;
   const fileBucket = getFileBucket(file);
@@ -84,44 +83,7 @@ export default function OrderFileRow({
   const isVideoPreview = isVideoFile(file);
   const isAudioPreview = isAudioFile(file);
   const canPreview = isImagePreview || isVideoPreview || isAudioPreview;
-
-  // Видео и аудио используют прямой стриминговый URL (поддерживает Range, нет загрузки в память)
-  const streamUrl = (isVideoPreview || isAudioPreview) ? api.getFileStreamUrl(file.id) : null;
-
-  // Для картинок — blob (как раньше)
-  useEffect(() => {
-    if (!previewOpen || previewUrl || !isImagePreview) return;
-    let disposed = false;
-    let objectUrl: string | null = null;
-
-    (async () => {
-      setPreviewLoading(true);
-      try {
-        const blob = await api.getFileContent(file.id);
-        if (disposed) return;
-        objectUrl = URL.createObjectURL(blob);
-        setPreviewUrl(objectUrl);
-      } catch (e: any) {
-        if (!disposed) {
-          alert(e.response?.data?.error || e.response?.data?.message || "Не удалось загрузить превью");
-          setPreviewOpen(false);
-        }
-      } finally {
-        if (!disposed) setPreviewLoading(false);
-      }
-    })();
-
-    return () => {
-      disposed = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [isImagePreview, file.id, previewOpen, previewUrl]);
-
-  useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-    };
-  }, [previewUrl]);
+  const previewUrl = canPreview ? api.getFileStreamUrl(file.id) : null;
 
   const handleSendToTelegram = async () => {
     setDownloading(true);
@@ -291,24 +253,38 @@ export default function OrderFileRow({
         <div className="mt-3 rounded-lg border border-bg-border bg-bg-base/60 p-2">
           {isVideoPreview ? (
             <video
-              src={streamUrl!}
+              src={previewUrl!}
               controls
               preload="metadata"
               className="w-full max-h-80 rounded-lg bg-black"
+              onLoadStart={() => setPreviewLoading(true)}
+              onLoadedData={() => setPreviewLoading(false)}
               onError={() => alert("Не удалось воспроизвести видео")}
             />
           ) : isAudioPreview ? (
             <audio
-              src={streamUrl!}
+              src={previewUrl!}
               controls
               preload="metadata"
               className="w-full"
+              onLoadStart={() => setPreviewLoading(true)}
+              onLoadedData={() => setPreviewLoading(false)}
               onError={() => alert("Не удалось воспроизвести аудио")}
             />
-          ) : previewLoading && !previewUrl ? (
+          ) : previewLoading ? (
             <div className="flex items-center justify-center py-8 text-xs text-ink-tertiary">Загружаю превью...</div>
           ) : previewUrl ? (
-            <img src={previewUrl} alt={file.fileName} className="w-full max-h-80 object-contain rounded-lg bg-black/20" />
+            <img
+              src={previewUrl}
+              alt={file.fileName}
+              className="w-full max-h-80 object-contain rounded-lg bg-black/20"
+              onLoadStart={() => setPreviewLoading(true)}
+              onLoad={() => setPreviewLoading(false)}
+              onError={() => {
+                setPreviewLoading(false);
+                alert("Не удалось загрузить превью");
+              }}
+            />
           ) : null}
         </div>
       )}

@@ -10,6 +10,7 @@ import {
   sendFileToUserTelegram,
   sendTzBundleToTelegram,
   uploadFile,
+  updateTzTextNote,
 } from "../services/file.service";
 import { transcribeAudio } from "../services/stt.service";
 import { structureToTz } from "../services/task.service";
@@ -218,6 +219,24 @@ export async function filesGlobalRoutes(app: FastifyInstance) {
   app.delete<{ Params: { fileId: string } }>("/:fileId", { preHandler: app.authenticate }, async (req, reply) => {
     try {
       return await deleteFile(req.params.fileId, req.currentUser.id, req.currentUser.role as UserRole);
+    } catch (err: any) {
+      return reply.status(err.statusCode || 500).send({ error: err.message });
+    }
+  });
+
+  app.patch<{ Params: { fileId: string }; Body: { text: string } }>("/:fileId/tz-note", { preHandler: app.authenticate }, async (req, reply) => {
+    if (!req.body?.text?.trim()) {
+      return reply.status(400).send({ error: "Текст не может быть пустым" });
+    }
+
+    try {
+      const updated = await updateTzTextNote(
+        req.params.fileId,
+        req.currentUser.id,
+        req.currentUser.role as UserRole,
+        req.body.text.trim()
+      );
+      return reply.send(updated);
     } catch (err: any) {
       return reply.status(err.statusCode || 500).send({ error: err.message });
     }

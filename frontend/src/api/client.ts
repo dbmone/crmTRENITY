@@ -175,6 +175,11 @@ export async function addTzNote(orderId: string, text: string) {
   return data;
 }
 
+export async function updateTzNote(fileId: string, text: string) {
+  const { data } = await api.patch(`/files/${fileId}/tz-note`, { text });
+  return data;
+}
+
 export async function transcribeVoice(orderId: string, blob: Blob, ext: string): Promise<{ text: string }> {
   const form = new FormData();
   form.append("audio", blob, `voice.${ext}`);

@@ -349,6 +349,35 @@ export async function addTzTextNote(orderId: string, uploadedById: string, text:
   return created;
 }
 
+export async function updateTzTextNote(fileId: string, userId: string, userRole: UserRole, text: string) {
+  const file = await prisma.orderFile.findUnique({
+    where: { id: fileId },
+    include: {
+      uploadedBy: { select: { displayName: true, telegramUsername: true } },
+    },
+  });
+
+  if (!file) throw { statusCode: 404, message: "Текст ТЗ не найден" };
+  if (file.fileType !== FileType.TZ || file.mimeType !== "text/plain") {
+    throw { statusCode: 400, message: "Редактировать можно только текстовую заметку ТЗ" };
+  }
+  if (userRole !== UserRole.ADMIN && file.uploadedById !== userId) {
+    throw { statusCode: 403, message: "Вы можете редактировать только свои текстовые заметки" };
+  }
+
+  const updated = await prisma.orderFile.update({
+    where: { id: fileId },
+    data: { fileName: text.trim() },
+    include: {
+      uploadedBy: { select: { displayName: true, telegramUsername: true } },
+    },
+  });
+
+  const authorName = updated.uploadedBy.displayName || updated.uploadedBy.telegramUsername || "Кто-то";
+  await mirrorTextNoteToOrderGroup(updated.orderId, authorName, text.trim(), true).catch(() => {});
+  return updated;
+}
+
 // Отправить всё ТЗ заказа пачкой в Telegram пользователя
 export async function sendTzBundleToTelegram(orderId: string, userId: string): Promise<{ sent: number }> {
   const user = await prisma.user.findUnique({ where: { id: userId } });

@@ -157,6 +157,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
   const fetchOrders = useOrdersStore((s) => s.fetchOrders);
 
   const [fullOrder, setFullOrder] = useState<Order | null>(null);
+  const [detailsReady, setDetailsReady] = useState(false);
   const [users,     setUsers]     = useState<User[]>([]);
   const [loading,   setLoading]   = useState(false);
   const [tab,       setTab]       = useState<Tab>("stages");
@@ -196,6 +197,8 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
 
   // TZ tab
   const [tzText,          setTzText]          = useState("");
+  const [primaryTzNoteId, setPrimaryTzNoteId] = useState<string | null>(null);
+  const [primaryTzCollapsed, setPrimaryTzCollapsed] = useState(false);
   const [addingTzNote,    setAddingTzNote]    = useState(false);
   const [tzExtraTexts,    setTzExtraTexts]    = useState<string[]>([]);
   const [savingTzExtra,   setSavingTzExtra]   = useState<boolean[]>([]);
@@ -237,7 +240,11 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
 
   useEffect(() => {
     if (!order) return;
-    setFullOrder(null); // сбрасываем старый заказ сразу
+    setFullOrder(null);
+    setDetailsReady(false);
+    setPrimaryTzNoteId(null);
+    setPrimaryTzCollapsed(false);
+    setTzText("");
     setComments([]);
     loadOrder(); loadUsers(); loadComments();
     setTab("stages"); setEditing(false);
@@ -252,7 +259,16 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
     if (tab === "comments") commentsEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [comments, tab]);
 
-  const loadOrder  = async () => { if (!order) return; const d = await api.getOrder(order.id); setFullOrder(d); };
+  const loadOrder  = async () => {
+    if (!order) return;
+    setDetailsReady(false);
+    try {
+      const d = await api.getOrder(order.id);
+      setFullOrder(d);
+    } finally {
+      setDetailsReady(true);
+    }
+  };
   const loadUsers  = async () => { const d = await api.getUsers(); setUsers(Array.isArray(d) ? d : (d.users ?? [])); };
   const loadComments = async () => { if (!order) return; try { const d = await api.getComments(order.id); setComments(d); } catch {} };
 
@@ -387,6 +403,25 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
   const cancelEditUpload = () => editUploadAbortRef.current?.abort();
   const cancelTzUpload = () => tzUploadAbortRef.current?.abort();
   const cancelFilesUpload = () => fileUploadAbortRef.current?.abort();
+
+  const handleSavePrimaryTz = async () => {
+    if (!tzText.trim()) return;
+    setAddingTzNote(true);
+    try {
+      if (primaryTzNoteId) {
+        await api.updateTzNote(primaryTzNoteId, tzText.trim());
+      } else {
+        const created = await api.addTzNote(o.id, tzText.trim());
+        if (created?.id) setPrimaryTzNoteId(created.id);
+      }
+      setPrimaryTzCollapsed(true);
+      await loadOrder();
+    } catch (e: any) {
+      alert(e.response?.data?.error || "Ошибка");
+    } finally {
+      setAddingTzNote(false);
+    }
+  };
 
   // ── handlers ──
   const handleStageUpdate = async (stageId: string, status: string) => {
@@ -721,6 +756,14 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
 
         {/* ── Tab content ── */}
         <div className="p-5 pt-4">
+          {!detailsReady && !fullOrder ? (
+            <div className="space-y-3 animate-pulse">
+              <div className="h-24 rounded-xl bg-bg-raised" />
+              <div className="h-20 rounded-xl bg-bg-raised" />
+              <div className="h-16 rounded-xl bg-bg-raised" />
+            </div>
+          ) : (
+            <>
 
           {/* STAGES */}
           {tab === "stages" && (
@@ -770,34 +813,39 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
                   <p className="mb-2 text-xs text-ink-tertiary">
                     Перетащи файлы прямо в эту область или загрузи их кнопкой. Всё, что попадёт сюда, останется во вкладке ТЗ.
                   </p>
-                  <textarea
-                    value={tzText} onChange={(e) => setTzText(e.target.value)}
-                    placeholder="Текст дополнения к ТЗ..."
-                    rows={3}
-                    className="w-full text-sm bg-bg-surface border border-bg-border rounded-lg p-2.5 text-ink-primary placeholder-ink-tertiary outline-none focus:border-green-500/50 resize-none transition-colors"
-                  />
+                  {primaryTzCollapsed ? (
+                    <div className="rounded-lg border border-bg-border bg-bg-surface p-2.5">
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-tertiary">Сохранённый текст</p>
+                      <p className="text-sm text-ink-primary whitespace-pre-wrap break-words">{tzText}</p>
+                    </div>
+                  ) : (
+                    <textarea
+                      value={tzText}
+                      onChange={(e) => setTzText(e.target.value)}
+                      placeholder="Текст дополнения к ТЗ..."
+                      rows={3}
+                      className="w-full text-sm bg-bg-surface border border-bg-border rounded-lg p-2.5 text-ink-primary placeholder-ink-tertiary outline-none focus:border-green-500/50 resize-none transition-colors"
+                    />
+                  )}
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    <button
+                      onClick={() => {
+                        if (primaryTzCollapsed) {
+                          setPrimaryTzCollapsed(false);
+                          return;
+                        }
+                        void handleSavePrimaryTz();
+                      }}
+                      disabled={!primaryTzCollapsed && (!tzText.trim() || addingTzNote)}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-green-500/20 bg-green-500/10 text-green-400 text-sm font-medium hover:bg-green-500/20 disabled:opacity-50 transition-colors">
+                      {addingTzNote ? <div className="w-4 h-4 border-2 border-current/30 border-t-current rounded-full animate-spin" /> : <FileText size={13} />}
+                      {primaryTzCollapsed ? "Редактировать" : "Сохранить текст"}
+                    </button>
                     <button
                       onClick={() => { setTzExtraTexts((p) => [...p, ""]); setSavingTzExtra((p) => [...p, false]); }}
                       title="Добавить ещё одно текстовое поле для доп. заметки к ТЗ"
                       className="flex items-center gap-2 px-3 py-2 rounded-lg border border-bg-border text-ink-secondary text-sm hover:bg-bg-hover transition-colors">
                       <Plus size={13} /> Ещё заметка
-                    </button>
-                    <button
-                      onClick={async () => {
-                        if (!tzText.trim()) return;
-                        setAddingTzNote(true);
-                        try {
-                          await api.addTzNote(o.id, tzText.trim());
-                          setTzText("");
-                          await loadOrder();
-                        } catch (e: any) { alert(e.response?.data?.error || "Ошибка"); }
-                        setAddingTzNote(false);
-                      }}
-                      disabled={!tzText.trim() || addingTzNote}
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-green-500/20 bg-green-500/10 text-green-400 text-sm font-medium hover:bg-green-500/20 disabled:opacity-50 transition-colors">
-                      {addingTzNote ? <div className="w-4 h-4 border-2 border-current/30 border-t-current rounded-full animate-spin" /> : <FileText size={13} />}
-                      Сохранить текст
                     </button>
                     <button
                       onClick={() => tzFileInputRef.current?.click()}
@@ -864,7 +912,11 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
                       <p className="text-sm text-ink-primary whitespace-pre-wrap break-words mb-3">{voicePreview}</p>
                       <div className="flex items-center gap-2 flex-wrap">
                         <button
-                          onClick={() => { setTzText((prev) => prev ? `${prev}\n${voicePreview}` : voicePreview!); setVoicePreview(null); }}
+                          onClick={() => {
+                            setPrimaryTzCollapsed(false);
+                            setTzText((prev) => prev ? `${prev}\n${voicePreview}` : voicePreview!);
+                            setVoicePreview(null);
+                          }}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 text-sm hover:bg-green-500/20 transition-colors">
                           <Plus size={12} /> В основное поле
                         </button>
@@ -1169,6 +1221,8 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
               </div>
             </div>
           )}
+            </>
+          )}
         </div>
       </div>
 
@@ -1209,6 +1263,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
               </button>
               <button
                 onClick={() => {
+                  setPrimaryTzCollapsed(false);
                   if (!tzAiPreview.text.trim()) return;
                   setTzText((prev) => (prev ? `${prev}\n${tzAiPreview.text.trim()}` : tzAiPreview.text.trim()));
                   setTzAiPreview(null);
