@@ -4,6 +4,8 @@
  * Регистрация: https://console.groq.com
  * Env: GROQ_API_KEY=gsk_...
  */
+import { proxyFetch } from "../utils/proxy-fetch";
+
 export async function transcribeAudio(buffer: Buffer, filename: string): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
@@ -30,10 +32,10 @@ export async function transcribeAudio(buffer: Buffer, filename: string): Promise
   form.append("language", "ru");
   form.append("response_format", "text");
 
-  const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+  const res = await proxyFetch("https://api.groq.com/openai/v1/audio/transcriptions", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}` },
-    body: form,
+    body: form as any,
   });
 
   if (!res.ok) {

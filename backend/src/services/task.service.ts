@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { transcribeAudio } from "./stt.service";
+import { proxyFetch } from "../utils/proxy-fetch";
 
 const prisma = new PrismaClient();
 
@@ -44,7 +45,7 @@ export async function parseVoiceToTask(buffer: Buffer, filename: string): Promis
 - Отвечай на русском языке`;
 
   try {
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const res = await proxyFetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
