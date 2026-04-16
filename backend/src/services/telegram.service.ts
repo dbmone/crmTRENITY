@@ -3,14 +3,15 @@
  * Прямые вызовы Telegram Bot API из бэкенда для хранения файлов в TG.
  * Не требует grammy или отдельного бота — работает через HTTP.
  */
+import FormData from "form-data";
+import { ProxyAgent } from "proxy-agent";
 import { config } from "../config";
-import { ProxyAgent } from "undici";
 
-const telegramProxyUrl = config.bot.proxyUrl;
-const telegramProxy =
-  telegramProxyUrl && /^https?:\/\//i.test(telegramProxyUrl)
-    ? new ProxyAgent(telegramProxyUrl)
-    : null;
+const nodeFetch = require("node-fetch") as typeof fetch;
+
+const telegramProxy = config.bot.proxyUrl
+  ? new ProxyAgent({ getProxyForUrl: () => config.bot.proxyUrl })
+  : null;
 
 function getTG(): string {
   const token = config.bot.token;
@@ -19,9 +20,10 @@ function getTG(): string {
 }
 
 async function tgFetch(input: string, init: RequestInit = {}) {
-  const requestInit = { ...init } as RequestInit & { dispatcher?: any };
-  if (telegramProxy) requestInit.dispatcher = telegramProxy as any;
-  return fetch(input, requestInit);
+  return nodeFetch(input as any, {
+    ...init,
+    agent: telegramProxy as any,
+  } as any) as any;
 }
 
 export interface TgUploadResult {
@@ -43,13 +45,17 @@ export async function uploadFileToStorage(
   // Формируем multipart/form-data вручную через Blob API (Node.js 18+)
   const formData = new FormData();
   formData.append("chat_id", storageChatId);
-  formData.append("document",
-    new Blob([buffer], { type: mimeType }),
-    fileName
-  );
+  formData.append("document", buffer, {
+    filename: fileName,
+    contentType: mimeType,
+  });
   if (caption) formData.append("caption", caption);
 
-  const res  = await tgFetch(`${getTG()}/sendDocument`, { method: "POST", body: formData });
+  const res  = await tgFetch(`${getTG()}/sendDocument`, {
+    method: "POST",
+    headers: formData.getHeaders() as any,
+    body: formData as any,
+  });
   const data: any = await res.json();
   if (!data.ok) throw new Error(`Telegram API error: ${data.description}`);
 

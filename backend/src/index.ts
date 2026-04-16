@@ -146,10 +146,8 @@ declare module "fastify" {
 
 async function start() {
   try {
-    if (config.bot.proxyUrl && /^https?:\/\//i.test(config.bot.proxyUrl)) {
+    if (config.bot.proxyUrl) {
       console.log(`Telegram proxy enabled: ${maskEndpoint(config.bot.proxyUrl)}`);
-    } else if (config.bot.proxyUrl) {
-      console.log("Telegram proxy is set but backend supports only http/https proxy URLs");
     }
     await ensureSchema();
 
