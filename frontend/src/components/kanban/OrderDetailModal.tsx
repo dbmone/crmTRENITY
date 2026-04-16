@@ -10,6 +10,7 @@ import * as api from "../../api/client";
 const STAGE_ORDER: StageName[] = ["STORYBOARD", "ANIMATION", "EDITING", "REVIEW", "COMPLETED"];
 
 const FILE_TYPE_LABELS: Record<string, string> = { tz: "ТЗ", contract: "Договор", storyboard: "Раскадровка", video: "Видео", other: "Другое" };
+const NON_TZ_FILE_TYPE_LABELS: Record<string, string> = { contract: "Договор", storyboard: "Раскадровка", video: "Видео", other: "Другое" };
 const FILE_TYPE_COLORS: Record<string, string> = { tz: "text-blue-400 bg-blue-400/10", contract: "text-purple-400 bg-purple-400/10", storyboard: "text-amber-400 bg-amber-400/10", video: "text-green-400 bg-green-400/10", other: "text-ink-tertiary bg-bg-raised" };
 
 type Tab = "stages" | "tz" | "files" | "reports" | "comments";
@@ -42,7 +43,8 @@ export default function OrderDetailModal({ order, onClose }: Props) {
 
   // Files
   const [uploadingFile,    setUploadingFile]    = useState(false);
-  const [selectedFileType, setSelectedFileType] = useState("other");
+  const [selectedFileType, setSelectedFileType] = useState("all"); // "all" = фильтр без загрузки
+  const [uploadFileType,   setUploadFileType]   = useState("other");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Reports
@@ -61,6 +63,7 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   const [uploadingTzFile, setUploadingTzFile] = useState(false);
   // STT placeholder state
   const [recording,    setRecording]    = useState(false);
+  const [sendingTzToTg, setSendingTzToTg] = useState(false);
 
   const handleEditFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
@@ -146,7 +149,7 @@ export default function OrderDetailModal({ order, onClose }: Props) {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
     setUploadingFile(true);
-    try { await api.uploadFile(o.id, file, selectedFileType); await loadOrder(); }
+    try { await api.uploadFile(o.id, file, uploadFileType); await loadOrder(); }
     catch (err: any) { alert(err.response?.data?.error || "Ошибка загрузки"); }
     setUploadingFile(false); e.target.value = "";
   };
@@ -167,8 +170,11 @@ export default function OrderDetailModal({ order, onClose }: Props) {
     setSendingReport(false);
   };
 
-  const tzItems  = o.files?.filter(f => f.fileType === "TZ" || f.mimeType === "text/plain") ?? [];
+  const tzItems    = o.files?.filter(f => f.fileType === "TZ" || f.mimeType === "text/plain") ?? [];
   const nonTzFiles = o.files?.filter(f => f.fileType !== "TZ" && f.mimeType !== "text/plain") ?? [];
+  const filteredFiles = selectedFileType === "all"
+    ? nonTzFiles
+    : nonTzFiles.filter(f => (f.fileType ?? "other").toLowerCase() === selectedFileType);
 
   const tabs: { id: Tab; label: string; count?: number }[] = [
     { id: "stages",   label: "Этапы" },
@@ -430,35 +436,69 @@ export default function OrderDetailModal({ order, onClose }: Props) {
                   ))}
                 </div>
               )}
+
+              {/* Кнопка — получить всё ТЗ в Telegram */}
+              {(tzItems.length > 0 || o.description) && (
+                <button
+                  onClick={async () => {
+                    setSendingTzToTg(true);
+                    try {
+                      for (const f of tzItems) {
+                        await api.sendFileToTelegram(f.id);
+                      }
+                      alert(`ТЗ отправлено в ваш Telegram (${tzItems.length} эл.)`);
+                    } catch (e: any) {
+                      alert(e.response?.data?.error || e.response?.data?.message || "Ошибка отправки");
+                    }
+                    setSendingTzToTg(false);
+                  }}
+                  disabled={sendingTzToTg || tzItems.length === 0}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-[#229ED9]/30 text-[#229ED9] text-sm hover:bg-[#229ED9]/10 disabled:opacity-40 transition-colors">
+                  {sendingTzToTg
+                    ? <div className="w-4 h-4 border-2 border-[#229ED9]/30 border-t-[#229ED9] rounded-full animate-spin" />
+                    : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
+                  }
+                  Получить всё ТЗ в Telegram
+                </button>
+              )}
             </div>
           )}
 
           {/* FILES */}
           {tab === "files" && (
             <div>
-              {isParticipant && (
-                <div className="flex items-center gap-2 mb-4">
-                  <select value={selectedFileType} onChange={(e) => setSelectedFileType(e.target.value)}
-                    className="text-sm px-3 py-2 rounded-lg border border-bg-border bg-bg-raised text-ink-primary outline-none">
-                    {Object.entries(FILE_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </select>
-                  <button onClick={() => fileInputRef.current?.click()} disabled={uploadingFile}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500 text-black text-sm font-bold hover:bg-green-400 disabled:opacity-50 transition-colors">
-                    {uploadingFile ? <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" /> : <Upload size={14} />}
-                    {uploadingFile ? "Загружаю..." : "Загрузить"}
-                  </button>
-                  <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} />
-                </div>
-              )}
+              <div className="flex items-center gap-2 mb-4 flex-wrap">
+                {/* Фильтр по типу */}
+                <select value={selectedFileType} onChange={(e) => setSelectedFileType(e.target.value)}
+                  className="text-sm px-3 py-2 rounded-lg border border-bg-border bg-bg-raised text-ink-primary outline-none flex-1 min-w-0">
+                  <option value="all">Все типы</option>
+                  {Object.entries(NON_TZ_FILE_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+                {isParticipant && (
+                  <>
+                    {/* Тип для загрузки */}
+                    <select value={uploadFileType} onChange={(e) => setUploadFileType(e.target.value)}
+                      className="text-sm px-3 py-2 rounded-lg border border-bg-border bg-bg-raised text-ink-primary outline-none">
+                      {Object.entries(NON_TZ_FILE_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                    <button onClick={() => fileInputRef.current?.click()} disabled={uploadingFile}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500 text-black text-sm font-bold hover:bg-green-400 disabled:opacity-50 transition-colors">
+                      {uploadingFile ? <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" /> : <Upload size={14} />}
+                      {uploadingFile ? "Загружаю..." : "Загрузить"}
+                    </button>
+                    <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} />
+                  </>
+                )}
+              </div>
 
-              {nonTzFiles.length === 0 ? (
+              {filteredFiles.length === 0 ? (
                 <div className="text-center py-10 text-ink-tertiary">
                   <Paperclip size={28} className="mx-auto mb-2 opacity-20" />
                   <p className="text-sm">Файлов нет</p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {nonTzFiles.map((f) => (
+                  {filteredFiles.map((f) => (
                     <FileRow
                       key={f.id}
                       file={f}

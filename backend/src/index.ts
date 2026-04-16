@@ -37,10 +37,20 @@ async function ensureSchema() {
         ADD COLUMN IF NOT EXISTS "client_approved_at"       TIMESTAMP(3)
     `);
 
-    // 2. Удалить старый уникальный индекс (order_id, name) если есть
+    // 2. Удалить ВСЕ старые unique-constraints на order_stages кроме нужного
     await prisma.$executeRawUnsafe(`
-      ALTER TABLE "order_stages"
-        DROP CONSTRAINT IF EXISTS "order_stages_order_id_name_key"
+      DO $$
+      DECLARE cname text;
+      BEGIN
+        FOR cname IN
+          SELECT conname FROM pg_constraint
+          WHERE conrelid = 'order_stages'::regclass
+            AND contype = 'u'
+            AND conname != 'order_stages_order_id_name_revision_round_key'
+        LOOP
+          EXECUTE 'ALTER TABLE "order_stages" DROP CONSTRAINT IF EXISTS "' || cname || '"';
+        END LOOP;
+      END $$
     `);
 
     // 3. Создать новый индекс (order_id, name, revision_round) если нет

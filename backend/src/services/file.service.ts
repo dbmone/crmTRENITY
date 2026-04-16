@@ -159,7 +159,10 @@ export async function getDownloadUrl(fileId: string): Promise<string> {
 export async function sendFileToUserTelegram(fileId: string, userId: string): Promise<void> {
   const file = await prisma.orderFile.findUnique({
     where: { id: fileId },
-    include: { order: { select: { title: true } } },
+    include: {
+      order:      { select: { title: true } },
+      uploadedBy: { select: { displayName: true, telegramUsername: true } },
+    },
   });
   if (!file) throw { statusCode: 404, message: "Файл не найден" };
 
@@ -168,28 +171,40 @@ export async function sendFileToUserTelegram(fileId: string, userId: string): Pr
     throw { statusCode: 400, message: "Чат с ботом не найден. Напишите боту /start." };
   }
 
+  const orderTitle   = (file as any).order?.title || file.orderId;
+  const uploaderName = (file as any).uploadedBy?.displayName
+    || (file as any).uploadedBy?.telegramUsername
+    || "неизвестно";
+
+  const { sendMessageToUser } = await import("./telegram.service");
+
+  if (file.mimeType === "text/plain" && !file.telegramChatId && !file.telegramMsgId) {
+    // Текстовая заметка ТЗ, добавленная с сайта — шлём текстом
+    await sendMessageToUser(
+      user.chatId.toString(),
+      `📋 Заказ: *${orderTitle}*\n👤 От: ${uploaderName}\n\n${file.fileName}`
+    );
+    return;
+  }
+
   if (file.telegramChatId && file.telegramMsgId) {
     // Файл в TG-хранилище — сначала подпись, потом сам файл
-    const { sendMessageToUser } = await import("./telegram.service");
-    const orderTitle = (file as any).order?.title || file.orderId;
     const isText = file.mimeType === "text/plain";
     if (!isText) {
       await sendMessageToUser(
         user.chatId.toString(),
-        `📋 Заказ: *${orderTitle}*\n📎 ${file.fileName}`
+        `📋 Заказ: *${orderTitle}*\n👤 От: ${uploaderName}\n📎 ${file.fileName}`
       );
     }
     await forwardFileToUser(user.chatId.toString(), file.telegramChatId, file.telegramMsgId);
   } else if (file.storagePath) {
-    // Файл в S3 — скачиваем и отправляем в TG
+    // Файл в S3 — шлём presigned-ссылку
     const client = getS3Client();
     const command = new GetObjectCommand({ Bucket: config.minio.bucket, Key: file.storagePath });
     const presigned = await getSignedUrl(client, command, { expiresIn: 300 });
-    // Отправим ссылку в TG если не можем скачать
-    const { sendMessageToUser } = await import("./telegram.service");
     await sendMessageToUser(
       user.chatId.toString(),
-      `📎 *${file.fileName}*\n\nСкачать: [ссылка](${presigned})\n_Ссылка действует 5 минут_`
+      `📋 Заказ: *${orderTitle}*\n👤 От: ${uploaderName}\n📎 *${file.fileName}*\n\nСкачать: [ссылка](${presigned})\n_Ссылка действует 5 минут_`
     );
   } else {
     throw { statusCode: 500, message: "Файл недоступен" };
