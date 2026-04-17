@@ -135,5 +135,5 @@ jobs:
               fi
             done
 
-            # start with new images, keep postgres/g4f running
-            docker compose $ENV_FILE up -d --no-build --no-deps --force-recreate backend bot frontend
+            # start with new images (compose handles dependency order: backend healthy → bot)
+            docker compose $ENV_FILE up -d --no-build --force-recreate backend bot frontend
