@@ -88,6 +88,13 @@ export async function uploadFile(
   return uploadFileViaS3(orderId, uploadedById, fileType, fileName, fileBuffer, mimeType);
 }
 
+const TG_BOT_API_MAX_BYTES = 49 * 1024 * 1024; // ~49 MB — public Telegram Bot API limit
+
+function canUseLargeTelegramUploads(): boolean {
+  const normalizedBotApiBase = config.bot.apiBaseUrl.replace(/\/+$/, "");
+  return isTelegramUserbotEnabled() || normalizedBotApiBase !== "https://api.telegram.org";
+}
+
 async function uploadFileViaTelegram(
   orderId: string,
   uploadedById: string,
@@ -96,6 +103,17 @@ async function uploadFileViaTelegram(
   fileBuffer: Buffer,
   mimeType: string
 ) {
+  // Если нет userbot/локального Bot API, публичный Telegram Bot API большие файлы не примет.
+  if (!canUseLargeTelegramUploads() && fileBuffer.length > TG_BOT_API_MAX_BYTES) {
+    const mb = Math.round(fileBuffer.length / 1024 / 1024);
+    throw Object.assign(
+      new Error(
+        `file is too big (${mb} МБ). Без TELEGRAM_USERBOT_* или локального TELEGRAM_BOT_API_BASE_URL Telegram принимает файлы только до 49 МБ.`
+      ),
+      { statusCode: 413 }
+    );
+  }
+
   const [order, uploader] = await Promise.all([
     prisma.order.findUnique({ where: { id: orderId }, select: { title: true } }),
     prisma.user.findUnique({ where: { id: uploadedById }, select: { displayName: true, telegramUsername: true } }),

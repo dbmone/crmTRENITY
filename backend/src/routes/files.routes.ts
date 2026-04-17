@@ -114,6 +114,12 @@ export async function filesRoutes(app: FastifyInstance) {
       return reply.status(201).send(file);
     } catch (err: any) {
       const msg: string = err.message || "";
+      if (err.statusCode === 413) {
+        return reply.status(413).send({
+          error:
+            "Файл слишком большой для текущего Telegram-хранилища. Без TELEGRAM_USERBOT_* или локального TELEGRAM_BOT_API_BASE_URL проходят файлы только до ~49 МБ.",
+        });
+      }
       if (msg.includes("file is too big")) {
         return reply.status(413).send({ error: "Файл слишком большой для Telegram (макс. ~50 МБ). Используйте файлы меньшего размера." });
       }

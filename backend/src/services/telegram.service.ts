@@ -93,11 +93,20 @@ export async function uploadFileToStorage(
     });
     if (caption) formData.append("caption", caption);
 
-    const res  = await tgFetch(`${getTG()}/sendDocument`, {
-      method: "POST",
-      headers: formData.getHeaders() as any,
-      body: formData as any,
-    });
+    // Таймаут 3 мин для больших файлов; если TG не ответит — бросаем ошибку
+    const abortCtrl = new AbortController();
+    const timeoutId = setTimeout(() => abortCtrl.abort(), 3 * 60 * 1000);
+    let res: any;
+    try {
+      res = await tgFetch(`${getTG()}/sendDocument`, {
+        method: "POST",
+        headers: formData.getHeaders() as any,
+        body: formData as any,
+        signal: abortCtrl.signal as any,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
     const data: any = await res.json();
     if (!data.ok) throw new Error(`Telegram API error: ${data.description}`);
 
