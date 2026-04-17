@@ -315,9 +315,9 @@ export default function TourOverlay() {
           </div>
         )}
 
-        {!targetFound && step.hint && (
+        {!targetFound && step.target && (
           <div className="mb-4 rounded-2xl border border-amber-400/20 bg-amber-400/8 p-3 text-sm leading-5 text-amber-200">
-            {step.hint}
+            {step.hint ?? "Элемент ещё не виден на экране — подсветка недоступна. Читай описание и нажимай «Далее»."}
           </div>
         )}
 

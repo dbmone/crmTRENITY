@@ -212,19 +212,19 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-bg-border bg-bg-surface">
-      <div className="mx-auto grid max-w-screen-2xl grid-cols-[auto_1fr_auto] items-center px-4 py-3 sm:px-6">
-        {/* Left — logo */}
-        <button type="button" onClick={() => navigate("/")} className="flex flex-shrink-0 items-center">
+      <div className="relative mx-auto flex max-w-screen-2xl items-center justify-between px-4 py-3 sm:px-6">
+        {/* Left — logo (always visible) */}
+        <button type="button" onClick={() => navigate("/")} className="relative z-10 flex flex-shrink-0 items-center">
           <span className="font-bold tracking-tight text-ink-primary">
             TRENITY <span className="text-green-500">CRM</span>
           </span>
         </button>
 
-        {/* Center — nav (only on md+) */}
-        <div className="hidden justify-center md:flex">
+        {/* Center — nav absolutely centered on desktop */}
+        <div className="pointer-events-none absolute inset-x-0 hidden justify-center md:flex">
           <nav
             ref={navRef}
-            className="relative flex items-center gap-1 rounded-xl border border-bg-border/80 bg-bg-surface/95 px-2 py-1 backdrop-blur-sm"
+            className="pointer-events-auto relative flex items-center gap-1 rounded-xl border border-bg-border/80 bg-bg-surface/95 px-2 py-1 backdrop-blur-sm"
           >
             <span
               aria-hidden="true"
@@ -238,11 +238,9 @@ export default function Header() {
             {navItems.map((item) => renderNavButton(item))}
           </nav>
         </div>
-        {/* On mobile the center column is empty — hamburger is in the right column */}
-        <div className="md:hidden" />
 
         {user && (
-          <div className="flex flex-shrink-0 items-center justify-end gap-1.5 sm:gap-2">
+          <div className="relative z-10 flex flex-shrink-0 items-center justify-end gap-1.5 sm:gap-2">
             <span className={`hidden rounded-full px-2 py-1 text-xs font-medium sm:inline ${ROLE_COLORS[user.role] || "bg-bg-hover text-ink-secondary"}`}>
               {ROLE_LABELS[user.role] || user.role}
             </span>
