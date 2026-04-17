@@ -177,16 +177,18 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-bg-border bg-bg-surface">
-      <div className="mx-auto flex max-w-screen-2xl items-center gap-3 px-4 py-3 sm:px-6">
+      <div className="relative mx-auto flex max-w-screen-2xl items-center gap-3 px-4 py-3 sm:px-6">
         <button type="button" onClick={() => navigate("/")} className="flex flex-shrink-0 items-center">
           <span className="font-bold tracking-tight text-ink-primary">
             TRENITY <span className="text-green-500">CRM</span>
           </span>
         </button>
 
-        <nav className="ml-2 hidden items-center gap-1 md:flex">
-          {navItems.map((item) => renderNavButton(item))}
-        </nav>
+        <div className="pointer-events-none absolute inset-x-0 hidden justify-center md:flex">
+          <nav className="pointer-events-auto flex items-center gap-1 rounded-xl border border-bg-border/80 bg-bg-surface/90 px-2 py-1 backdrop-blur-sm">
+            {navItems.map((item) => renderNavButton(item))}
+          </nav>
+        </div>
 
         {user && (
           <div className="ml-auto flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
