@@ -25,6 +25,18 @@ export async function tasksRoutes(app: FastifyInstance) {
     }
   });
 
+  // POST /api/tasks/text-structure-tz — AI структурирование текста в ТЗ без orderId
+  app.post<{ Body: { text: string } }>("/text-structure-tz", async (req, reply) => {
+    const { text } = req.body;
+    if (!text?.trim()) return reply.status(400).send({ error: "Текст не может быть пустым" });
+    try {
+      const structured = await structureToTz(text.trim());
+      return { text: structured };
+    } catch (err: any) {
+      return reply.status(err.statusCode || 500).send({ error: err.message });
+    }
+  });
+
   // POST /api/tasks/voice-structure-tz — STT + AI структурирование ТЗ без orderId
   app.post("/voice-structure-tz", async (req, reply) => {
     const data = await req.file();

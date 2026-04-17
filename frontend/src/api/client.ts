@@ -435,6 +435,16 @@ export async function voiceStructureTzStandalone(blob: Blob, ext: string): Promi
   return data;
 }
 
+export async function textStructureTzStandalone(text: string): Promise<{ text: string }> {
+  const { data } = await api.post("/tasks/text-structure-tz", { text });
+  return data;
+}
+
+export async function textStructureToTz(orderId: string, text: string): Promise<{ text: string }> {
+  const { data } = await api.post(`/orders/${orderId}/files/tz-text-structure`, { text });
+  return data;
+}
+
 export async function voiceStructureToTz(orderId: string, blob: Blob, ext: string): Promise<{ text: string; rawText: string }> {
   const form = new FormData();
   form.append("audio", blob, `voice.${ext}`);

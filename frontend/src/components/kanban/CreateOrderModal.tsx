@@ -48,6 +48,7 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
   const [uploadItems, setUploadItems] = useState<UploadItem[]>([]);
   const [error, setError] = useState("");
   const [voiceMode, setVoiceMode] = useState<"idle" | "recording-text" | "recording-tz" | "processing-text" | "processing-tz">("idle");
+  const [structuringText, setStructuringText] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadAbortRef = useRef<AbortController | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -176,6 +177,20 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
       setVoiceMode(mode === "text" ? "recording-text" : "recording-tz");
     } catch {
       setError("Нет доступа к микрофону");
+    }
+  };
+
+  const structureDescriptionAsTz = async () => {
+    if (!description.trim() || structuringText) return;
+    setStructuringText(true);
+    setError("");
+    try {
+      const { text } = await api.textStructureTzStandalone(description.trim());
+      setDescription(text);
+    } catch (err: any) {
+      setError(err.response?.data?.error || "Ошибка AI-структурирования");
+    } finally {
+      setStructuringText(false);
     }
   };
 
@@ -309,6 +324,20 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
                 >
                   {voiceMode === "recording-tz" ? <Square size={10} /> : voiceMode === "processing-tz" ? <span className="h-2.5 w-2.5 animate-spin rounded-full border border-purple-400 border-t-transparent" /> : <Sparkles size={10} />}
                   {voiceMode === "recording-tz" ? "Стоп" : voiceMode === "processing-tz" ? "AI..." : "Голос→ТЗ"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void structureDescriptionAsTz()}
+                  disabled={!description.trim() || structuringText || voiceMode !== "idle"}
+                  title="Структурировать введённый текст как ТЗ через AI"
+                  className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition-colors ${
+                    structuringText
+                      ? "border-green-400/30 bg-green-400/8 text-green-400"
+                      : "border-bg-border text-ink-secondary hover:bg-bg-raised"
+                  } disabled:opacity-40`}
+                >
+                  {structuringText ? <span className="h-2.5 w-2.5 animate-spin rounded-full border border-green-400 border-t-transparent" /> : <Sparkles size={10} />}
+                  {structuringText ? "AI..." : "Текст→ТЗ"}
                 </button>
               </div>
             </div>

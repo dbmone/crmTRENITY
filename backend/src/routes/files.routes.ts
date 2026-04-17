@@ -57,6 +57,17 @@ export async function filesRoutes(app: FastifyInstance) {
     }
   });
 
+  app.post<{ Params: { orderId: string }; Body: { text: string } }>("/tz-text-structure", async (req, reply) => {
+    const { text } = req.body;
+    if (!text?.trim()) return reply.status(400).send({ error: "Текст не может быть пустым" });
+    try {
+      const structured = await structureToTz(text.trim());
+      return { text: structured };
+    } catch (err: any) {
+      return reply.status(err.statusCode || 500).send({ error: err.message });
+    }
+  });
+
   app.post<{ Params: { orderId: string } }>("/tz-voice-structure", async (req, reply) => {
     const data = await req.file();
     if (!data) return reply.status(400).send({ error: "Аудиофайл не прикреплён" });

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Clock, Paperclip, Download, Trash2, Upload, Send, MessageSquare, FileText, Edit2, Check, Calendar, ArchiveRestore, RotateCcw, Plus, ChevronDown, ChevronRight } from "lucide-react";
+import { X, Clock, Paperclip, Download, Trash2, Upload, Send, MessageSquare, FileText, Edit2, Check, Calendar, ArchiveRestore, RotateCcw, Plus, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { Order, STAGE_LABELS, StageName, User, OrderComment, OrderFile, OrderStage } from "../../types";
 import StageProgress from "../order/StageProgress";
 import { useAuthStore } from "../../store/auth.store";
@@ -219,6 +219,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
   const [voicePreview,    setVoicePreview]    = useState<string | null>(null);
   const [savingVoiceNote, setSavingVoiceNote] = useState(false);
   const [sendingTzToTg,   setSendingTzToTg]   = useState(false);
+  const [tzTextStructuring, setTzTextStructuring] = useState(false);
   // Voice → TZ structuring preview
   const [tzAiRecording,   setTzAiRecording]   = useState(false);
   const [tzAiStructuring, setTzAiStructuring] = useState(false);
@@ -448,6 +449,19 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
   const cancelEditUpload = () => editUploadAbortRef.current?.abort();
   const cancelTzUpload = () => tzUploadAbortRef.current?.abort();
   const cancelFilesUpload = () => fileUploadAbortRef.current?.abort();
+
+  const handleStructureTzText = async () => {
+    if (!tzText.trim() || tzTextStructuring) return;
+    setTzTextStructuring(true);
+    try {
+      const { text } = await api.textStructureToTz(o.id, tzText.trim());
+      setTzText(text);
+    } catch (e: any) {
+      alert(e.response?.data?.error || "Ошибка AI-структурирования");
+    } finally {
+      setTzTextStructuring(false);
+    }
+  };
 
   const handleSavePrimaryTz = async () => {
     if (!tzText.trim()) return;
@@ -931,6 +945,21 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
                         title="Записать голосовое — текст появится в поле выше"
                         className="flex items-center gap-2 px-3 py-2 rounded-lg border border-bg-border text-ink-secondary text-sm hover:border-red-500/30 hover:text-red-400 transition-colors">
                         🎙 Голос
+                      </button>
+                    )}
+                    {/* Текст → Структурированное ТЗ через LLM */}
+                    {tzTextStructuring ? (
+                      <button disabled className="flex items-center gap-2 px-3 py-2 rounded-lg border border-green-500/20 text-green-400 text-sm opacity-70">
+                        <div className="w-3 h-3 border-2 border-green-400/30 border-t-green-400 rounded-full animate-spin" />
+                        AI думает...
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => void handleStructureTzText()}
+                        disabled={!tzText.trim()}
+                        title="Структурировать введённый текст как ТЗ через AI"
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-green-500/30 text-green-400 text-sm hover:bg-green-500/10 disabled:opacity-40 transition-colors">
+                        <Sparkles size={13} /> Текст→ТЗ
                       </button>
                     )}
                     {/* Голос → Структурированное ТЗ через LLM */}

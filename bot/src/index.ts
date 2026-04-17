@@ -785,6 +785,7 @@ bot.callbackQuery(/^ord_tz_(.+)$/, async (ctx) => {
   const kb = new InlineKeyboard()
     .text("🎙 AI из голоса", `ord_tzvoice_${order.id}`)
     .text("📝 Текст в ТЗ", `ord_tztext_${order.id}`).row()
+    .text("✍️ Текст → AI ТЗ", `ord_tztext_ai_${order.id}`).row()
     .text("📎 Файл в ТЗ", `ord_tzadd_${order.id}`)
     .text("📨 Отправить всё ТЗ", `ord_tzsend_${order.id}`);
   for (const file of tzFiles.slice(0, 8)) {
@@ -858,6 +859,17 @@ bot.callbackQuery(/^ord_file_(.+)$/, async (ctx) => {
   if (!file) { await ctx.answerCallbackQuery("Файл не найден"); return; }
   const sent = await sendOrderFileToChat(ctx.chat!.id, file);
   await ctx.answerCallbackQuery(sent ? "Файл отправлен" : "Не удалось отправить");
+});
+
+bot.callbackQuery(/^ord_tztext_ai_(.+)$/, async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  const order = await fetchOrderForBot(ctx.match![1]);
+  if (!user || !order || !canUploadToOrder(user, order)) { await ctx.answerCallbackQuery("No access"); return; }
+  waitingForTzTextAi.set(ctx.from!.id, order.id);
+  await ctx.answerCallbackQuery();
+  await replyOrEdit(ctx, `✍️ Пришлите текст — AI структурирует его в готовое ТЗ для «${order.title}».`, {
+    reply_markup: new InlineKeyboard().text("🔙 К заказу", `ord_open_${order.id}`),
+  });
 });
 
 bot.callbackQuery(/^ord_tztext_(.+)$/, async (ctx) => {
@@ -1152,6 +1164,7 @@ const waitingForSubtaskForTask = new Map<number, string>();
 const waitingForOrderComment = new Map<number, string>();
 const waitingForTzNote = new Map<number, string>();
 const waitingForTzVoice = new Map<number, string>();
+const waitingForTzTextAi = new Map<number, string>(); // userId → orderId
 const waitingForCollectVoiceText = new Set<number>();
 const waitingForCollectVoiceAi = new Set<number>();
 const taskVoiceDraft = new Map<number, {
@@ -1335,6 +1348,7 @@ function clearInteractiveState(userId: number) {
   waitingForOrderComment.delete(userId);
   waitingForTzNote.delete(userId);
   waitingForTzVoice.delete(userId);
+  waitingForTzTextAi.delete(userId);
   waitingForCollectVoiceText.delete(userId);
   waitingForCollectVoiceAi.delete(userId);
   taskVoiceDraft.delete(userId);
@@ -2272,6 +2286,15 @@ async function parseVoiceToTzDraft(fileId: string): Promise<{ text: string; rawT
   };
 }
 
+async function structureTextToTzBot(rawText: string): Promise<string | null> {
+  const promptTemplate = (await getAppSettingValue("tz_structure_prompt")) ?? DEFAULT_TZ_PROMPT;
+  const prompt = promptTemplate.replace("{{TEXT}}", rawText);
+  return callTextAi(
+    prompt,
+    "Ты помощник по созданию технических заданий. Отвечай только структурированным текстом на русском языке, без JSON и без лишних вводных слов."
+  );
+}
+
 // Батч-сбор ТЗ / файлов
 interface CollectedItem {
   fileName: string;
@@ -2299,6 +2322,8 @@ function collectingKeyboard(options?: { tzVoice?: boolean }): InlineKeyboard {
   if (options?.tzVoice) {
     kb.text("🎙 Голос → текст", "collect_voice_text")
       .text("🪄 AI из голоса", "collect_voice_ai")
+      .row()
+      .text("✍️ Текст → AI ТЗ", "collect_text_ai")
       .row();
   }
   return kb
@@ -2378,6 +2403,20 @@ bot.callbackQuery("collect_voice_ai", async (ctx) => {
   await replyOrEdit(ctx, "🪄 Отправьте голосовое. AI соберёт из него аккуратное ТЗ и добавит к материалам.", {
     reply_markup: collectingKeyboard({ tzVoice: true }),
   });
+});
+
+bot.callbackQuery("collect_text_ai", async (ctx) => {
+  const state = collectingState.get(ctx.from!.id);
+  if (!isTzCollectingState(state)) {
+    await ctx.answerCallbackQuery("Нет активного ТЗ");
+    return;
+  }
+  await ctx.answerCallbackQuery();
+  await replyOrEdit(ctx, "✍️ Напишите текст — AI оформит его как структурированное ТЗ и добавит к материалам.", {
+    reply_markup: collectingKeyboard({ tzVoice: true }),
+  });
+  // We'll handle the next text message via a special flag in the collecting state
+  (state as any)._awaitingTextAi = true;
 });
 
 bot.callbackQuery("tz_done", async (ctx) => {
@@ -2760,6 +2799,48 @@ bot.on("message:text", async (ctx, next) => {
     return;
   }
 
+  if (waitingForTzTextAi.has(userId)) {
+    const text = ctx.message.text.trim();
+    if (!text) { await ctx.reply("❌ Текст не может быть пустым."); return; }
+    const orderId = waitingForTzTextAi.get(userId)!;
+    waitingForTzTextAi.delete(userId);
+    const user = await prisma.user.findUnique({ where: { telegramId: BigInt(userId) } });
+    if (!user) return;
+    await replyOrEdit(ctx, "⏳ AI структурирует текст в ТЗ...", {
+      reply_markup: new InlineKeyboard().text("🔙 К заказу", `ord_open_${orderId}`),
+    });
+    const structured = await structureTextToTzBot(text);
+    const finalText = structured || text;
+    await prisma.orderFile.create({
+      data: {
+        orderId,
+        uploadedById: user.id,
+        fileType: "TZ",
+        fileName: finalText.slice(0, 4000),
+        fileSize: BigInt(Buffer.byteLength(finalText, "utf8")),
+        mimeType: "text/plain",
+        storagePath: "",
+        telegramFileId: null,
+        telegramChatId: null,
+        telegramMsgId: null,
+      },
+    });
+    await mirrorTextToOrderGroup(orderId, `🪄 ТЗ (AI) от *${esc(user.displayName)}*\n${esc(finalText.slice(0, 500))}`);
+    const order = await fetchOrderForBot(orderId);
+    if (!order) { await ctx.reply("✅ AI-ТЗ сохранено."); return; }
+    const tzFiles = getTzFiles(order);
+    await replyOrEdit(ctx, buildOrderFilesText(order, tzFiles, "📋 *ТЗ*", "Материалов ТЗ пока нет."), {
+      parse_mode: "Markdown",
+      reply_markup: buildOrderFilesKeyboard(
+        order.id, tzFiles,
+        `ord_tzadd_${order.id}`,
+        `ord_open_${order.id}`,
+        { text: "📨 Отправить всё ТЗ", callback: `ord_tzsend_${order.id}` }
+      ),
+    });
+    return;
+  }
+
   if (waitingForOrderTitle.has(userId)) {
     const title = ctx.message.text.trim();
     if (title.length < 2 || title.length > 100) {
@@ -2787,18 +2868,41 @@ bot.on("message:text", async (ctx, next) => {
     return;
   }
 
-  // Батч-сбор: текстовое сообщение → пересылаем в хранилище
+  // Батч-сбор: текстовое сообщение
   if (collectingState.has(userId)) {
     const state = collectingState.get(userId)!;
+    const rawText = ctx.message.text.trim();
+
+    // Режим "текст → AI ТЗ"
+    if ((state as any)._awaitingTextAi) {
+      delete (state as any)._awaitingTextAi;
+      await replyOrEdit(ctx, "⏳ AI структурирует текст...", {
+        reply_markup: collectingKeyboard({ tzVoice: isTzCollectingState(state) }),
+      });
+      const structured = await structureTextToTzBot(rawText);
+      const finalText = structured || rawText;
+      state.items.push({
+        fileName: finalText.slice(0, 4000),
+        fileSize: 0,
+        mimeType: "text/plain",
+      });
+      await replyOrEdit(
+        ctx,
+        `🪄 AI-ТЗ добавлено (${state.items.length} эл.). Продолжайте или нажмите Готово:`,
+        { reply_markup: collectingKeyboard({ tzVoice: isTzCollectingState(state) }) }
+      );
+      return;
+    }
+
+    // Обычный текст → пересылаем в хранилище
     if (!STORAGE_CHAT_ID) {
       await ctx.reply("❌ Хранилище Telegram не настроено.");
       return;
     }
     try {
       const fwd = await bot.api.forwardMessage(STORAGE_CHAT_ID, ctx.chat!.id, ctx.message!.message_id);
-      const text = ctx.message.text.trim();
       state.items.push({
-        fileName: text.slice(0, 500),
+        fileName: rawText.slice(0, 500),
         fileSize: 0,
         mimeType: "text/plain",
         storageMsgId: fwd.message_id,

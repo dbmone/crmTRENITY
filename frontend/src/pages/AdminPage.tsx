@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "../store/auth.store";
-import { Check, X, Shield, RefreshCw, UserX, Crown, Users, ChevronRight, Trash2, UserPlus, RotateCcw, Lock, Unlock, MoveHorizontal } from "lucide-react";
+import { Check, X, Shield, RefreshCw, UserX, Crown, Users, ChevronRight, ChevronDown, Trash2, UserPlus, RotateCcw, Lock, Unlock, MoveHorizontal, List, GitBranch, Search } from "lucide-react";
 import * as api from "../api/client";
 import { TOUR_STEPS } from "../data/tourSteps";
 import { useTourStore } from "../store/tour.store";
@@ -308,6 +308,8 @@ export default function AdminPage() {
             isAdmin={isAdmin}
             isHeadCreator={isHeadCreator}
             isHeadMark={isHeadMark}
+            isLeadCreator={user?.role === "LEAD_CREATOR"}
+            currentUserId={user?.id ?? ""}
             working={working}
             onAssignTeamLead={assignTeamLead}
           />
@@ -370,14 +372,21 @@ function UserRow2({ user, indent = 0, badge, assign }: {
   );
 }
 
-function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, working, onAssignTeamLead }: {
+function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, isLeadCreator, currentUserId, working, onAssignTeamLead }: {
   users: UserRow[];
   isAdmin: boolean;
   isHeadCreator: boolean;
   isHeadMark: boolean;
+  isLeadCreator: boolean;
+  currentUserId: string;
   working: string | null;
   onAssignTeamLead: (userId: string, teamLeadId: string | null) => void;
 }) {
+  const [viewMode, setViewMode] = useState<"tree" | "list">("tree");
+  const [search, setSearch] = useState("");
+  // collapsed HEAD node ids
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
   const byRole = (role: string) => users.filter((u) => u.role === role);
   const childrenOf = (parentId: string) => users.filter((u) => u.teamLeadId === parentId);
 
@@ -390,17 +399,23 @@ function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, working, onA
   const canMgCreators  = isAdmin || isHeadCreator;
   const canMgMarketers = isAdmin || isHeadMark;
 
-  // Creators not assigned to any lead
+  const toggleCollapse = (id: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  // Orphans
   const orphanCreators = creators.filter((c) => !c.teamLeadId || !leadCreators.some((l) => l.id === c.teamLeadId));
-  // Lead creators not assigned to any head
   const orphanLeads    = leadCreators.filter((l) => !l.teamLeadId || !headCreators.some((h) => h.id === l.teamLeadId));
-  // Marketers not assigned to any head
   const orphanMkts     = marketers.filter((m) => !m.teamLeadId || !headMarketers.some((h) => h.id === m.teamLeadId));
 
-  return (
-    <div className="space-y-5">
+  // ── TREE VIEW ────────────────────────────────────────────────────────────────
 
-      {/* ── CREATOR TREE ── */}
+  const TreeView = () => (
+    <div className="space-y-5">
+      {/* CREATOR TREE */}
       <div className="bg-bg-surface border border-bg-border rounded-card p-5">
         <h3 className="text-sm font-semibold text-ink-primary flex items-center gap-2 mb-3">
           <Users size={14} className="text-orange-400" /> Команда креаторов
@@ -410,58 +425,124 @@ function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, working, onA
           <p className="text-xs text-ink-tertiary py-3">Нет пользователей</p>
         )}
 
-        {/* Each HEAD_CREATOR → their LEAD_CREATORs → their CREATORs */}
         {headCreators.map((hc) => {
           const myLeads = childrenOf(hc.id).filter((u) => u.role === "LEAD_CREATOR");
+          const isOpen = !collapsed.has(hc.id);
           return (
             <div key={hc.id} className="mb-3 last:mb-0">
-              <UserRow2 user={hc} />
-              {myLeads.map((lc) => {
-                const myCreators = childrenOf(lc.id).filter((u) => u.role === "CREATOR");
-                return (
-                  <div key={lc.id}>
-                    <UserRow2
-                      user={lc}
-                      indent={1}
-                      assign={canMgCreators ? (
-                        <AssignSelect
-                          value={lc.teamLeadId || ""}
-                          options={headCreators}
-                          disabled={working === lc.id}
-                          placeholder="Без гл. креатора"
-                          onChange={(v) => onAssignTeamLead(lc.id, v)}
-                        />
-                      ) : undefined}
-                    />
-                    {myCreators.map((cr) => (
-                      <UserRow2
-                        key={cr.id}
-                        user={cr}
-                        indent={2}
-                        assign={canMgCreators ? (
-                          <AssignSelect
-                            value={cr.teamLeadId || ""}
-                            options={leadCreators}
-                            disabled={working === cr.id}
-                            placeholder="Без тимлида"
-                            onChange={(v) => onAssignTeamLead(cr.id, v)}
-                          />
-                        ) : undefined}
-                      />
-                    ))}
-                  </div>
-                );
-              })}
+              {/* HEAD row — clickable to collapse */}
+              <div
+                className="flex items-center gap-2 py-1.5 cursor-pointer group select-none"
+                onClick={() => toggleCollapse(hc.id)}
+              >
+                <span className="text-ink-tertiary group-hover:text-ink-secondary transition-colors">
+                  {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </span>
+                <div className="w-7 h-7 rounded-full bg-orange-400/15 border border-orange-400/30 flex items-center justify-center flex-shrink-0">
+                  <span className="text-[10px] font-bold text-orange-300">
+                    {hc.displayName.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)}
+                  </span>
+                </div>
+                <span className="text-sm font-semibold text-ink-primary">{hc.displayName}</span>
+                {hc.telegramUsername && (
+                  <a href={`https://t.me/${hc.telegramUsername}`} target="_blank" rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-xs text-ink-tertiary hover:text-green-400 transition-colors">
+                    @{hc.telegramUsername}
+                  </a>
+                )}
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 text-orange-400 bg-orange-400/10">
+                  Гл. креатор
+                </span>
+                <span className="ml-auto text-[11px] text-ink-tertiary">
+                  {myLeads.length} лид{myLeads.length !== 1 ? "а" : ""} · {myLeads.reduce((s, l) => s + childrenOf(l.id).filter((u) => u.role === "CREATOR").length, 0)} кр.
+                </span>
+              </div>
+
+              {isOpen && (
+                <div className="ml-5 border-l border-bg-border/60 pl-3 mt-1">
+                  {myLeads.map((lc) => {
+                    const myCreators = childrenOf(lc.id).filter((u) => u.role === "CREATOR");
+                    const isMyTeam = lc.id === currentUserId;
+                    const canEditThisLead = canMgCreators;
+                    // LEAD_CREATOR can manage creators in their own team
+                    const canEditCreatorsHere = canMgCreators || (isLeadCreator && lc.id === currentUserId);
+                    const isLeadOpen = !collapsed.has(lc.id);
+                    return (
+                      <div key={lc.id} className="mb-2 last:mb-0">
+                        <div
+                          className="flex items-center gap-2 py-1.5 cursor-pointer group select-none"
+                          onClick={() => myCreators.length > 0 && toggleCollapse(lc.id)}
+                        >
+                          {myCreators.length > 0 ? (
+                            <span className="text-ink-tertiary group-hover:text-ink-secondary transition-colors">
+                              {isLeadOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                            </span>
+                          ) : (
+                            <span className="w-3" />
+                          )}
+                          <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 border ${isMyTeam ? "bg-amber-400/15 border-amber-400/30" : "bg-bg-raised border-bg-border"}`}>
+                            <span className="text-[9px] font-bold text-ink-tertiary">
+                              {lc.displayName.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)}
+                            </span>
+                          </div>
+                          <span className="text-sm text-ink-primary">{lc.displayName}</span>
+                          {lc.telegramUsername && (
+                            <a href={`https://t.me/${lc.telegramUsername}`} target="_blank" rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-xs text-ink-tertiary hover:text-green-400 transition-colors">
+                              @{lc.telegramUsername}
+                            </a>
+                          )}
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 text-amber-400 bg-amber-400/10">
+                            Лид {myCreators.length > 0 ? `· ${myCreators.length}` : ""}
+                          </span>
+                          {canEditThisLead && (
+                            <AssignSelect
+                              value={lc.teamLeadId || ""}
+                              options={headCreators}
+                              disabled={working === lc.id}
+                              placeholder="Без гл. креатора"
+                              onChange={(v) => onAssignTeamLead(lc.id, v)}
+                            />
+                          )}
+                        </div>
+
+                        {isLeadOpen && myCreators.length > 0 && (
+                          <div className="ml-4 border-l border-bg-border/40 pl-3">
+                            {myCreators.map((cr) => (
+                              <UserRow2
+                                key={cr.id}
+                                user={cr}
+                                assign={canEditCreatorsHere ? (
+                                  <AssignSelect
+                                    value={cr.teamLeadId || ""}
+                                    options={leadCreators}
+                                    disabled={working === cr.id}
+                                    placeholder="Без тимлида"
+                                    onChange={(v) => onAssignTeamLead(cr.id, v)}
+                                  />
+                                ) : undefined}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           );
         })}
 
-        {/* Orphan lead creators (no HEAD_CREATOR assigned) */}
+        {/* Orphan leads */}
         {orphanLeads.length > 0 && (
           <div className="mt-3 pt-3 border-t border-bg-border/60">
             <p className="text-[10px] text-ink-tertiary uppercase tracking-wide mb-2">Тимлиды без главного</p>
             {orphanLeads.map((lc) => {
               const myCreators = childrenOf(lc.id).filter((u) => u.role === "CREATOR");
+              const canEditCreatorsHere = canMgCreators || (isLeadCreator && lc.id === currentUserId);
               return (
                 <div key={lc.id}>
                   <UserRow2
@@ -482,7 +563,7 @@ function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, working, onA
                       key={cr.id}
                       user={cr}
                       indent={2}
-                      assign={canMgCreators ? (
+                      assign={canEditCreatorsHere ? (
                         <AssignSelect
                           value={cr.teamLeadId || ""}
                           options={leadCreators}
@@ -499,7 +580,7 @@ function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, working, onA
           </div>
         )}
 
-        {/* Orphan creators (no lead assigned) */}
+        {/* Orphan creators */}
         {orphanCreators.length > 0 && (
           <div className="mt-3 pt-3 border-t border-bg-border/60">
             <p className="text-[10px] text-ink-tertiary uppercase tracking-wide mb-2">Креаторы без тимлида</p>
@@ -523,7 +604,7 @@ function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, working, onA
         )}
       </div>
 
-      {/* ── MARKETER TREE ── */}
+      {/* MARKETER TREE */}
       <div className="bg-bg-surface border border-bg-border rounded-card p-5">
         <h3 className="text-sm font-semibold text-ink-primary flex items-center gap-2 mb-3">
           <Users size={14} className="text-blue-400" /> Команда маркетологов
@@ -535,25 +616,54 @@ function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, working, onA
 
         {headMarketers.map((hm) => {
           const myMkts = childrenOf(hm.id).filter((u) => u.role === "MARKETER");
+          const isOpen = !collapsed.has(hm.id);
           return (
             <div key={hm.id} className="mb-3 last:mb-0">
-              <UserRow2 user={hm} />
-              {myMkts.map((m) => (
-                <UserRow2
-                  key={m.id}
-                  user={m}
-                  indent={1}
-                  assign={canMgMarketers ? (
-                    <AssignSelect
-                      value={m.teamLeadId || ""}
-                      options={headMarketers}
-                      disabled={working === m.id}
-                      placeholder="Без гл. маркетолога"
-                      onChange={(v) => onAssignTeamLead(m.id, v)}
+              <div
+                className="flex items-center gap-2 py-1.5 cursor-pointer group select-none"
+                onClick={() => toggleCollapse(hm.id)}
+              >
+                <span className="text-ink-tertiary group-hover:text-ink-secondary transition-colors">
+                  {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </span>
+                <div className="w-7 h-7 rounded-full bg-purple-400/15 border border-purple-400/30 flex items-center justify-center flex-shrink-0">
+                  <span className="text-[10px] font-bold text-purple-300">
+                    {hm.displayName.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)}
+                  </span>
+                </div>
+                <span className="text-sm font-semibold text-ink-primary">{hm.displayName}</span>
+                {hm.telegramUsername && (
+                  <a href={`https://t.me/${hm.telegramUsername}`} target="_blank" rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-xs text-ink-tertiary hover:text-green-400 transition-colors">
+                    @{hm.telegramUsername}
+                  </a>
+                )}
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 text-purple-400 bg-purple-400/10">
+                  Гл. маркетолог
+                </span>
+                <span className="ml-auto text-[11px] text-ink-tertiary">{myMkts.length} мкт.</span>
+              </div>
+
+              {isOpen && myMkts.length > 0 && (
+                <div className="ml-5 border-l border-bg-border/60 pl-3 mt-1">
+                  {myMkts.map((m) => (
+                    <UserRow2
+                      key={m.id}
+                      user={m}
+                      assign={canMgMarketers ? (
+                        <AssignSelect
+                          value={m.teamLeadId || ""}
+                          options={headMarketers}
+                          disabled={working === m.id}
+                          placeholder="Без гл. маркетолога"
+                          onChange={(v) => onAssignTeamLead(m.id, v)}
+                        />
+                      ) : undefined}
                     />
-                  ) : undefined}
-                />
-              ))}
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}
@@ -580,6 +690,121 @@ function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, working, onA
           </div>
         )}
       </div>
+    </div>
+  );
+
+  // ── LIST VIEW ────────────────────────────────────────────────────────────────
+
+  const nonAdminUsers = users.filter((u) => u.role !== "ADMIN");
+  const filteredUsers = search.trim()
+    ? nonAdminUsers.filter((u) =>
+        u.displayName.toLowerCase().includes(search.toLowerCase()) ||
+        (u.telegramUsername && u.telegramUsername.toLowerCase().includes(search.toLowerCase()))
+      )
+    : nonAdminUsers;
+
+  const ListView = () => (
+    <div className="bg-bg-surface border border-bg-border rounded-card p-5 space-y-3">
+      <div className="relative">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-tertiary pointer-events-none" />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Поиск по имени или @username..."
+          className="w-full pl-8 pr-3 py-2 text-sm bg-bg-raised border border-bg-border rounded-xl text-ink-primary placeholder-ink-tertiary outline-none focus:border-green-500/50 transition-colors"
+        />
+      </div>
+
+      {filteredUsers.length === 0 && (
+        <p className="text-xs text-ink-tertiary py-3 text-center">Никого не найдено</p>
+      )}
+
+      <div className="space-y-1">
+        {filteredUsers.map((u) => {
+          const isCreatorRole = u.role === "CREATOR";
+          const isLeadRole = u.role === "LEAD_CREATOR";
+          const isMktRole = u.role === "MARKETER";
+
+          const canEditCreatorsHere = canMgCreators || (isLeadCreator && u.teamLeadId === currentUserId);
+          const canEditThisUser =
+            (isCreatorRole && canEditCreatorsHere) ||
+            (isLeadRole && canMgCreators) ||
+            (isMktRole && canMgMarketers);
+
+          const assignOptions =
+            isCreatorRole ? leadCreators :
+            isLeadRole ? headCreators :
+            isMktRole ? headMarketers : [];
+
+          const assignPlaceholder =
+            isCreatorRole ? "Без тимлида" :
+            isLeadRole ? "Без гл. креатора" :
+            "Без гл. маркетолога";
+
+          return (
+            <div key={u.id} className="flex items-center gap-2 py-1.5 px-1 rounded-xl hover:bg-bg-raised/60 transition-colors">
+              <div className="w-7 h-7 rounded-full bg-bg-raised border border-bg-border flex items-center justify-center flex-shrink-0">
+                <span className="text-[10px] font-bold text-ink-tertiary">
+                  {u.displayName.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)}
+                </span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="text-sm text-ink-primary">{u.displayName}</span>
+                {u.telegramUsername && (
+                  <span className="ml-2 text-xs text-ink-tertiary">@{u.telegramUsername}</span>
+                )}
+              </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${ROLE_COLORS[u.role] || ""}`}>
+                {ROLE_LABELS[u.role] || u.role}
+              </span>
+              {canEditThisUser && assignOptions.length > 0 && (
+                <AssignSelect
+                  value={u.teamLeadId || ""}
+                  options={assignOptions}
+                  disabled={working === u.id}
+                  placeholder={assignPlaceholder}
+                  onChange={(v) => onAssignTeamLead(u.id, v)}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  // ── RENDER ───────────────────────────────────────────────────────────────────
+
+  return (
+    <div className="space-y-4">
+      {/* View toggle */}
+      <div className="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => setViewMode("tree")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+            viewMode === "tree"
+              ? "bg-green-500/15 text-green-300 border border-green-500/30"
+              : "text-ink-tertiary hover:text-ink-primary border border-transparent hover:border-bg-border"
+          }`}
+        >
+          <GitBranch size={13} /> Дерево
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewMode("list")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+            viewMode === "list"
+              ? "bg-green-500/15 text-green-300 border border-green-500/30"
+              : "text-ink-tertiary hover:text-ink-primary border border-transparent hover:border-bg-border"
+          }`}
+        >
+          <List size={13} /> Список
+        </button>
+      </div>
+
+      {viewMode === "tree" ? <TreeView /> : <ListView />}
     </div>
   );
 }
