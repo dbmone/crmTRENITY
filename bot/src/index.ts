@@ -157,6 +157,22 @@ const MENU_TEXT = {
   site: "🌐 Открыть сайт",
 } as const;
 
+const BOT_COMMANDS = [
+  { command: "start",       description: "Старт и вход" },
+  { command: "menu",        description: "Главное меню" },
+  { command: "orders",      description: "Мои заказы" },
+  { command: "tasks",       description: "Мои задачи" },
+  { command: "profile",     description: "Мой профиль" },
+  { command: "report",      description: "Отправить отчёт" },
+  { command: "notifs",      description: "Уведомления" },
+  { command: "pin",         description: "Показать PIN для сайта" },
+  { command: "upload",      description: "Загрузить файл в заказ" },
+  { command: "createorder", description: "Создать заказ" },
+  { command: "status",      description: "Статус заявки" },
+  { command: "site",        description: "Открыть сайт" },
+  { command: "admin",       description: "Панель управления" },
+] as const;
+
 function mainMenuKeyboard(status: UserStatus, role?: UserRole): InlineKeyboard {
   const kb = new InlineKeyboard();
 
@@ -3777,21 +3793,29 @@ async function startTelegramBot() {
     console.log(`Telegram auth OK: @${me.username}`);
     console.log("Starting Telegram polling...");
 
-    await bot.api.setMyCommands([
-      { command: "start",       description: "Старт и вход" },
-      { command: "menu",        description: "Главное меню" },
-      { command: "orders",      description: "Мои заказы" },
-      { command: "tasks",       description: "Мои задачи" },
-      { command: "profile",     description: "Мой профиль" },
-      { command: "report",      description: "Отправить отчёт" },
-      { command: "notifs",      description: "Уведомления" },
-      { command: "pin",         description: "Показать PIN для сайта" },
-      { command: "upload",      description: "Загрузить файл в заказ" },
-      { command: "createorder", description: "Создать заказ" },
-      { command: "status",      description: "Статус заявки" },
-      { command: "site",        description: "Открыть сайт" },
-      { command: "admin",       description: "Панель управления" },
-    ]);
+    const commandScopes = [
+      undefined,
+      { type: "default" as const },
+      { type: "all_private_chats" as const },
+    ];
+
+    for (const scope of commandScopes) {
+      try {
+        if (scope) await bot.api.deleteMyCommands({ scope });
+        else await bot.api.deleteMyCommands();
+      } catch {}
+    }
+
+    for (const scope of commandScopes) {
+      if (scope) await bot.api.setMyCommands(BOT_COMMANDS as any, { scope });
+      else await bot.api.setMyCommands(BOT_COMMANDS as any);
+    }
+
+    try {
+      await (bot.api as any).setChatMenuButton({
+        menu_button: { type: "commands" },
+      });
+    } catch {}
 
     await bot.start({
       onStart: async () => {

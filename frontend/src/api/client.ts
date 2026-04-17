@@ -122,6 +122,20 @@ export type UploadFileOptions = {
   signal?: AbortSignal;
 };
 
+export const TELEGRAM_SITE_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
+
+export function splitTelegramUploadFiles(files: File[]) {
+  const accepted: File[] = [];
+  const rejected: File[] = [];
+
+  for (const file of files) {
+    if (file.size > TELEGRAM_SITE_UPLOAD_LIMIT_BYTES) rejected.push(file);
+    else accepted.push(file);
+  }
+
+  return { accepted, rejected };
+}
+
 export async function uploadFile(orderId: string, file: File, fileType: string, options?: UploadFileOptions) {
   const form = new FormData();
   form.append("fileType", fileType);

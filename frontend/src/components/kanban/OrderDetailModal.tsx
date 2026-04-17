@@ -70,6 +70,13 @@ function makeUploadKey(file: File, index: number) {
   return `${file.name}-${file.size}-${file.lastModified}-${index}`;
 }
 
+function buildUploadLimitMessage(files: File[]) {
+  if (!files.length) return "";
+  const names = files.slice(0, 3).map((file) => file.name).join(", ");
+  const suffix = files.length > 3 ? ` и ещё ${files.length - 3}` : "";
+  return `На сайте сейчас можно загружать в Telegram-хранилище только файлы до 50 МБ. Не загружены: ${names}${suffix}.`;
+}
+
 type Tab = "stages" | "tz" | "files" | "reports" | "comments";
 
 const inputCls = "w-full px-3.5 py-2.5 rounded-lg border border-bg-border bg-bg-raised text-sm text-ink-primary placeholder-ink-tertiary outline-none focus:border-green-500/50 transition-colors";
@@ -360,6 +367,12 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
   ) => {
     if (!files.length) return false;
 
+    const { accepted, rejected } = api.splitTelegramUploadFiles(files);
+    if (rejected.length) {
+      alert(buildUploadLimitMessage(rejected));
+    }
+    if (!accepted.length) return false;
+
     setUploading(true);
     setProgress(0);
     setItems([]);
@@ -367,7 +380,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
     abortRef.current = controller;
 
     try {
-      const failed = await uploadFilesWithProgress(o.id, files, fileType, setProgress, setItems, controller.signal);
+      const failed = await uploadFilesWithProgress(o.id, accepted, fileType, setProgress, setItems, controller.signal);
       await loadOrder();
       if (failed > 0) {
         alert(`Не удалось загрузить ${failed} файл(ов)`);

@@ -30,6 +30,13 @@ function makeUploadKey(file: File, index: number) {
   return `${file.name}-${file.size}-${file.lastModified}-${index}`;
 }
 
+function buildUploadLimitMessage(files: File[]) {
+  if (!files.length) return "";
+  const names = files.slice(0, 3).map((file) => file.name).join(", ");
+  const suffix = files.length > 3 ? ` и ещё ${files.length - 3}` : "";
+  return `Telegram-хранилище сейчас принимает на сайте только файлы до 50 МБ. Не загружены: ${names}${suffix}.`;
+}
+
 export default function CreateOrderModal({ isOpen, onClose }: Props) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -59,7 +66,14 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
 
   const appendTzFiles = (files: File[]) => {
     if (!files.length) return;
-    setTzFiles((prev) => [...prev, ...files]);
+    const { accepted, rejected } = api.splitTelegramUploadFiles(files);
+    if (accepted.length) {
+      setError("");
+      setTzFiles((prev) => [...prev, ...accepted]);
+    }
+    if (rejected.length) {
+      setError(buildUploadLimitMessage(rejected));
+    }
   };
 
   const updateUploadItem = (key: string, patch: Partial<UploadItem>) => {
@@ -84,11 +98,20 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
       return 0;
     }
 
-    const items = startUploadSession(files);
+    const { accepted, rejected } = api.splitTelegramUploadFiles(files);
+    if (rejected.length) {
+      setError(buildUploadLimitMessage(rejected));
+    }
+    if (!accepted.length) {
+      setUploadItems([]);
+      return 0;
+    }
+
+    const items = startUploadSession(accepted);
     let failedUploads = 0;
 
-    for (let index = 0; index < files.length; index += 1) {
-      const file = files[index];
+    for (let index = 0; index < accepted.length; index += 1) {
+      const file = accepted[index];
       const item = items[index];
 
       try {
