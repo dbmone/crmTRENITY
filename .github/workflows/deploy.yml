@@ -84,7 +84,7 @@ jobs:
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
-          password: ${{ secrets.DEPLOY_PASSWORD }}
+          key: ${{ secrets.DEPLOY_KEY }}
           script: |
             # login to ghcr.io (PAT with read:packages)
             echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u dbmone --password-stdin
