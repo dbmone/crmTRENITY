@@ -113,7 +113,14 @@ export async function filesRoutes(app: FastifyInstance) {
       );
       return reply.status(201).send(file);
     } catch (err: any) {
-      return reply.status(err.statusCode || 500).send({ error: err.message });
+      const msg: string = err.message || "";
+      if (msg.includes("file is too big")) {
+        return reply.status(413).send({ error: "Файл слишком большой для Telegram (макс. ~50 МБ). Используйте файлы меньшего размера." });
+      }
+      if (msg.includes("file_id") || msg.includes("Cannot read properties of undefined")) {
+        return reply.status(500).send({ error: "Ошибка при сохранении файла. Попробуйте ещё раз." });
+      }
+      return reply.status(err.statusCode || 500).send({ error: msg || "Ошибка загрузки файла" });
     }
   });
 }

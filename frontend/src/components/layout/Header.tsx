@@ -177,7 +177,7 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-bg-border bg-bg-surface">
-      <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
+      <div className="mx-auto flex max-w-screen-2xl items-center gap-3 px-4 py-3 sm:px-6">
         <button type="button" onClick={() => navigate("/")} className="flex flex-shrink-0 items-center">
           <span className="font-bold tracking-tight text-ink-primary">
             TRENITY <span className="text-green-500">CRM</span>
