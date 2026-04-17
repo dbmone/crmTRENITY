@@ -212,7 +212,7 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-bg-border bg-bg-surface">
-      <div className="relative mx-auto flex max-w-screen-2xl items-center px-4 py-3 sm:px-6">
+      <div className="relative flex w-full items-center px-4 py-3 sm:px-6 md:px-8">
         {/* Left — logo (always visible) */}
         <div className="flex flex-1 justify-start">
           <button type="button" onClick={() => navigate("/")} className="relative z-10 flex flex-shrink-0 items-center">
