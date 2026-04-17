@@ -79,6 +79,17 @@ jobs:
     needs: [build-backend, build-bot, build-frontend]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy docker-compose.yml to server
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          source: "docker-compose.yml"
+          target: "/root/deploy/"
+
       - name: SSH deploy
         uses: appleboy/ssh-action@v1
         with:
@@ -99,6 +110,10 @@ jobs:
             fi
 
             echo "Using compose dir: $COMPOSE_DIR"
+
+            # update compose file with latest version (has image: tags)
+            cp /root/deploy/docker-compose.yml "$COMPOSE_DIR/docker-compose.yml"
+
             cd "$COMPOSE_DIR"
 
             # pull new images (no rebuild on server)
