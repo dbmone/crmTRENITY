@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, Bot, CheckCircle2, Compass, MonitorSmartphone, PlayCircle, Sparkles } from "lucide-react";
-import Header from "../components/layout/Header";
 import * as api from "../api/client";
 import { TOUR_STEPS } from "../data/tourSteps";
 import { useAuthStore } from "../store/auth.store";
@@ -64,8 +63,7 @@ export default function GuidePage() {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-bg-base animate-soft-in">
-      <Header />
+    <div className="min-h-full bg-bg-base">
 
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 content-ready">
         <section className="overflow-hidden rounded-[32px] border border-bg-border bg-bg-surface shadow-modal animate-fade-in">

@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Archive, Search, X } from "lucide-react";
-import Header from "../components/layout/Header";
 import OrderDetailModal from "../components/kanban/OrderDetailModal";
 import { Order } from "../types";
 import * as api from "../api/client";
@@ -31,8 +30,7 @@ export default function ArchivePage() {
   };
 
   return (
-    <div className="min-h-screen bg-bg-base animate-soft-in">
-      <Header />
+    <div className="min-h-full bg-bg-base">
 
       <div className="max-w-4xl mx-auto px-6 py-8" data-tour="archive-page">
         <div className="flex items-center justify-between mb-6">

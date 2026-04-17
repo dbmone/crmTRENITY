@@ -5,7 +5,6 @@ import CreateOrderModal from "../components/kanban/CreateOrderModal";
 import KanbanBoard from "../components/kanban/KanbanBoard";
 import KanbanSkeleton from "../components/kanban/KanbanSkeleton";
 import OrderDetailModal from "../components/kanban/OrderDetailModal";
-import Header from "../components/layout/Header";
 import { TOUR_STEPS } from "../data/tourSteps";
 import { useAuthStore } from "../store/auth.store";
 import { useOrdersStore } from "../store/orders.store";
@@ -155,8 +154,7 @@ export default function BoardPage() {
   const activeFilter = filter?.marketerId === user?.id || filter?.creatorId === user?.id;
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-bg-base animate-soft-in">
-      <Header />
+    <div className="h-full flex flex-col overflow-hidden bg-bg-base">
 
       <div className="flex items-center gap-2 px-3 sm:px-6 py-2.5 border-b border-bg-border bg-bg-surface flex-shrink-0">
         <div className="relative flex-1 sm:flex-none sm:w-48">

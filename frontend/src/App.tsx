@@ -1,26 +1,18 @@
 import { useEffect } from "react";
-import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import LoginPage from "./pages/LoginPage";
-import BoardPage from "./pages/BoardPage";
-import ProfilePage from "./pages/ProfilePage";
-import AdminPage from "./pages/AdminPage";
-import ArchivePage from "./pages/ArchivePage";
-import DashboardPage from "./pages/DashboardPage";
-import TasksPage from "./pages/TasksPage";
-import AiPage from "./pages/AiPage";
-import GuidePage from "./pages/GuidePage";
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import TourOverlay from "./components/tour/TourOverlay";
+import Header from "./components/layout/Header";
+import AdminPage from "./pages/AdminPage";
+import AiPage from "./pages/AiPage";
+import ArchivePage from "./pages/ArchivePage";
+import BoardPage from "./pages/BoardPage";
+import DashboardPage from "./pages/DashboardPage";
+import GuidePage from "./pages/GuidePage";
+import LoginPage from "./pages/LoginPage";
+import ProfilePage from "./pages/ProfilePage";
+import TasksPage from "./pages/TasksPage";
 import { useAuthStore } from "./store/auth.store";
 import { useTourStore } from "./store/tour.store";
-
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const token = useAuthStore((s) => s.token);
-  const hasCheckedAuth = useAuthStore((s) => s.hasCheckedAuth);
-
-  if (!hasCheckedAuth) return <AppBootScreen />;
-  if (!token) return <Navigate to="/login" replace />;
-  return <>{children}</>;
-}
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token);
@@ -31,9 +23,18 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function ProtectedShell() {
+  const token = useAuthStore((s) => s.token);
+  const hasCheckedAuth = useAuthStore((s) => s.hasCheckedAuth);
+
+  if (!hasCheckedAuth) return <AppBootScreen />;
+  if (!token) return <Navigate to="/login" replace />;
+  return <AppShell />;
+}
+
 function AppBootScreen() {
   return (
-    <div className="min-h-screen bg-bg-base flex items-center justify-center animate-page-in">
+    <div className="min-h-screen bg-bg-base flex items-center justify-center">
       <div className="flex flex-col items-center gap-4 text-center">
         <div className="h-10 w-10 rounded-full border-2 border-green-500/25 border-t-green-500 animate-spin" />
         <div>
@@ -63,27 +64,40 @@ function GuideGate() {
   return null;
 }
 
-function AppRoutes() {
+function AppShell() {
   const location = useLocation();
 
   return (
     <>
       <GuideGate />
-      <div key={location.pathname} className="animate-page-in">
-        <Routes location={location}>
-          <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
-          <Route path="/" element={<ProtectedRoute><BoardPage /></ProtectedRoute>} />
-          <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
-          <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
-          <Route path="/archive" element={<ProtectedRoute><ArchivePage /></ProtectedRoute>} />
-          <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-          <Route path="/tasks" element={<ProtectedRoute><TasksPage /></ProtectedRoute>} />
-          <Route path="/ai" element={<ProtectedRoute><AiPage /></ProtectedRoute>} />
-          <Route path="/guide" element={<ProtectedRoute><GuidePage /></ProtectedRoute>} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+      <div className="h-full flex flex-col bg-bg-base">
+        <Header />
+        <div key={location.pathname} className="min-h-0 flex-1 animate-page-in">
+          <Outlet />
+        </div>
       </div>
     </>
+  );
+}
+
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
+
+      <Route element={<ProtectedShell />}>
+        <Route path="/" element={<BoardPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/admin" element={<AdminPage />} />
+        <Route path="/archive" element={<ArchivePage />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/tasks" element={<TasksPage />} />
+        <Route path="/ai" element={<AiPage />} />
+        <Route path="/guide" element={<GuidePage />} />
+      </Route>
+
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 

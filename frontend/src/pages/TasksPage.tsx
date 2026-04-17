@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import Header from "../components/layout/Header";
 import * as api from "../api/client";
 import { Task, TaskPriority, TaskSubtask, ParsedTask } from "../types";
 import {
@@ -459,8 +458,7 @@ export default function TasksPage() {
   const totalDone = tasks.filter((t) => t.status === "DONE").length;
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-bg-base animate-soft-in">
-      <Header />
+    <div className="h-full flex flex-col overflow-hidden bg-bg-base">
 
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-4 py-6" data-tour="tasks-page">

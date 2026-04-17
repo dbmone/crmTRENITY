@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Save, ExternalLink } from "lucide-react";
 import { useAuthStore } from "../store/auth.store";
-import Header from "../components/layout/Header";
 import * as api from "../api/client";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -52,8 +51,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="min-h-screen bg-bg-base animate-soft-in">
-      <Header />
+    <div className="min-h-full bg-bg-base">
 
       <div className="max-w-lg mx-auto px-4 py-8">
         <button onClick={() => navigate("/")}

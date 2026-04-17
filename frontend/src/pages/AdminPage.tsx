@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "../store/auth.store";
-import Header from "../components/layout/Header";
 import { Check, X, Shield, RefreshCw, UserX, Crown, Users, ChevronRight, Trash2, UserPlus, RotateCcw, Lock, Unlock, MoveHorizontal } from "lucide-react";
 import * as api from "../api/client";
 import { TOUR_STEPS } from "../data/tourSteps";
@@ -197,8 +196,7 @@ export default function AdminPage() {
   );
 
   return (
-    <div className="min-h-screen bg-bg-base animate-soft-in">
-      <Header />
+    <div className="min-h-full bg-bg-base">
 
       <div className="max-w-5xl mx-auto px-6 py-8" data-tour="admin-page">
         <div className="flex items-center justify-between mb-6">

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Bot, RotateCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import Header from "../components/layout/Header";
 import * as api from "../api/client";
 import { useAuthStore } from "../store/auth.store";
 
@@ -144,8 +143,7 @@ export default function AiPage() {
   if (!canAccess) return null;
 
   return (
-    <div className="min-h-screen bg-bg-base animate-soft-in">
-      <Header />
+    <div className="min-h-full bg-bg-base">
       <div className="mx-auto max-w-3xl px-6 py-8 content-ready" data-tour="ai-page">
         <div className="mb-6">
           <h1 className="flex items-center gap-2 text-xl font-bold text-ink-primary">

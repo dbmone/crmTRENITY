@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { LayoutDashboard, TrendingUp, Clock, CheckCircle, Users, AlertTriangle, FileText } from "lucide-react";
-import Header from "../components/layout/Header";
 import * as api from "../api/client";
 
 interface DashboardData {
@@ -55,8 +54,7 @@ export default function DashboardPage() {
   const totalNonArchived = o ? o.total - (o.archived || 0) : 0;
 
   return (
-    <div className="min-h-screen bg-bg-base animate-soft-in">
-      <Header />
+    <div className="min-h-full bg-bg-base">
 
       <div className="max-w-5xl mx-auto px-6 py-8" data-tour="dashboard-page">
         <div className="mb-6">

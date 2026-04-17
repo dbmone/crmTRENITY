@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   Archive,
@@ -13,11 +13,11 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useAuthStore } from "../../store/auth.store";
-import type { Notification } from "../../types";
 import * as api from "../../api/client";
 import { TOUR_STEPS } from "../../data/tourSteps";
+import { useAuthStore } from "../../store/auth.store";
 import { useTourStore } from "../../store/tour.store";
+import type { Notification } from "../../types";
 
 const ROLE_LABELS: Record<string, string> = {
   MARKETER: "Маркетолог",
@@ -56,7 +56,11 @@ export default function Header() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifs, setShowNotifs] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [desktopIndicator, setDesktopIndicator] = useState({ left: 0, width: 0, opacity: 0 });
+
   const notifRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLDivElement>(null);
+
   const tourActive = useTourStore((s) => s.active);
   const tourStepIndex = useTourStore((s) => s.stepIndex);
   const tourRole = useTourStore((s) => s.role);
@@ -72,8 +76,8 @@ export default function Header() {
   const canSeeAi = isAdmin || isHeadCreator || isHeadMarketer;
 
   const navItems = NAV.filter((item) => {
-    if ((item as any).adminOnly) return canSeeAdmin;
-    if ((item as any).aiOnly) return canSeeAi;
+    if ((item as { adminOnly?: boolean }).adminOnly) return canSeeAdmin;
+    if ((item as { aiOnly?: boolean }).aiOnly) return canSeeAi;
     return true;
   });
 
@@ -97,7 +101,9 @@ export default function Header() {
         const data = await api.getNotifications(1, 30);
         const list = Array.isArray(data) ? data : data.items ?? data.notifications ?? [];
         setNotifications(list);
-      } catch {}
+      } catch {
+        // noop
+      }
     };
 
     void loadNotifications();
@@ -112,11 +118,39 @@ export default function Header() {
       }
     };
 
-    if (showNotifs) {
-      document.addEventListener("mousedown", handler);
-    }
+    if (showNotifs) document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [showNotifs]);
+
+  const updateDesktopIndicator = () => {
+    if (!navRef.current || window.innerWidth < 768) {
+      setDesktopIndicator((prev) => ({ ...prev, opacity: 0 }));
+      return;
+    }
+
+    const activeButton = navRef.current.querySelector<HTMLButtonElement>(`button[data-nav-path="${location.pathname}"]`);
+    if (!activeButton) {
+      setDesktopIndicator((prev) => ({ ...prev, opacity: 0 }));
+      return;
+    }
+
+    setDesktopIndicator({
+      left: activeButton.offsetLeft,
+      width: activeButton.offsetWidth,
+      opacity: 1,
+    });
+  };
+
+  useLayoutEffect(() => {
+    const frame = window.requestAnimationFrame(updateDesktopIndicator);
+    const handleResize = () => updateDesktopIndicator();
+
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [location.pathname, navItems.length]);
 
   const initials = user?.displayName
     ?.split(" ")
@@ -144,24 +178,25 @@ export default function Header() {
 
   const renderNavButton = (item: (typeof NAV)[number], mobile = false) => {
     const active = location.pathname === item.path;
-    const showDot = Boolean((item as any).showGuideDot && guideNeedsAttention);
+    const showDot = Boolean((item as { showGuideDot?: boolean }).showGuideDot && guideNeedsAttention);
 
     return (
       <button
         key={`${mobile ? "m" : "d"}-${item.path}`}
         type="button"
         onClick={() => navigate(item.path)}
-        data-tour={(item as any).tour}
+        data-tour={item.tour}
+        data-nav-path={item.path}
         className={mobile
           ? `flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors ${
               active
                 ? "bg-green-500/10 text-green-400"
                 : "text-ink-secondary hover:bg-bg-hover hover:text-ink-primary"
             }`
-          : `flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+          : `relative z-10 flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-200 ${
               active
-                ? "bg-green-500/10 text-green-400"
-                : "text-ink-secondary hover:bg-bg-hover hover:text-ink-primary"
+                ? "text-green-300"
+                : "text-ink-secondary hover:text-ink-primary"
             }`}
       >
         <item.icon size={mobile ? 17 : 14} />
@@ -185,7 +220,19 @@ export default function Header() {
         </button>
 
         <div className="pointer-events-none absolute inset-x-0 hidden justify-center md:flex">
-          <nav className="pointer-events-auto flex items-center gap-1 rounded-xl border border-bg-border/80 bg-bg-surface/90 px-2 py-1 backdrop-blur-sm">
+          <nav
+            ref={navRef}
+            className="pointer-events-auto relative flex items-center gap-1 rounded-xl border border-bg-border/80 bg-bg-surface/95 px-2 py-1 backdrop-blur-sm"
+          >
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute bottom-1 top-1 rounded-lg border border-green-500/20 bg-green-500/10 transition-[left,width,opacity] duration-300 ease-out"
+              style={{
+                left: desktopIndicator.left,
+                width: desktopIndicator.width,
+                opacity: desktopIndicator.opacity,
+              }}
+            />
             {navItems.map((item) => renderNavButton(item))}
           </nav>
         </div>
