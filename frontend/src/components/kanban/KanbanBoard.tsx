@@ -1,9 +1,10 @@
-import { DndContext, DragEndEvent, PointerSensor, TouchSensor, useSensor, useSensors, DragOverlay } from "@dnd-kit/core";
-import { Order, KANBAN_COLUMNS, OrderStatus } from "../../types";
+import { useState } from "react";
+import { DndContext, DragEndEvent, DragOverlay, PointerSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { useOrdersStore } from "../../store/orders.store";
+import type { Order, OrderStatus } from "../../types";
+import { KANBAN_COLUMNS } from "../../types";
 import KanbanColumn from "./KanbanColumn";
 import OrderCard from "./OrderCard";
-import { useState } from "react";
 
 interface Props {
   orders: Order[];
@@ -15,60 +16,68 @@ export default function KanbanBoard({ orders, onCardClick, dragEnabled = true }:
   const moveOrder = useOrdersStore((s) => s.moveOrder);
   const [activeId, setActiveId] = useState<string | null>(null);
 
+  const archiveDropEnabled = true;
+  const cardDragEnabled = dragEnabled || archiveDropEnabled;
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor,   { activationConstraint: { delay: 200, tolerance: 8 } })
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } })
   );
 
   const handleDragEnd = (event: DragEndEvent) => {
-    if (!dragEnabled) {
-      setActiveId(null);
-      return;
-    }
     setActiveId(null);
     const { active, over } = event;
     if (!over) return;
-    const orderId   = active.id as string;
+
+    const orderId = active.id as string;
     const newStatus = over.id as OrderStatus;
-    const order = orders.find((o) => o.id === orderId);
+    const order = orders.find((item) => item.id === orderId);
     if (!order || order.status === newStatus) return;
-    moveOrder(orderId, newStatus);
+
+    if (newStatus === "ARCHIVED") {
+      void moveOrder(orderId, newStatus);
+      return;
+    }
+
+    if (!dragEnabled) return;
+    void moveOrder(orderId, newStatus);
   };
 
   const grouped = KANBAN_COLUMNS.reduce<Record<OrderStatus, Order[]>>(
     (acc, col) => {
-      acc[col.status] = orders.filter((o) => o.status === col.status);
+      acc[col.status] = orders.filter((order) => order.status === col.status);
       return acc;
     },
     {} as Record<OrderStatus, Order[]>
   );
 
-  const activeOrder = activeId ? orders.find((o) => o.id === activeId) : null;
+  const activeOrder = activeId ? orders.find((order) => order.id === activeId) : null;
 
   return (
     <DndContext
-      sensors={dragEnabled ? sensors : undefined}
-      onDragStart={dragEnabled ? (e) => setActiveId(e.active.id as string) : undefined}
+      sensors={cardDragEnabled ? sensors : undefined}
+      onDragStart={cardDragEnabled ? (event) => setActiveId(event.active.id as string) : undefined}
       onDragEnd={handleDragEnd}
       onDragCancel={() => setActiveId(null)}
     >
       <div className="kanban-board">
-        {KANBAN_COLUMNS.map((col) => (
+        {KANBAN_COLUMNS.map((column) => (
           <KanbanColumn
-            key={col.status}
-            status={col.status}
-            label={col.label}
-            orders={grouped[col.status] || []}
+            key={column.status}
+            status={column.status}
+            label={column.label}
+            orders={grouped[column.status] || []}
             onCardClick={onCardClick}
             dragEnabled={dragEnabled}
+            archiveDropEnabled={archiveDropEnabled}
           />
         ))}
       </div>
 
       <DragOverlay>
         {activeOrder && (
-          <div className="w-[280px] rotate-1 opacity-90 pointer-events-none shadow-glow">
-            <OrderCard order={activeOrder} onClick={() => {}} dragEnabled={dragEnabled} />
+          <div className="pointer-events-none w-[280px] rotate-1 opacity-90 shadow-glow">
+            <OrderCard order={activeOrder} onClick={() => {}} dragEnabled={cardDragEnabled} />
           </div>
         )}
       </DragOverlay>

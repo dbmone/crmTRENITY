@@ -5,11 +5,12 @@ import CreateOrderModal from "../components/kanban/CreateOrderModal";
 import KanbanBoard from "../components/kanban/KanbanBoard";
 import KanbanSkeleton from "../components/kanban/KanbanSkeleton";
 import OrderDetailModal from "../components/kanban/OrderDetailModal";
+import { createTourDemoOrder } from "../data/tourDemoData";
 import { TOUR_STEPS } from "../data/tourSteps";
 import { useAuthStore } from "../store/auth.store";
 import { useOrdersStore } from "../store/orders.store";
 import { useTourStore } from "../store/tour.store";
-import { Order } from "../types";
+import type { Order } from "../types";
 
 export default function BoardPage() {
   const user = useAuthStore((s) => s.user);
@@ -33,6 +34,17 @@ export default function BoardPage() {
     () => (tourActive && tourRole ? TOUR_STEPS[tourRole]?.[tourStepIndex] ?? null : null),
     [tourActive, tourRole, tourStepIndex]
   );
+
+  const boardOrders = useMemo(
+    () => orders.filter((item) => item.status !== "ARCHIVED"),
+    [orders]
+  );
+  const tourDemoOrder = useMemo(() => createTourDemoOrder(user), [user]);
+
+  const displayedOrders = useMemo(() => {
+    if (!tourActive || tourStep?.route !== "/" || boardOrders.length > 0) return boardOrders;
+    return [tourDemoOrder];
+  }, [boardOrders, tourActive, tourDemoOrder, tourStep?.route]);
 
   const forcedTab = useMemo(() => {
     switch (tourStep?.target) {
@@ -97,7 +109,7 @@ export default function BoardPage() {
       "tz-send-telegram",
       "files-upload-zone",
     ]);
-    const firstOrder = orders[0] ?? null;
+    const firstOrder = displayedOrders[0] ?? null;
 
     if (target === "create-btn") {
       setShowCreate(false);
@@ -126,7 +138,7 @@ export default function BoardPage() {
     }
 
     setSelectedOrder(null);
-  }, [orders, tourActive, tourStep?.route, tourStep?.target]);
+  }, [displayedOrders, tourActive, tourStep?.route, tourStep?.target]);
 
   const handleSearch = (value: string) => {
     setSearch(value);
@@ -157,7 +169,7 @@ export default function BoardPage() {
 
   return (
     <div className="min-h-0 flex-1 flex flex-col overflow-hidden bg-bg-base">
-      <div className="flex items-center gap-2 border-b border-bg-border bg-bg-surface px-3 py-2.5 flex-shrink-0 sm:px-6">
+      <div className="flex flex-shrink-0 items-center gap-2 border-b border-bg-border bg-bg-surface px-3 py-2.5 sm:px-6">
         <div className="relative flex-1 sm:flex-none sm:w-48">
           <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-tertiary" />
           <input
@@ -197,7 +209,7 @@ export default function BoardPage() {
         </button>
 
         <div className="ml-auto flex items-center gap-2">
-          <span className="hidden text-xs text-ink-tertiary sm:block">{orders.length} заказов</span>
+          <span className="hidden text-xs text-ink-tertiary sm:block">{boardOrders.length} заказов</span>
 
           <button
             onClick={() => void fetchOrders()}
@@ -221,9 +233,9 @@ export default function BoardPage() {
       </div>
 
       <div className="relative flex-1 overflow-hidden pt-3 animate-soft-in" data-tour="board">
-        {isLoading && orders.length === 0 && <KanbanSkeleton />}
+        {isLoading && boardOrders.length === 0 && !tourActive && <KanbanSkeleton />}
 
-        {!isLoading && orders.length === 0 && (
+        {!isLoading && displayedOrders.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center animate-fade-in">
             <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-bg-border bg-bg-surface">
               <div className="h-7 w-7 rounded-lg border-2 border-dashed border-bg-hover" />
@@ -235,8 +247,8 @@ export default function BoardPage() {
           </div>
         )}
 
-        {orders.length > 0 && (
-          <KanbanBoard orders={orders} onCardClick={setSelectedOrder} dragEnabled={dragEnabled} />
+        {displayedOrders.length > 0 && (
+          <KanbanBoard orders={displayedOrders} onCardClick={setSelectedOrder} dragEnabled={dragEnabled} />
         )}
       </div>
 

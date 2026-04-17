@@ -83,7 +83,6 @@ export interface Order {
   _count?: { reports: number };
 }
 
-// Колонки канбана
 export const KANBAN_COLUMNS: { status: OrderStatus; label: string; color: string }[] = [
   { status: "NEW", label: "Новые", color: "blue" },
   { status: "IN_PROGRESS", label: "В работе", color: "amber" },
@@ -99,8 +98,6 @@ export const STAGE_LABELS: Record<StageName, string> = {
   REVIEW: "На правках",
   COMPLETED: "Видео готово",
 };
-
-// ==================== ЛИЧНЫЕ ЗАДАЧИ ====================
 
 export type TaskStatus = "TODO" | "IN_PROGRESS" | "DONE";
 export type TaskPriority = "LOW" | "MEDIUM" | "HIGH";

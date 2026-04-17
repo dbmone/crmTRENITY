@@ -65,10 +65,12 @@ export default function OrderFileRow({
   file,
   canDelete,
   onDeleted,
+  demoMode = false,
 }: {
   file: OrderFile;
   canDelete: boolean;
   onDeleted: (id: string) => void;
+  demoMode?: boolean;
 }) {
   const [downloading, setDownloading] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -83,7 +85,7 @@ export default function OrderFileRow({
   const isImagePreview = isImageFile(file);
   const isVideoPreview = isVideoFile(file);
   const isAudioPreview = isAudioFile(file);
-  const canPreview = isImagePreview || isVideoPreview || isAudioPreview;
+  const canPreview = !demoMode && (isImagePreview || isVideoPreview || isAudioPreview);
   const previewUrl = canPreview ? api.getFileStreamUrl(file.id) : null;
   const previewErrorMessage = isImagePreview
     ? "Не удалось загрузить превью изображения"
@@ -92,12 +94,14 @@ export default function OrderFileRow({
       : "Не удалось воспроизвести аудио";
 
   const togglePreview = () => {
+    if (demoMode) return;
     setPreviewFailed(false);
     setPreviewLoading(false);
     setPreviewOpen((value) => !value);
   };
 
   const handleSendToTelegram = async () => {
+    if (demoMode) return;
     setDownloading(true);
     try {
       await api.sendFileToTelegram(file.id);
@@ -111,6 +115,7 @@ export default function OrderFileRow({
   };
 
   const handleDownload = async () => {
+    if (demoMode) return;
     setDownloading(true);
     try {
       const url = await api.getDownloadUrl(file.id);
@@ -123,6 +128,7 @@ export default function OrderFileRow({
   };
 
   const handleDelete = async () => {
+    if (demoMode) return;
     if (!confirm(`Удалить «${isTextTz ? file.fileName.slice(0, 40) : file.fileName}»?`)) return;
     setDeleting(true);
     try {

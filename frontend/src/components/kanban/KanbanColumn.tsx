@@ -1,7 +1,7 @@
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { Archive } from "lucide-react";
-import { Order, OrderStatus } from "../../types";
+import type { Order, OrderStatus } from "../../types";
 import OrderCard from "./OrderCard";
 
 interface Props {
@@ -10,6 +10,7 @@ interface Props {
   orders: Order[];
   onCardClick: (order: Order) => void;
   dragEnabled?: boolean;
+  archiveDropEnabled?: boolean;
 }
 
 const COL_CONFIG: Record<
@@ -59,15 +60,24 @@ const COL_CONFIG: Record<
   },
 };
 
-export default function KanbanColumn({ status, label, orders, onCardClick, dragEnabled = true }: Props) {
-  const { setNodeRef, isOver } = useDroppable({ id: status });
+export default function KanbanColumn({
+  status,
+  label,
+  orders,
+  onCardClick,
+  dragEnabled = true,
+  archiveDropEnabled = true,
+}: Props) {
+  const isArchived = status === "ARCHIVED";
+  const canDropHere = dragEnabled || (archiveDropEnabled && isArchived);
+  const cardDragEnabled = dragEnabled || archiveDropEnabled;
+  const { setNodeRef, isOver } = useDroppable({ id: status, disabled: !canDropHere });
   const cfg = COL_CONFIG[status];
   const ids = orders.map((order) => order.id);
-  const isArchived = status === "ARCHIVED";
 
   return (
     <div
-      className={`flex flex-shrink-0 flex-col overflow-hidden rounded-xl border transition-colors animate-soft-in w-[260px] ${
+      className={`flex w-[260px] flex-shrink-0 flex-col overflow-hidden rounded-xl border transition-colors animate-soft-in ${
         isArchived ? "border-bg-border/50 opacity-75 hover:opacity-90" : "border-bg-border"
       } ${cfg.colBg}`}
       style={{ height: "100%" }}
@@ -88,7 +98,7 @@ export default function KanbanColumn({ status, label, orders, onCardClick, dragE
         ref={setNodeRef}
         className={`col-scroll p-2 transition-colors ${
           isOver ? (isArchived ? "bg-bg-hover/50" : cfg.dropBg) : ""
-        } ${isArchived && isOver ? "ring-1 ring-inset ring-bg-border/60 rounded-b-xl" : ""}`}
+        } ${isArchived && isOver ? "rounded-b-xl ring-1 ring-inset ring-bg-border/60" : ""}`}
       >
         <SortableContext items={ids} strategy={verticalListSortingStrategy}>
           <div className="flex flex-col gap-1.5">
@@ -98,7 +108,7 @@ export default function KanbanColumn({ status, label, orders, onCardClick, dragE
                 order={order}
                 onClick={onCardClick}
                 dim={isArchived}
-                dragEnabled={dragEnabled}
+                dragEnabled={cardDragEnabled}
               />
             ))}
           </div>
@@ -113,7 +123,7 @@ export default function KanbanColumn({ status, label, orders, onCardClick, dragE
             {isArchived ? (
               <>
                 <Archive size={20} className="opacity-30" />
-                <span className="text-xs">{dragEnabled ? "Перетащи сюда для архивации" : "Архив пуст"}</span>
+                <span className="text-xs">Перетащи сюда, чтобы убрать заказ с доски</span>
               </>
             ) : (
               <span className="text-xs">Нет заказов</span>

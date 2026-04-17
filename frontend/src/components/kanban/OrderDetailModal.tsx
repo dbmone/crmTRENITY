@@ -6,6 +6,7 @@ import { useAuthStore } from "../../store/auth.store";
 import { useOrdersStore } from "../../store/orders.store";
 import UserProfileCard from "../UserProfileCard";
 import * as api from "../../api/client";
+import { createTourDemoComments, createTourDemoUsers, isTourDemoOrder } from "../../data/tourDemoData";
 import OrderFileRow from "./OrderFileRow";
 
 const STAGE_ORDER: StageName[] = ["STORYBOARD", "ANIMATION", "EDITING", "REVIEW", "COMPLETED"];
@@ -162,6 +163,7 @@ interface Props { order: Order | null; onClose: () => void; forcedTab?: Tab | nu
 export default function OrderDetailModal({ order, onClose, forcedTab = null }: Props) {
   const user        = useAuthStore((s) => s.user);
   const fetchOrders = useOrdersStore((s) => s.fetchOrders);
+  const isDemoOrder = isTourDemoOrder(order);
 
   const [fullOrder, setFullOrder] = useState<Order | null>(null);
   const [detailsReady, setDetailsReady] = useState(false);
@@ -251,9 +253,18 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
     setPrimaryTzNoteId(null);
     setTzText("");
     setComments([]);
-    loadOrder(); loadUsers(); loadComments();
+    if (isDemoOrder) {
+      setFullOrder(order);
+      setUsers(createTourDemoUsers(user));
+      setComments(createTourDemoComments(user));
+      setDetailsReady(true);
+    } else {
+      void loadOrder();
+      void loadUsers();
+      void loadComments();
+    }
     setTab("stages"); setEditing(false);
-  }, [order?.id]);
+  }, [isDemoOrder, order, user]);
 
   useEffect(() => {
     if (!order || !forcedTab) return;
@@ -266,6 +277,11 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
 
   const loadOrder  = async () => {
     if (!order) return;
+    if (isDemoOrder) {
+      setFullOrder(order);
+      setDetailsReady(true);
+      return;
+    }
     setDetailsReady(false);
     try {
       const d = await api.getOrder(order.id);
@@ -274,8 +290,25 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
       setDetailsReady(true);
     }
   };
-  const loadUsers  = async () => { const d = await api.getUsers(); setUsers(Array.isArray(d) ? d : (d.users ?? [])); };
-  const loadComments = async () => { if (!order) return; try { const d = await api.getComments(order.id); setComments(d); } catch {} };
+  const loadUsers  = async () => {
+    if (isDemoOrder) {
+      setUsers(createTourDemoUsers(user));
+      return;
+    }
+    const d = await api.getUsers();
+    setUsers(Array.isArray(d) ? d : (d.users ?? []));
+  };
+  const loadComments = async () => {
+    if (!order) return;
+    if (isDemoOrder) {
+      setComments(createTourDemoComments(user));
+      return;
+    }
+    try {
+      const d = await api.getComments(order.id);
+      setComments(d);
+    } catch {}
+  };
 
   const startUploadItems = (
     files: File[],
@@ -353,6 +386,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
   const canSubmitReport = user?.permissions?.submit_report ?? ["CREATOR","LEAD_CREATOR","HEAD_CREATOR","ADMIN"].includes(user?.role ?? "");
   const isParticipant = isMarketer || o.creators?.some((c) => c.creatorId === user?.id);
   const canEdit       = isMarketer && o.marketerId === user?.id;
+  const canHardDelete = user?.role === "ADMIN";
 
   const daysLeft = o.deadline ? Math.ceil((new Date(o.deadline).getTime() - Date.now()) / 86400000) : null;
   const availableCreators = users.filter((u) => ["CREATOR", "LEAD_CREATOR", "HEAD_CREATOR"].includes(u.role) && !o.creators?.some((c) => c.creatorId === u.id));
@@ -435,6 +469,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
 
   // ── handlers ──
   const handleStageUpdate = async (stageId: string, status: string) => {
+    if (isDemoOrder) return;
     setLoading(true);
     try { await api.updateStage(o.id, stageId, status); await loadOrder(); await fetchOrders(); }
     catch (err: any) { alert(err.response?.data?.error || "Ошибка"); }
@@ -442,16 +477,19 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
   };
 
   const handleAddCreator = async (creatorId: string) => {
+    if (isDemoOrder) return;
     try { await api.addCreator(o.id, creatorId); await loadOrder(); await fetchOrders(); }
     catch (err: any) { alert(err.response?.data?.error || "Ошибка"); }
   };
 
   const handleRemoveCreator = async (creatorId: string) => {
+    if (isDemoOrder) return;
     try { await api.removeCreator(o.id, creatorId); await loadOrder(); await fetchOrders(); }
     catch (err: any) { alert(err.response?.data?.error || "Ошибка"); }
   };
 
   const handleDelete = async () => {
+    if (isDemoOrder) return;
     if (!confirm("Переместить заказ в архив?")) return;
     try {
       await api.updateOrderStatus(o.id, "ARCHIVED");
@@ -460,7 +498,20 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
     } catch (err: any) { alert(err.response?.data?.error || "Ошибка"); }
   };
 
+  const handleHardDelete = async () => {
+    if (isDemoOrder) return;
+    if (!confirm("Удалить заказ навсегда? Это сотрёт этапы, файлы, комментарии и отчёты без возможности восстановления.")) return;
+    try {
+      await api.deleteOrder(o.id);
+      await fetchOrders();
+      onClose();
+    } catch (err: any) {
+      alert(err.response?.data?.error || "Не удалось удалить заказ");
+    }
+  };
+
   const handleUnarchive = async () => {
+    if (isDemoOrder) return;
     try {
       await api.updateOrderStatus(o.id, "DONE");
       await fetchOrders();
@@ -469,6 +520,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
   };
 
   const handleSaveEdit = async () => {
+    if (isDemoOrder) return;
     setSaving(true);
     try {
       await api.updateOrder(o.id, { title: editTitle, description: editDesc || undefined, deadline: editDL || undefined });
@@ -638,6 +690,15 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
               )}
               {canEdit && o.marketerId === user?.id && o.status !== "ARCHIVED" && !editing && (
                 <button onClick={handleDelete} title="В архив" className="p-1.5 rounded-lg hover:bg-red-400/10 text-ink-tertiary hover:text-red-400 transition-colors">
+                  <Trash2 size={15} />
+                </button>
+              )}
+              {canHardDelete && !editing && (
+                <button
+                  onClick={handleHardDelete}
+                  title="Удалить навсегда"
+                  className="p-1.5 rounded-lg hover:bg-red-500/10 text-ink-tertiary hover:text-red-500 transition-colors"
+                >
                   <Trash2 size={15} />
                 </button>
               )}
@@ -1007,6 +1068,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
                     <OrderFileRow
                       key={f.id}
                       file={f}
+                      demoMode={isDemoOrder}
                       canDelete={isMarketer || (f.uploadedBy?.id === user?.id)}
                       onDeleted={(id) => setFullOrder((prev) => prev ? { ...prev, files: prev.files.filter((x) => x.id !== id) } : prev)}
                     />
@@ -1113,6 +1175,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
                     <OrderFileRow
                       key={f.id}
                       file={f}
+                      demoMode={isDemoOrder}
                       canDelete={isMarketer || (f.uploadedBy?.id === user?.id)}
                       onDeleted={(id) => {
                         setFullOrder((prev) => prev
