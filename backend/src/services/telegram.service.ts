@@ -46,6 +46,21 @@ export interface TgUploadResult {
   chatId:    string;
 }
 
+function extractTelegramUploadMeta(result: any, fallbackChatId: string) {
+  const media =
+    result?.document
+    || result?.video
+    || result?.audio
+    || result?.voice
+    || (Array.isArray(result?.photo) ? result.photo[result.photo.length - 1] : null);
+
+  return {
+    fileId: media?.file_id || null,
+    messageId: Number(result?.message_id || 0),
+    chatId: String(result?.chat?.id || fallbackChatId),
+  };
+}
+
 // Загрузить файл в канал-хранилище
 export async function uploadFileToStorage(
   buffer: Buffer,
@@ -56,13 +71,17 @@ export async function uploadFileToStorage(
   const storageChatId = config.bot.storageChatId;
   if (!storageChatId) throw new Error("TELEGRAM_STORAGE_CHAT_ID не задан");
 
-  if (isTelegramUserbotEnabled() && buffer.length >= 45 * 1024 * 1024) {
+  const uploadViaUserbot = async (): Promise<TgUploadResult> => {
     const uploaded = await uploadBufferToTelegramChatViaUserbot(storageChatId, buffer, fileName, mimeType, caption);
     return {
       fileId: uploaded.fileId || "",
       messageId: uploaded.messageId,
       chatId: uploaded.chatId,
     };
+  };
+
+  if (isTelegramUserbotEnabled() && buffer.length >= 45 * 1024 * 1024) {
+    return uploadViaUserbot();
   }
 
   try {
@@ -82,20 +101,23 @@ export async function uploadFileToStorage(
     const data: any = await res.json();
     if (!data.ok) throw new Error(`Telegram API error: ${data.description}`);
 
-    const doc = data.result.document;
-    return {
-      fileId:    doc.file_id,
-      messageId: data.result.message_id,
-      chatId:    storageChatId,
-    };
-  } catch (err) {
-    if (!isTelegramUserbotEnabled()) throw err;
-    const uploaded = await uploadBufferToTelegramChatViaUserbot(storageChatId, buffer, fileName, mimeType, caption);
+    const uploaded = extractTelegramUploadMeta(data.result, storageChatId);
+    if (!uploaded.messageId) {
+      throw new Error("Telegram API error: upload response has no message id");
+    }
+
+    if (!uploaded.fileId && isTelegramUserbotEnabled()) {
+      return uploadViaUserbot();
+    }
+
     return {
       fileId: uploaded.fileId || "",
       messageId: uploaded.messageId,
       chatId: uploaded.chatId,
     };
+  } catch (err) {
+    if (!isTelegramUserbotEnabled()) throw err;
+    return uploadViaUserbot();
   }
 }
 

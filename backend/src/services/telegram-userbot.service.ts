@@ -18,10 +18,32 @@ export function isTelegramUserbotEnabled(): boolean {
   return isConfigured();
 }
 
+function buildUserbotProxy() {
+  if (!config.bot.proxyUrl) return undefined;
+
+  try {
+    const parsed = new URL(config.bot.proxyUrl);
+    const protocol = parsed.protocol.replace(":", "").toLowerCase();
+    const socksType = protocol === "socks4" ? 4 : 5;
+
+    return {
+      ip: parsed.hostname,
+      port: Number(parsed.port || 1080),
+      socksType,
+      username: parsed.username ? decodeURIComponent(parsed.username) : undefined,
+      password: parsed.password ? decodeURIComponent(parsed.password) : undefined,
+      timeout: 8,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 async function createClient() {
   const session = new StringSession(config.telegramUserbot.session);
   const client = new TelegramClient(session, config.telegramUserbot.apiId, config.telegramUserbot.apiHash, {
     connectionRetries: 5,
+    proxy: buildUserbotProxy(),
   });
   await client.connect();
   return client;

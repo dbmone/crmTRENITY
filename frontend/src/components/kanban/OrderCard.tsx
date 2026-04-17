@@ -57,7 +57,7 @@ export default function OrderCard({ order, onClick, dim, dragEnabled = true }: P
       {...(dragEnabled ? listeners : {})}
       data-tour="order-card"
       onClick={() => onClick(order)}
-      className={`group relative bg-bg-raised border rounded-xl p-3 cursor-pointer select-none transition-all duration-150 ${
+      className={`group relative bg-bg-raised border rounded-xl p-3 cursor-pointer select-none transition-all duration-200 animate-soft-in-fast ${
         isDragging
           ? "border-green-500/40 shadow-glow"
           : isOverdue

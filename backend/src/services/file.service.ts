@@ -11,7 +11,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { config } from "../config";
 import { randomUUID } from "crypto";
 import { uploadFileToStorage, forwardFileToUser, getTelegramFileStream } from "./telegram.service";
-import { downloadTelegramMessageMediaViaUserbot } from "./telegram-userbot.service";
+import { downloadTelegramMessageMediaViaUserbot, isTelegramUserbotEnabled } from "./telegram-userbot.service";
 import {
   mirrorBufferFileToOrderGroup,
   mirrorStoredTelegramMessageToOrderGroup,
@@ -193,13 +193,23 @@ export async function getFileContentStream(fileId: string): Promise<{
   }
 
   if (file.telegramChatId && file.telegramMsgId) {
-    const result = await downloadTelegramMessageMediaViaUserbot(file.telegramChatId, file.telegramMsgId);
-    return {
-      stream: Readable.from(result.buffer),
-      mimeType: result.contentType || file.mimeType || "application/octet-stream",
-      fileName: file.fileName,
-      fileSize: file.fileSize,
-    };
+    try {
+      const result = await downloadTelegramMessageMediaViaUserbot(file.telegramChatId, file.telegramMsgId);
+      return {
+        stream: Readable.from(result.buffer),
+        mimeType: result.contentType || file.mimeType || "application/octet-stream",
+        fileName: file.fileName,
+        fileSize: file.fileSize,
+      };
+    } catch (err: any) {
+      if (!isTelegramUserbotEnabled()) {
+        throw {
+          statusCode: 503,
+          message: "Для превью этого Telegram-файла нужно настроить TELEGRAM_USERBOT_* или локальный TELEGRAM_BOT_API_BASE_URL",
+        };
+      }
+      throw err;
+    }
   }
 
   if (!file.storagePath) {

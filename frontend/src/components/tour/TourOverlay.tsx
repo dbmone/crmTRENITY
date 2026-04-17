@@ -13,8 +13,8 @@ type RectLike = {
   bottom: number;
 };
 
-const TOOLTIP_WIDTH = 340;
-const TARGET_PADDING = 10;
+const TOOLTIP_WIDTH = 300;
+const TARGET_PADDING = 8;
 const VIEWPORT_PADDING = 16;
 
 function clamp(value: number, min: number, max: number) {
@@ -221,7 +221,7 @@ export default function TourOverlay() {
           right: VIEWPORT_PADDING,
           top: VIEWPORT_PADDING,
           bottom: "auto" as const,
-          maxHeight: "34vh",
+          maxHeight: "30vh",
           overflowY: "auto" as const,
         }
       : {
@@ -229,7 +229,7 @@ export default function TourOverlay() {
           right: VIEWPORT_PADDING,
           bottom: VIEWPORT_PADDING,
           top: "auto" as const,
-          maxHeight: "34vh",
+          maxHeight: "30vh",
           overflowY: "auto" as const,
         }
     : null;
@@ -244,7 +244,7 @@ export default function TourOverlay() {
           <div className="pointer-events-auto fixed bg-black/68" style={{ left: targetRect.right, top: targetRect.top, right: 0, height: targetRect.height }} />
 
           <div
-            className="pointer-events-none fixed rounded-2xl border border-green-400/70 shadow-[0_0_0_9999px_rgba(0,0,0,0)]"
+            className="pointer-events-none fixed rounded-2xl border border-green-400/70 shadow-[0_0_0_9999px_rgba(0,0,0,0)] transition-[top,left,width,height] duration-200"
             style={{
               top: targetRect.top,
               left: targetRect.left,
@@ -260,14 +260,14 @@ export default function TourOverlay() {
 
       <aside
         ref={tooltipRef}
-        className="pointer-events-auto fixed rounded-3xl border border-bg-border bg-bg-surface/95 p-4 shadow-[0_24px_90px_rgba(0,0,0,0.45)] backdrop-blur sm:p-5"
+        className="pointer-events-auto fixed rounded-3xl border border-bg-border bg-bg-surface/95 p-3.5 shadow-[0_24px_90px_rgba(0,0,0,0.45)] backdrop-blur transition-[top,left,bottom,right] duration-200 sm:p-4"
         style={
           isMobile
             ? mobileStyle ?? undefined
             : {
                 top: desktopTop,
                 left: desktopLeft,
-                width: "min(340px, calc(100vw - 32px))",
+                width: "min(300px, calc(100vw - 32px))",
                 maxHeight: `calc(100vh - ${VIEWPORT_PADDING * 2}px)`,
                 overflowY: "auto",
               }
@@ -295,20 +295,20 @@ export default function TourOverlay() {
           </button>
         </div>
 
-        <div className="mb-4 flex items-start gap-3">
-          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-green-500/12 text-sm font-black text-green-300">
+        <div className="mb-3.5 flex items-start gap-3">
+          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-green-500/12 text-xs font-black text-green-300">
             {String(stepIndex + 1).padStart(2, "0")}
           </div>
           <div className="min-w-0">
-            <h3 className="text-lg font-black leading-tight text-ink-primary">{step.title}</h3>
-            <p className="mt-2 text-sm leading-6 text-ink-secondary">{step.content}</p>
+            <h3 className="text-base font-black leading-tight text-ink-primary">{step.title}</h3>
+            <p className="mt-1.5 text-[13px] leading-5 text-ink-secondary">{step.content}</p>
           </div>
         </div>
 
         {step.details && step.details.length > 0 && (
-          <div className="mb-4 space-y-2 rounded-2xl border border-bg-border bg-bg-raised/70 p-3.5">
+          <div className="mb-3.5 space-y-2 rounded-2xl border border-bg-border bg-bg-raised/70 p-3">
             {step.details.map((detail) => (
-              <p key={detail} className="text-sm leading-5 text-ink-secondary">
+              <p key={detail} className="text-[13px] leading-5 text-ink-secondary">
                 {detail}
               </p>
             ))}

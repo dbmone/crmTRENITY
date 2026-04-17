@@ -75,6 +75,7 @@ export default function OrderFileRow({
   const [sentToTelegram, setSentToTelegram] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewFailed, setPreviewFailed] = useState(false);
 
   const isTelegramFile = !!file.telegramFileId || !!file.telegramMsgId;
   const fileBucket = getFileBucket(file);
@@ -84,6 +85,17 @@ export default function OrderFileRow({
   const isAudioPreview = isAudioFile(file);
   const canPreview = isImagePreview || isVideoPreview || isAudioPreview;
   const previewUrl = canPreview ? api.getFileStreamUrl(file.id) : null;
+  const previewErrorMessage = isImagePreview
+    ? "Не удалось загрузить превью изображения"
+    : isVideoPreview
+      ? "Не удалось воспроизвести видео"
+      : "Не удалось воспроизвести аудио";
+
+  const togglePreview = () => {
+    setPreviewFailed(false);
+    setPreviewLoading(false);
+    setPreviewOpen((value) => !value);
+  };
 
   const handleSendToTelegram = async () => {
     setDownloading(true);
@@ -125,7 +137,7 @@ export default function OrderFileRow({
 
   if (isTextTz) {
     return (
-      <div className="rounded-lg bg-bg-raised border border-bg-border hover:border-bg-hover transition-colors p-3">
+      <div className="rounded-lg bg-bg-raised border border-bg-border hover:border-bg-hover transition-colors p-3 animate-soft-in-fast">
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-start gap-2 min-w-0">
             <span className="text-[#229ED9] mt-0.5 flex-shrink-0">💬</span>
@@ -178,7 +190,7 @@ export default function OrderFileRow({
   }
 
   return (
-    <div className="rounded-lg bg-bg-raised border border-bg-border hover:border-bg-hover transition-colors p-3">
+    <div className="rounded-lg bg-bg-raised border border-bg-border hover:border-bg-hover transition-colors p-3 animate-soft-in-fast">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
           {isTelegramFile ? (
@@ -203,7 +215,7 @@ export default function OrderFileRow({
         <div className="flex items-center gap-1 flex-shrink-0">
           {canPreview && (
             <button
-              onClick={() => setPreviewOpen((value) => !value)}
+              onClick={togglePreview}
               className="px-2.5 py-1 rounded-lg border border-bg-border text-[11px] text-ink-tertiary hover:text-ink-primary hover:border-bg-hover transition-colors"
             >
               {previewOpen ? "Скрыть" : "Превью"}
@@ -251,7 +263,11 @@ export default function OrderFileRow({
 
       {previewOpen && canPreview && (
         <div className="mt-3 rounded-lg border border-bg-border bg-bg-base/60 p-2">
-          {isVideoPreview ? (
+          {previewFailed ? (
+            <div className="flex items-center justify-center rounded-lg bg-black/20 px-4 py-8 text-center text-xs text-ink-tertiary">
+              {previewErrorMessage}
+            </div>
+          ) : isVideoPreview ? (
             <video
               src={previewUrl!}
               controls
@@ -259,32 +275,47 @@ export default function OrderFileRow({
               className="w-full max-h-80 rounded-lg bg-black"
               onLoadStart={() => setPreviewLoading(true)}
               onLoadedData={() => setPreviewLoading(false)}
-              onError={() => alert("Не удалось воспроизвести видео")}
-            />
-          ) : isAudioPreview ? (
-            <audio
-              src={previewUrl!}
-              controls
-              preload="metadata"
-              className="w-full"
-              onLoadStart={() => setPreviewLoading(true)}
-              onLoadedData={() => setPreviewLoading(false)}
-              onError={() => alert("Не удалось воспроизвести аудио")}
-            />
-          ) : previewLoading ? (
-            <div className="flex items-center justify-center py-8 text-xs text-ink-tertiary">Загружаю превью...</div>
-          ) : previewUrl ? (
-            <img
-              src={previewUrl}
-              alt={file.fileName}
-              className="w-full max-h-80 object-contain rounded-lg bg-black/20"
-              onLoadStart={() => setPreviewLoading(true)}
-              onLoad={() => setPreviewLoading(false)}
               onError={() => {
                 setPreviewLoading(false);
-                alert("Не удалось загрузить превью");
+                setPreviewFailed(true);
               }}
             />
+          ) : isAudioPreview ? (
+            <div className="rounded-lg bg-black/10 p-3">
+              <audio
+                src={previewUrl!}
+                controls
+                preload="metadata"
+                className="w-full"
+                onLoadStart={() => setPreviewLoading(true)}
+                onLoadedData={() => setPreviewLoading(false)}
+                onError={() => {
+                  setPreviewLoading(false);
+                  setPreviewFailed(true);
+                }}
+              />
+            </div>
+          ) : previewUrl ? (
+            <div className="relative flex min-h-[180px] items-center justify-center overflow-hidden rounded-lg bg-black/20">
+              <img
+                src={previewUrl}
+                alt={file.fileName}
+                className={`w-full max-h-80 object-contain rounded-lg transition-opacity duration-200 ${
+                  previewLoading ? "opacity-0" : "opacity-100"
+                }`}
+                onLoadStart={() => setPreviewLoading(true)}
+                onLoad={() => setPreviewLoading(false)}
+                onError={() => {
+                  setPreviewLoading(false);
+                  setPreviewFailed(true);
+                }}
+              />
+              {previewLoading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/15 text-xs text-ink-tertiary">
+                  Загружаю превью...
+                </div>
+              )}
+            </div>
           ) : null}
         </div>
       )}

@@ -39,7 +39,9 @@
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('backend node:', d.get\\('engines',{}\\).get\\('node','?'\\)\\); print\\('start:', d['scripts']['start']\\); print\\('build:', d['scripts']['build']\\)\")",
       "Bash(git commit *)",
       "Bash(ls node_modules/form-data/*.d.ts)",
-      "Bash(ls node_modules/@types/form-data/)"
+      "Bash(ls node_modules/@types/form-data/)",
+      "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
+      "Bash(node -e ' *)"
     ]
   }
 }

@@ -67,7 +67,7 @@ export default function KanbanColumn({ status, label, orders, onCardClick, dragE
 
   return (
     <div
-      className={`flex-shrink-0 w-[260px] flex flex-col rounded-xl border overflow-hidden transition-colors ${
+      className={`flex-shrink-0 w-[260px] flex flex-col rounded-xl border overflow-hidden transition-colors animate-soft-in ${
         isArchived ? "border-bg-border/50 opacity-75 hover:opacity-90" : "border-bg-border"
       } ${cfg.colBg}`}
       style={{ height: "100%" }}

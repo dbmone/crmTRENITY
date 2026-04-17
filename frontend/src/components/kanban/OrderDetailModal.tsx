@@ -90,8 +90,8 @@ function UploadProgressList({
   if (items.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-bg-border bg-bg-raised p-2.5">
-      <div className="mb-2 flex items-center justify-between text-[11px] text-ink-secondary">
+    <div className="mt-3 rounded-lg border border-bg-border bg-bg-raised p-2.5 animate-soft-in-fast">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-ink-secondary">
         <span>{title}</span>
         {showCancel && (
           <button
@@ -585,7 +585,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-end sm:justify-center sm:pt-10 sm:pb-6 sm:overflow-y-auto">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
 
-      <div data-tour="order-modal" className="relative bg-bg-surface border border-t border-bg-border rounded-t-2xl sm:rounded-modal shadow-modal w-full sm:max-w-2xl sm:mx-4 max-h-[92vh] overflow-y-auto animate-modal">
+      <div data-tour="order-modal" className="relative bg-bg-surface border border-t border-bg-border rounded-t-2xl sm:rounded-modal shadow-modal w-full sm:max-w-2xl sm:mx-4 max-h-[92vh] overflow-y-auto animate-modal animate-soft-in">
 
         {/* ── Header ── */}
         <div className="p-5 pb-0">
@@ -827,7 +827,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
                       className="w-full text-sm bg-bg-surface border border-bg-border rounded-lg p-2.5 text-ink-primary placeholder-ink-tertiary outline-none focus:border-green-500/50 resize-none transition-colors"
                     />
                   )}
-                  <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  <div className="mt-3 flex flex-wrap items-center gap-2.5 [&>button]:min-h-[40px]">
                     <button
                       onClick={() => {
                         if (primaryTzCollapsed) {

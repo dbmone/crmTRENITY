@@ -154,7 +154,7 @@ export default function BoardPage() {
   const activeFilter = filter?.marketerId === user?.id || filter?.creatorId === user?.id;
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-bg-base">
+    <div className="h-full flex flex-col overflow-hidden bg-bg-base animate-soft-in">
       <Header />
 
       <div className="flex items-center gap-2 px-3 sm:px-6 py-2.5 border-b border-bg-border bg-bg-surface flex-shrink-0">
