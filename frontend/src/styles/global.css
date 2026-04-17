@@ -16,6 +16,10 @@ html, body, #root {
   color-scheme: dark;
 }
 
+html {
+  font-size: 16px;
+}
+
 body {
   font-family: "Inter", system-ui, sans-serif;
   background: #0A0A0A;
@@ -164,3 +168,16 @@ body {
 
 /* Content transition: fade between loading and content */
 .content-ready { animation: fade-in-up 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Compact desktop mode for 1080p-like screens */
+@media (min-width: 1024px) and (max-height: 1180px) {
+  html {
+    font-size: 15px;
+  }
+}
+
+@media (min-width: 1024px) and (max-height: 980px) {
+  html {
+    font-size: 14.5px;
+  }
+}

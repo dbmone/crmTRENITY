@@ -582,7 +582,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-end sm:justify-center sm:pt-10 sm:pb-6 sm:overflow-y-auto">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
 
-      <div data-tour="order-modal" className="relative bg-bg-surface border border-t border-bg-border rounded-t-2xl sm:rounded-modal shadow-modal w-full sm:max-w-2xl sm:mx-4 max-h-[92vh] overflow-y-auto animate-modal animate-soft-in">
+      <div data-tour="order-modal" className="relative bg-bg-surface border border-t border-bg-border rounded-t-2xl sm:rounded-modal shadow-modal w-full sm:max-w-[44rem] lg:max-w-[46rem] sm:mx-4 max-h-[90vh] overflow-y-auto animate-modal animate-soft-in">
 
         {/* ── Header ── */}
         <div className="p-5 pb-0">
