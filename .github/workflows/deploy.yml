@@ -122,5 +122,14 @@ jobs:
             # stop old app containers (free ports before starting new ones)
             docker compose stop backend bot frontend || true
 
+            # kill any stray containers still holding the ports
+            for PORT in 3000 3001 8080; do
+              CID=$(docker ps -q --filter "publish=$PORT")
+              if [ -n "$CID" ]; then
+                echo "Killing container $CID on port $PORT"
+                docker stop "$CID" || true
+              fi
+            done
+
             # start with new images, keep postgres/g4f running
             docker compose up -d --no-build --no-deps --force-recreate backend bot frontend
