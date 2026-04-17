@@ -212,16 +212,18 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-bg-border bg-bg-surface">
-      <div className="relative mx-auto flex max-w-screen-2xl items-center justify-between px-4 py-3 sm:px-6">
+      <div className="relative mx-auto flex max-w-screen-2xl items-center px-4 py-3 sm:px-6">
         {/* Left — logo (always visible) */}
-        <button type="button" onClick={() => navigate("/")} className="relative z-10 flex flex-shrink-0 items-center">
-          <span className="font-bold tracking-tight text-ink-primary">
-            TRENITY <span className="text-green-500">CRM</span>
-          </span>
-        </button>
+        <div className="flex flex-1 justify-start">
+          <button type="button" onClick={() => navigate("/")} className="relative z-10 flex flex-shrink-0 items-center">
+            <span className="font-bold tracking-tight text-ink-primary">
+              TRENITY <span className="text-green-500">CRM</span>
+            </span>
+          </button>
+        </div>
 
-        {/* Center — nav absolutely centered on desktop */}
-        <div className="pointer-events-none absolute inset-x-0 hidden justify-center md:flex">
+        {/* Center — nav strictly centered */}
+        <div className="hidden flex-shrink-0 justify-center xl:flex">
           <nav
             ref={navRef}
             className="pointer-events-auto relative flex items-center gap-1 rounded-xl border border-bg-border/80 bg-bg-surface/95 px-2 py-1 backdrop-blur-sm"
@@ -239,119 +241,122 @@ export default function Header() {
           </nav>
         </div>
 
-        {user && (
-          <div className="relative z-10 flex flex-shrink-0 items-center justify-end gap-1.5 sm:gap-2">
-            <span className={`hidden rounded-full px-2 py-1 text-xs font-medium sm:inline ${ROLE_COLORS[user.role] || "bg-bg-hover text-ink-secondary"}`}>
-              {ROLE_LABELS[user.role] || user.role}
-            </span>
+        {/* Right - Profile, Notifications, Role, Logout */}
+        <div className="flex flex-1 justify-end">
+          {user && (
+            <div className="relative z-10 flex flex-shrink-0 items-center justify-end gap-1 sm:gap-2">
+              <span className={`rounded-full px-2 py-1 text-[10px] sm:text-xs font-medium ${ROLE_COLORS[user.role] || "bg-bg-hover text-ink-secondary"}`}>
+                {ROLE_LABELS[user.role] || user.role}
+              </span>
 
-            <div className="relative" ref={notifRef}>
-              <button
-                type="button"
-                onClick={() => setShowNotifs((prev) => !prev)}
-                className="relative rounded-lg p-2 text-ink-secondary transition-colors hover:bg-bg-hover hover:text-ink-primary"
-              >
-                <Bell size={16} />
-                {unread > 0 && (
-                  <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 text-[9px] font-black text-black">
-                    {unread > 9 ? "9+" : unread}
-                  </span>
-                )}
-              </button>
+              <div className="relative" ref={notifRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowNotifs((prev) => !prev)}
+                  className="relative rounded-lg p-1.5 sm:p-2 text-ink-secondary transition-colors hover:bg-bg-hover hover:text-ink-primary"
+                >
+                  <Bell size={16} />
+                  {unread > 0 && (
+                    <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 text-[9px] font-black text-black">
+                      {unread > 9 ? "9+" : unread}
+                    </span>
+                  )}
+                </button>
 
-              {showNotifs && (
-                <div className="absolute right-0 top-full mt-2 w-80 max-w-[calc(100vw-1rem)] overflow-hidden rounded-modal border border-bg-border bg-bg-surface shadow-modal">
-                  <div className="flex items-center justify-between border-b border-bg-border px-4 py-3">
-                    <span className="text-sm font-semibold text-ink-primary">Уведомления</span>
-                    <div className="flex items-center gap-2">
-                      {unread > 0 && (
-                        <button type="button" onClick={markAllNotificationsRead} className="text-xs text-green-400 hover:text-green-300">
-                          Прочитать все
+                {showNotifs && (
+                  <div className="absolute right-0 top-full mt-2 w-80 max-w-[calc(100vw-1rem)] overflow-hidden rounded-modal border border-bg-border bg-bg-surface shadow-modal">
+                    <div className="flex items-center justify-between border-b border-bg-border px-4 py-3">
+                      <span className="text-sm font-semibold text-ink-primary">Уведомления</span>
+                      <div className="flex items-center gap-2">
+                        {unread > 0 && (
+                          <button type="button" onClick={markAllNotificationsRead} className="text-xs text-green-400 hover:text-green-300">
+                            Прочитать все
+                          </button>
+                        )}
+                        <button type="button" onClick={() => setShowNotifs(false)} className="rounded p-1 text-ink-tertiary hover:text-ink-primary">
+                          <X size={14} />
                         </button>
+                      </div>
+                    </div>
+
+                    <div className="max-h-80 overflow-y-auto">
+                      {notifications.length === 0 ? (
+                        <div className="py-8 text-center text-ink-tertiary">
+                          <Bell size={24} className="mx-auto mb-2 opacity-30" />
+                          <p className="text-sm">Пока уведомлений нет</p>
+                        </div>
+                      ) : (
+                        notifications.map((notification) => (
+                          <button
+                            key={notification.id}
+                            type="button"
+                            onClick={() => void openNotification(notification)}
+                            className={`w-full border-b border-bg-border px-4 py-3 text-left transition-colors last:border-0 hover:bg-bg-raised ${
+                              !notification.isRead ? "bg-green-500/5" : ""
+                            }`}
+                          >
+                            <div className="flex items-start gap-2.5">
+                              {!notification.isRead && <div className="mt-2 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-green-500" />}
+                              <div className={!notification.isRead ? "" : "pl-4"}>
+                                <p className="text-sm leading-snug text-ink-primary">{notification.message}</p>
+                                {notification.order && <p className="mt-0.5 text-xs text-ink-tertiary">{notification.order.title}</p>}
+                                <p className="mt-1 text-[10px] text-ink-tertiary">
+                                  {new Date(notification.createdAt).toLocaleString("ru-RU", {
+                                    day: "numeric",
+                                    month: "short",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
+                                </p>
+                              </div>
+                            </div>
+                          </button>
+                        ))
                       )}
-                      <button type="button" onClick={() => setShowNotifs(false)} className="rounded p-1 text-ink-tertiary hover:text-ink-primary">
-                        <X size={14} />
-                      </button>
                     </div>
                   </div>
-
-                  <div className="max-h-80 overflow-y-auto">
-                    {notifications.length === 0 ? (
-                      <div className="py-8 text-center text-ink-tertiary">
-                        <Bell size={24} className="mx-auto mb-2 opacity-30" />
-                        <p className="text-sm">Пока уведомлений нет</p>
-                      </div>
-                    ) : (
-                      notifications.map((notification) => (
-                        <button
-                          key={notification.id}
-                          type="button"
-                          onClick={() => void openNotification(notification)}
-                          className={`w-full border-b border-bg-border px-4 py-3 text-left transition-colors last:border-0 hover:bg-bg-raised ${
-                            !notification.isRead ? "bg-green-500/5" : ""
-                          }`}
-                        >
-                          <div className="flex items-start gap-2.5">
-                            {!notification.isRead && <div className="mt-2 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-green-500" />}
-                            <div className={!notification.isRead ? "" : "pl-4"}>
-                              <p className="text-sm leading-snug text-ink-primary">{notification.message}</p>
-                              {notification.order && <p className="mt-0.5 text-xs text-ink-tertiary">{notification.order.title}</p>}
-                              <p className="mt-1 text-[10px] text-ink-tertiary">
-                                {new Date(notification.createdAt).toLocaleString("ru-RU", {
-                                  day: "numeric",
-                                  month: "short",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
-                              </p>
-                            </div>
-                          </div>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <button
-              type="button"
-              data-tour="profile-btn"
-              onClick={() => navigate("/profile")}
-              className="hidden items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-bg-hover md:flex"
-            >
-              <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-green-500/30 bg-green-500/20">
-                {user.avatarUrl ? (
-                  <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <span className="text-[10px] font-bold text-green-400">{initials}</span>
                 )}
               </div>
-              <span className="text-sm font-medium text-ink-primary">{user.displayName}</span>
-            </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                logout();
-                navigate("/login");
-              }}
-              className="hidden rounded-lg p-2 text-ink-tertiary transition-colors hover:bg-bg-hover hover:text-red-400 md:block"
-              title="Выйти"
-            >
-              <LogOut size={16} />
-            </button>
+              <button
+                type="button"
+                data-tour="profile-btn"
+                onClick={() => navigate("/profile")}
+                className="flex items-center gap-2 rounded-lg p-1.5 sm:px-2 sm:py-1.5 transition-colors hover:bg-bg-hover"
+              >
+                <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-green-500/30 bg-green-500/20">
+                  {user.avatarUrl ? (
+                    <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="text-[10px] font-bold text-green-400">{initials}</span>
+                  )}
+                </div>
+                <span className="hidden text-sm font-medium text-ink-primary lg:block">{user.displayName}</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setMobileOpen((prev) => !prev)}
-              className="rounded-lg p-2 text-ink-secondary transition-colors hover:bg-bg-hover md:hidden"
-              aria-label="Меню"
-            >
-              {mobileOpen ? <X size={18} /> : <Menu size={18} />}
-            </button>
-          </div>
-        )}
+              <button
+                type="button"
+                onClick={() => {
+                  logout();
+                  navigate("/login");
+                }}
+                className="rounded-lg p-1.5 sm:p-2 text-ink-tertiary transition-colors hover:bg-bg-hover hover:text-red-400"
+                title="Выйти"
+              >
+                <LogOut size={16} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMobileOpen((prev) => !prev)}
+                className="rounded-lg p-1.5 sm:p-2 text-ink-secondary transition-colors hover:bg-bg-hover xl:hidden"
+                aria-label="Меню"
+              >
+                {mobileOpen ? <X size={18} /> : <Menu size={18} />}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {mobileOpen && user && (
