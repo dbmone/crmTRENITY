@@ -98,6 +98,7 @@ export default function BoardPage() {
     ]);
     const orderTargets = new Set([
       "order-modal",
+      "order-creators",
       "tab-stages",
       "tab-tz",
       "tab-files",
