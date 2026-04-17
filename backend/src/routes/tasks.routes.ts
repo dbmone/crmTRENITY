@@ -1,14 +1,44 @@
 import { FastifyInstance } from "fastify";
 import {
   getTasksForUser, createTask, updateTask, deleteTask,
-  addSubtask, updateSubtask, deleteSubtask, parseVoiceToTask,
+  addSubtask, updateSubtask, deleteSubtask, parseVoiceToTask, structureToTz,
 } from "../services/task.service";
+import { transcribeAudio } from "../services/stt.service";
 
 export async function tasksRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
 
   // GET /api/tasks
   app.get("/", async (req) => getTasksForUser(req.currentUser.id));
+
+  // POST /api/tasks/voice-transcribe — STT без orderId (для создания заказа)
+  app.post("/voice-transcribe", async (req, reply) => {
+    const data = await req.file();
+    if (!data) return reply.status(400).send({ error: "Аудиофайл не прикреплён" });
+    const chunks: Buffer[] = [];
+    for await (const chunk of data.file) chunks.push(chunk);
+    try {
+      const text = await transcribeAudio(Buffer.concat(chunks), data.filename || "voice.ogg");
+      return { text };
+    } catch (err: any) {
+      return reply.status(err.statusCode || 500).send({ error: err.message });
+    }
+  });
+
+  // POST /api/tasks/voice-structure-tz — STT + AI структурирование ТЗ без orderId
+  app.post("/voice-structure-tz", async (req, reply) => {
+    const data = await req.file();
+    if (!data) return reply.status(400).send({ error: "Аудиофайл не прикреплён" });
+    const chunks: Buffer[] = [];
+    for await (const chunk of data.file) chunks.push(chunk);
+    try {
+      const rawText = await transcribeAudio(Buffer.concat(chunks), data.filename || "voice.ogg");
+      const text = await structureToTz(rawText);
+      return { text, rawText };
+    } catch (err: any) {
+      return reply.status(err.statusCode || 500).send({ error: err.message });
+    }
+  });
 
   // POST /api/tasks/parse-voice — STT + AI → возвращает превью (не сохраняет)
   app.post("/parse-voice", async (req, reply) => {

@@ -416,6 +416,25 @@ export async function deleteSubtask(taskId: string, subtaskId: string): Promise<
   await api.delete(`/tasks/${taskId}/subtasks/${subtaskId}`);
 }
 
+// Standalone voice endpoints (без orderId, для форм создания)
+export async function voiceTranscribeStandalone(blob: Blob, ext: string): Promise<{ text: string }> {
+  const form = new FormData();
+  form.append("audio", blob, `voice.${ext}`);
+  const { data } = await api.post("/tasks/voice-transcribe", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+export async function voiceStructureTzStandalone(blob: Blob, ext: string): Promise<{ text: string; rawText: string }> {
+  const form = new FormData();
+  form.append("audio", blob, `voice.${ext}`);
+  const { data } = await api.post("/tasks/voice-structure-tz", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
 export async function voiceStructureToTz(orderId: string, blob: Blob, ext: string): Promise<{ text: string; rawText: string }> {
   const form = new FormData();
   form.append("audio", blob, `voice.${ext}`);

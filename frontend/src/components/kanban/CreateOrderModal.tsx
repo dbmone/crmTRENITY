@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { X, Plus, Paperclip, Trash2 } from "lucide-react";
+import { X, Plus, Paperclip, Trash2, Mic, Sparkles, Square } from "lucide-react";
 import { useOrdersStore } from "../../store/orders.store";
 import * as api from "../../api/client";
 
@@ -47,8 +47,11 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [uploadItems, setUploadItems] = useState<UploadItem[]>([]);
   const [error, setError] = useState("");
+  const [voiceMode, setVoiceMode] = useState<"idle" | "recording-text" | "recording-tz" | "processing-text" | "processing-tz">("idle");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadAbortRef = useRef<AbortController | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   const createOrder = useOrdersStore((s) => s.createOrder);
 
@@ -133,6 +136,47 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
     }
 
     return failedUploads;
+  };
+
+  const startVoiceRecording = async (mode: "text" | "tz") => {
+    if (voiceMode !== "idle") {
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/ogg" });
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setVoiceMode(mode === "text" ? "processing-text" : "processing-tz");
+        const mimeType = recorder.mimeType || "audio/webm";
+        const ext = mimeType.includes("ogg") ? "ogg" : "webm";
+        const blob = new Blob(audioChunksRef.current, { type: mimeType });
+        try {
+          if (mode === "text") {
+            const { text } = await api.voiceTranscribeStandalone(blob, ext);
+            setDescription((prev) => prev ? `${prev}\n${text}` : text);
+          } else {
+            const { text } = await api.voiceStructureTzStandalone(blob, ext);
+            setDescription((prev) => prev ? `${prev}\n${text}` : text);
+          }
+          setError("");
+        } catch (err: any) {
+          setError(err.response?.data?.error || "Ошибка распознавания голоса");
+        } finally {
+          setVoiceMode("idle");
+        }
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setVoiceMode(mode === "text" ? "recording-text" : "recording-tz");
+    } catch {
+      setError("Нет доступа к микрофону");
+    }
   };
 
   const handlePickFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -231,7 +275,43 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-ink-tertiary">ТЗ / описание</label>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="block text-xs font-medium text-ink-tertiary">ТЗ / описание</label>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => startVoiceRecording("text")}
+                  disabled={voiceMode === "processing-text" || voiceMode === "processing-tz" || voiceMode === "recording-tz"}
+                  title="Голос → текст (простое распознавание)"
+                  className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition-colors ${
+                    voiceMode === "recording-text"
+                      ? "border-red-500/40 bg-red-500/10 text-red-400 animate-pulse"
+                      : voiceMode === "processing-text"
+                        ? "border-amber-400/30 bg-amber-400/8 text-amber-400"
+                        : "border-bg-border text-ink-secondary hover:bg-bg-raised"
+                  } disabled:opacity-40`}
+                >
+                  {voiceMode === "recording-text" ? <Square size={10} /> : voiceMode === "processing-text" ? <span className="h-2.5 w-2.5 animate-spin rounded-full border border-amber-400 border-t-transparent" /> : <Mic size={10} />}
+                  {voiceMode === "recording-text" ? "Стоп" : voiceMode === "processing-text" ? "..." : "Голос"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => startVoiceRecording("tz")}
+                  disabled={voiceMode === "processing-text" || voiceMode === "processing-tz" || voiceMode === "recording-text"}
+                  title="Голос → ТЗ (AI структурирует)"
+                  className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition-colors ${
+                    voiceMode === "recording-tz"
+                      ? "border-red-500/40 bg-red-500/10 text-red-400 animate-pulse"
+                      : voiceMode === "processing-tz"
+                        ? "border-purple-400/30 bg-purple-400/8 text-purple-400"
+                        : "border-bg-border text-ink-secondary hover:bg-bg-raised"
+                  } disabled:opacity-40`}
+                >
+                  {voiceMode === "recording-tz" ? <Square size={10} /> : voiceMode === "processing-tz" ? <span className="h-2.5 w-2.5 animate-spin rounded-full border border-purple-400 border-t-transparent" /> : <Sparkles size={10} />}
+                  {voiceMode === "recording-tz" ? "Стоп" : voiceMode === "processing-tz" ? "AI..." : "Голос→ТЗ"}
+                </button>
+              </div>
+            </div>
             <textarea
               data-tour="create-description"
               value={description}
