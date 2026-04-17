@@ -92,20 +92,37 @@ jobs:
 
       - name: SSH deploy
         uses: appleboy/ssh-action@v1
+        env:
+          DEPLOY_COMPOSE_DIR: ${{ secrets.DEPLOY_COMPOSE_DIR }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
+          envs: DEPLOY_COMPOSE_DIR
+          script_stop: true
           script: |
+            set -eu
+
             # login to ghcr.io (PAT with read:packages)
             echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u dbmone --password-stdin
 
-            # find compose folder regardless of portainer numbering
-            COMPOSE_DIR=$(find /var/lib/docker/volumes/portainer_data/_data/compose \
-              -name "docker-compose.yml" 2>/dev/null | head -1 | xargs dirname)
+            # allow explicit compose dir from GitHub secret for reliability
+            COMPOSE_DIR="${DEPLOY_COMPOSE_DIR:-}"
+
+            # otherwise try to discover Portainer stack directory
+            if [ -z "$COMPOSE_DIR" ]; then
+              COMPOSE_FILE="$(find /var/lib/docker/volumes/portainer_data/_data/compose \
+                -type f -name docker-compose.yml 2>/dev/null | head -n 1 || true)"
+
+              if [ -n "$COMPOSE_FILE" ]; then
+                COMPOSE_DIR="$(dirname "$COMPOSE_FILE")"
+              fi
+            fi
 
             if [ -z "$COMPOSE_DIR" ]; then
               echo "ERROR: compose directory not found"
+              echo "Hint: set GitHub secret DEPLOY_COMPOSE_DIR to the exact stack folder on the server"
+              echo "Example: /var/lib/docker/volumes/portainer_data/_data/compose/15"
               exit 1
             fi
 
