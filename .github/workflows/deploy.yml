@@ -116,11 +116,15 @@ jobs:
 
             cd "$COMPOSE_DIR"
 
+            # detect env file (portainer uses stack.env or .env)
+            ENV_FILE=""
+            if [ -f "stack.env" ]; then ENV_FILE="--env-file stack.env"; fi
+
             # pull new images (no rebuild on server)
-            docker compose pull backend bot frontend
+            docker compose $ENV_FILE pull backend bot frontend
 
             # stop old app containers (free ports before starting new ones)
-            docker compose stop backend bot frontend || true
+            docker compose $ENV_FILE stop backend bot frontend || true
 
             # kill any stray containers still holding the ports
             for PORT in 3000 3001 8080; do
@@ -132,4 +136,4 @@ jobs:
             done
 
             # start with new images, keep postgres/g4f running
-            docker compose up -d --no-build --no-deps --force-recreate backend bot frontend
+            docker compose $ENV_FILE up -d --no-build --no-deps --force-recreate backend bot frontend
