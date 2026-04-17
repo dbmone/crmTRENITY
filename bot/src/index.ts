@@ -3793,21 +3793,23 @@ async function startTelegramBot() {
     console.log(`Telegram auth OK: @${me.username}`);
     console.log("Starting Telegram polling...");
 
-    const commandScopes = [
+    const commandTargets = [
       undefined,
-      { type: "default" as const },
-      { type: "all_private_chats" as const },
+      { scope: { type: "default" as const } },
+      { scope: { type: "all_private_chats" as const } },
+      { scope: { type: "default" as const }, language_code: "ru" },
+      { scope: { type: "all_private_chats" as const }, language_code: "ru" },
     ];
 
-    for (const scope of commandScopes) {
+    for (const target of commandTargets) {
       try {
-        if (scope) await bot.api.deleteMyCommands({ scope });
+        if (target) await bot.api.deleteMyCommands(target as any);
         else await bot.api.deleteMyCommands();
       } catch {}
     }
 
-    for (const scope of commandScopes) {
-      if (scope) await bot.api.setMyCommands(BOT_COMMANDS as any, { scope });
+    for (const target of commandTargets) {
+      if (target) await bot.api.setMyCommands(BOT_COMMANDS as any, target as any);
       else await bot.api.setMyCommands(BOT_COMMANDS as any);
     }
 
