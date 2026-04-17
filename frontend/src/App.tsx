@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { useAuthStore } from "./store/auth.store";
 import LoginPage from "./pages/LoginPage";
 import BoardPage from "./pages/BoardPage";
 import ProfilePage from "./pages/ProfilePage";
@@ -11,11 +10,13 @@ import TasksPage from "./pages/TasksPage";
 import AiPage from "./pages/AiPage";
 import GuidePage from "./pages/GuidePage";
 import TourOverlay from "./components/tour/TourOverlay";
+import { useAuthStore } from "./store/auth.store";
 import { useTourStore } from "./store/tour.store";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token);
   const hasCheckedAuth = useAuthStore((s) => s.hasCheckedAuth);
+
   if (!hasCheckedAuth) return <AppBootScreen />;
   if (!token) return <Navigate to="/login" replace />;
   return <>{children}</>;
@@ -24,6 +25,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token);
   const hasCheckedAuth = useAuthStore((s) => s.hasCheckedAuth);
+
   if (!hasCheckedAuth) return <AppBootScreen />;
   if (token) return <Navigate to="/" replace />;
   return <>{children}</>;
@@ -31,12 +33,12 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 
 function AppBootScreen() {
   return (
-    <div className="min-h-screen bg-bg-base flex items-center justify-center">
+    <div className="min-h-screen bg-bg-base flex items-center justify-center animate-page-in">
       <div className="flex flex-col items-center gap-4 text-center">
         <div className="h-10 w-10 rounded-full border-2 border-green-500/25 border-t-green-500 animate-spin" />
         <div>
           <p className="text-sm font-semibold text-ink-primary">Загружаем рабочее пространство</p>
-          <p className="mt-1 text-xs text-ink-tertiary">Подтягиваем профиль, права и начальные данные CRM</p>
+          <p className="mt-1 text-xs text-ink-tertiary">Подтягиваем профиль, права и стартовые данные CRM</p>
         </div>
       </div>
     </div>
@@ -62,21 +64,25 @@ function GuideGate() {
 }
 
 function AppRoutes() {
+  const location = useLocation();
+
   return (
     <>
       <GuideGate />
-      <Routes>
-        <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
-        <Route path="/" element={<ProtectedRoute><BoardPage /></ProtectedRoute>} />
-        <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
-        <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
-        <Route path="/archive" element={<ProtectedRoute><ArchivePage /></ProtectedRoute>} />
-        <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-        <Route path="/tasks" element={<ProtectedRoute><TasksPage /></ProtectedRoute>} />
-        <Route path="/ai" element={<ProtectedRoute><AiPage /></ProtectedRoute>} />
-        <Route path="/guide" element={<ProtectedRoute><GuidePage /></ProtectedRoute>} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <div key={location.pathname} className="animate-page-in">
+        <Routes location={location}>
+          <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
+          <Route path="/" element={<ProtectedRoute><BoardPage /></ProtectedRoute>} />
+          <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
+          <Route path="/archive" element={<ProtectedRoute><ArchivePage /></ProtectedRoute>} />
+          <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+          <Route path="/tasks" element={<ProtectedRoute><TasksPage /></ProtectedRoute>} />
+          <Route path="/ai" element={<ProtectedRoute><AiPage /></ProtectedRoute>} />
+          <Route path="/guide" element={<ProtectedRoute><GuidePage /></ProtectedRoute>} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </div>
     </>
   );
 }

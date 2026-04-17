@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/auth.store";
 
@@ -19,35 +19,6 @@ export default function LoginPage() {
     refs[0].current?.focus();
   }, []);
 
-  const handleChange = (index: number, value: string) => {
-    value = value.toLowerCase().replace(/[^a-z0-9]/g, "");
-    if (value.length > 1) value = value.slice(-1);
-    const next = [...digits];
-    next[index] = value;
-    setDigits(next);
-    setError("");
-    if (value && index < 3) refs[index + 1].current?.focus();
-    if (index === 3 && value && next.join("").length === 4) submitPin(next.join(""));
-  };
-
-  const handleKeyDown = (index: number, e: React.KeyboardEvent) => {
-    if (e.key === "Backspace" && !digits[index] && index > 0) refs[index - 1].current?.focus();
-    if (e.key === "Enter") {
-      const pin = digits.join("");
-      if (pin.length === 4) submitPin(pin);
-    }
-  };
-
-  const handlePaste = (e: React.ClipboardEvent) => {
-    e.preventDefault();
-    const text = e.clipboardData.getData("text").trim().toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 4);
-    const next = [...digits];
-    for (let i = 0; i < text.length; i++) next[i] = text[i];
-    setDigits(next);
-    if (text.length === 4) submitPin(text);
-    else refs[Math.min(text.length, 3)].current?.focus();
-  };
-
   const submitPin = async (pin: string) => {
     setLoading(true);
     setError("");
@@ -63,24 +34,59 @@ export default function LoginPage() {
     }
   };
 
+  const handleChange = (index: number, value: string) => {
+    value = value.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (value.length > 1) value = value.slice(-1);
+
+    const next = [...digits];
+    next[index] = value;
+    setDigits(next);
+    setError("");
+
+    if (value && index < 3) refs[index + 1].current?.focus();
+    if (index === 3 && value && next.join("").length === 4) {
+      void submitPin(next.join(""));
+    }
+  };
+
+  const handleKeyDown = (index: number, e: React.KeyboardEvent) => {
+    if (e.key === "Backspace" && !digits[index] && index > 0) refs[index - 1].current?.focus();
+    if (e.key === "Enter") {
+      const pin = digits.join("");
+      if (pin.length === 4) void submitPin(pin);
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData("text").trim().toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 4);
+    const next = [...digits];
+
+    for (let i = 0; i < text.length; i += 1) next[i] = text[i];
+
+    setDigits(next);
+    if (text.length === 4) void submitPin(text);
+    else refs[Math.min(text.length, 3)].current?.focus();
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-bg-base">
+    <div className="min-h-screen flex items-center justify-center bg-bg-base animate-soft-in">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-green-500/5 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 left-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-green-500/5 blur-3xl" />
       </div>
 
-      <div className="relative bg-bg-surface border border-bg-border rounded-modal p-10 w-full max-w-sm shadow-modal">
-        <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-green-500/10 border border-green-500/20 flex items-center justify-center mx-auto mb-4">
-            <span className="text-green-400 font-black text-2xl">T</span>
+      <div className="relative w-full max-w-sm rounded-modal border border-bg-border bg-bg-surface p-10 shadow-modal animate-fade-in">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-green-500/20 bg-green-500/10">
+            <span className="text-2xl font-black text-green-400">T</span>
           </div>
-          <h1 className="text-xl font-bold text-ink-primary tracking-tight">
+          <h1 className="text-xl font-bold tracking-tight text-ink-primary">
             TRENITY <span className="text-green-500">CRM</span>
           </h1>
-          <p className="text-sm text-ink-tertiary mt-1.5">Введите PIN-код для входа</p>
+          <p className="mt-1.5 text-sm text-ink-tertiary">Введите PIN-код для входа</p>
         </div>
 
-        <div className="flex gap-3 justify-center mb-6">
+        <div className="mb-6 flex justify-center gap-3">
           {digits.map((digit, index) => (
             <input
               key={index}
@@ -96,23 +102,23 @@ export default function LoginPage() {
               onChange={(e) => handleChange(index, e.target.value)}
               onKeyDown={(e) => handleKeyDown(index, e)}
               onPaste={index === 0 ? handlePaste : undefined}
-              className={`w-14 h-16 text-center text-2xl font-bold rounded-xl border-2 outline-none transition-all bg-bg-raised text-ink-primary ${
+              disabled={loading}
+              className={`h-16 w-14 rounded-xl border-2 bg-bg-raised text-center text-2xl font-bold text-ink-primary outline-none transition-all ${
                 error
                   ? "border-red-500/50 bg-red-500/5"
                   : digit
                     ? "border-green-500/50 bg-green-500/5 text-green-400"
                     : "border-bg-border focus:border-green-500/50 focus:bg-green-500/5"
               }`}
-              disabled={loading}
             />
           ))}
         </div>
 
-        {error && <p className="text-center text-sm text-red-400 mb-4">{error}</p>}
+        {error && <p className="mb-4 text-center text-sm text-red-400">{error}</p>}
 
         {loading && (
-          <div className="flex justify-center mb-4">
-            <div className="w-5 h-5 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+          <div className="mb-4 flex justify-center">
+            <div className="h-5 w-5 rounded-full border-2 border-green-500 border-t-transparent animate-spin" />
           </div>
         )}
 
