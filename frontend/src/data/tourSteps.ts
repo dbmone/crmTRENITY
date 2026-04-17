@@ -13,6 +13,21 @@ export type TourStep = {
   nextLabel?: string;
 };
 
+const PROFILE_STEPS: TourStep[] = [
+  {
+    route: "/",
+    target: "profile-btn",
+    title: "Профиль и аватар",
+    content: "Здесь можно изменить отображаемое имя и установить аватар. Аватар виден в карточках заказов и в списке участников.",
+    details: [
+      "Аватар задаётся как прямая ссылка на изображение (URL, который открывается в браузере как картинка).",
+      "Имя и аватар видят все участники: маркетологи видят их у креаторов, и наоборот.",
+    ],
+    emoji: "",
+    placement: "bottom",
+  },
+];
+
 const ORDER_FLOW_STEPS: TourStep[] = [
   {
     route: "/",
@@ -38,14 +53,28 @@ const ORDER_FLOW_STEPS: TourStep[] = [
   {
     route: "/",
     target: "order-modal",
-    title: "Это центр работы по заказу",
-    content: "В этом окне не нужно искать информацию по разным местам: всё собрано в одной карточке.",
+    title: "Кто назначил и кто исполняет",
+    content: "В шапке заказа всегда видно: синий тег — маркетолог, который создал и назначил заказ. Под ним — аватары и имена всех исполнителей-креаторов.",
     details: [
-      "Маркетолог, креатор и бот видят одну и ту же структуру заказа.",
-      "Если кто-то добавил материал через Telegram, он тоже появится здесь.",
+      "Маркетолог (создатель заказа) — синий тег с @ником в верхней части карточки.",
+      "Исполнители (креаторы) — кружки с аватарами под ником маркетолога. Звёздочка ⭐ означает лид-креатора.",
+      "Маркетолог и лид-креатор могут добавить нового исполнителя прямо из этой карточки.",
     ],
     emoji: "",
     placement: "left",
+  },
+  {
+    route: "/",
+    target: "order-creators",
+    title: "Добавить исполнителя",
+    content: "Здесь маркетолог и лид-креатор добавляют креаторов к заказу. После добавления они увидят заказ на своей доске.",
+    details: [
+      "Чтобы добавить — выбери из выпадающего списка «+ Добавить».",
+      "Убрать исполнителя можно кликнув на его имя и выбрав «Убрать из заказа».",
+    ],
+    emoji: "",
+    placement: "bottom",
+    hint: "Этот раздел видят только маркетолог и лид-креатор заказа.",
   },
   {
     route: "/",
@@ -362,9 +391,9 @@ const ADMIN_STEPS: TourStep[] = [
   },
 ];
 
-const CREATOR_STEPS: TourStep[] = [...ORDER_FLOW_STEPS, ...TASKS_STEPS, ...ARCHIVE_STEPS];
-const LEAD_CREATOR_STEPS: TourStep[] = [...ORDER_FLOW_STEPS, ...TASKS_STEPS, ...ARCHIVE_STEPS];
-const HEAD_CREATOR_STEPS: TourStep[] = [...ORDER_FLOW_STEPS, ...TASKS_STEPS, ...ARCHIVE_STEPS, ...DASHBOARD_STEPS, ...AI_STEPS];
+const CREATOR_STEPS: TourStep[] = [...PROFILE_STEPS, ...ORDER_FLOW_STEPS, ...TASKS_STEPS, ...ARCHIVE_STEPS];
+const LEAD_CREATOR_STEPS: TourStep[] = [...PROFILE_STEPS, ...ORDER_FLOW_STEPS, ...TASKS_STEPS, ...ARCHIVE_STEPS];
+const HEAD_CREATOR_STEPS: TourStep[] = [...PROFILE_STEPS, ...ORDER_FLOW_STEPS, ...TASKS_STEPS, ...ARCHIVE_STEPS, ...DASHBOARD_STEPS, ...AI_STEPS];
 const MARKETER_STEPS: TourStep[] = [
   {
     route: "/",
@@ -418,6 +447,7 @@ const MARKETER_STEPS: TourStep[] = [
     emoji: "",
     placement: "top",
   },
+  ...PROFILE_STEPS,
   ...ORDER_FLOW_STEPS,
   ...TASKS_STEPS,
   ...ARCHIVE_STEPS,

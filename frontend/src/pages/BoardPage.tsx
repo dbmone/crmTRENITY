@@ -220,7 +220,7 @@ export default function BoardPage() {
         </div>
       </div>
 
-      <div className="relative flex-1 overflow-hidden pt-3" data-tour="board">
+      <div className="relative flex-1 overflow-hidden pt-3 animate-soft-in" data-tour="board">
         {isLoading && orders.length === 0 && <KanbanSkeleton />}
 
         {!isLoading && orders.length === 0 && (

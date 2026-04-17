@@ -710,7 +710,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
           )}
 
           {/* Creators row */}
-          <div className="flex flex-wrap items-center gap-1.5 mb-4">
+          <div data-tour="order-creators" className="flex flex-wrap items-center gap-1.5 mb-4">
             {o.creators?.map((c) => (
               <UserProfileCard key={c.id} userId={c.creatorId} trigger={
                 <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-bg-raised border border-bg-border hover:border-green-500/30 text-ink-secondary cursor-pointer transition-colors">
