@@ -11,7 +11,7 @@ dotenv.config();
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const TELEGRAM_PROXY_URL = process.env.TELEGRAM_PROXY_URL;
-const FRONTEND_URL = process.env.FRONTEND_URL?.trim() || "https://trenitycrm.duckdns.org";
+const FRONTEND_URL = process.env.FRONTEND_URL?.trim() || "https://trenity.crm.mooo.com";
 const BOT_USERNAME = (process.env.BOT_USERNAME || "").replace(/^@/, "").toLowerCase();
 let BOT_SELF_ID: number | null = null;
 
