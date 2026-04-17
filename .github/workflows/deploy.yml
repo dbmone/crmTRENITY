@@ -95,17 +95,50 @@ jobs:
         env:
           DEPLOY_COMPOSE_DIR: ${{ secrets.DEPLOY_COMPOSE_DIR }}
           DEPLOY_PROJECT_NAME: ${{ secrets.DEPLOY_PROJECT_NAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          BOT_USERNAME: ${{ secrets.BOT_USERNAME }}
+          TELEGRAM_STORAGE_CHAT_ID: ${{ secrets.TELEGRAM_STORAGE_CHAT_ID }}
+          TELEGRAM_PROXY_URL: ${{ secrets.TELEGRAM_PROXY_URL }}
+          TELEGRAM_BOT_API_BASE_URL: ${{ secrets.TELEGRAM_BOT_API_BASE_URL }}
+          USE_TELEGRAM_STORAGE: ${{ secrets.USE_TELEGRAM_STORAGE }}
+          TELEGRAM_USERBOT_API_ID: ${{ secrets.TELEGRAM_USERBOT_API_ID }}
+          TELEGRAM_USERBOT_API_HASH: ${{ secrets.TELEGRAM_USERBOT_API_HASH }}
+          TELEGRAM_USERBOT_SESSION: ${{ secrets.TELEGRAM_USERBOT_SESSION }}
+          TELEGRAM_USERBOT_PHONE: ${{ secrets.TELEGRAM_USERBOT_PHONE }}
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+          ADMIN_TG_USERNAME: ${{ secrets.ADMIN_TG_USERNAME }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          G4F_API_URL: ${{ secrets.G4F_API_URL }}
+          G4F_MODEL: ${{ secrets.G4F_MODEL }}
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
-          envs: DEPLOY_COMPOSE_DIR,DEPLOY_PROJECT_NAME
-          script_stop: true
+          envs: DEPLOY_COMPOSE_DIR,DEPLOY_PROJECT_NAME,DB_PASSWORD,JWT_SECRET,BOT_TOKEN,BOT_USERNAME,TELEGRAM_STORAGE_CHAT_ID,TELEGRAM_PROXY_URL,TELEGRAM_BOT_API_BASE_URL,USE_TELEGRAM_STORAGE,TELEGRAM_USERBOT_API_ID,TELEGRAM_USERBOT_API_HASH,TELEGRAM_USERBOT_SESSION,TELEGRAM_USERBOT_PHONE,FRONTEND_URL,ADMIN_TG_USERNAME,GROQ_API_KEY,G4F_API_URL,G4F_MODEL,GHCR_PAT
           script: |
             set -eu
 
             # login to ghcr.io (PAT with read:packages)
-            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u dbmone --password-stdin
+            echo "$GHCR_PAT" | docker login ghcr.io -u dbmone --password-stdin
+
+            require_secret() {
+              VAR_NAME="$1"
+              eval "VAR_VALUE=\${$VAR_NAME:-}"
+              if [ -z "$VAR_VALUE" ]; then
+                echo "ERROR: required GitHub secret '$VAR_NAME' is empty"
+                exit 1
+              fi
+            }
+
+            require_secret DB_PASSWORD
+            require_secret JWT_SECRET
+            require_secret BOT_TOKEN
+            require_secret FRONTEND_URL
+            require_secret TELEGRAM_PROXY_URL
+            require_secret GHCR_PAT
 
             # allow explicit compose dir from GitHub secret for reliability
             COMPOSE_DIR="${DEPLOY_COMPOSE_DIR:-}"
@@ -128,6 +161,8 @@ jobs:
             fi
 
             echo "Using compose dir: $COMPOSE_DIR"
+            mkdir -p "$COMPOSE_DIR"
+            COMPOSE_DIR_REAL="$(readlink -f "$COMPOSE_DIR")"
 
             PROJECT_ARGS=""
             if [ -n "${DEPLOY_PROJECT_NAME:-}" ]; then
@@ -136,13 +171,41 @@ jobs:
             fi
 
             # update compose file with latest version (has image: tags)
-            cp /root/deploy/docker-compose.yml "$COMPOSE_DIR/docker-compose.yml"
+            SOURCE_COMPOSE="/root/deploy/docker-compose.yml"
+            SOURCE_COMPOSE_REAL="$(readlink -f "$SOURCE_COMPOSE")"
+            TARGET_COMPOSE="$COMPOSE_DIR_REAL/docker-compose.yml"
+            if [ "$SOURCE_COMPOSE_REAL" != "$TARGET_COMPOSE" ]; then
+              cp "$SOURCE_COMPOSE_REAL" "$TARGET_COMPOSE"
+            else
+              echo "Compose file already in place, skipping copy"
+            fi
 
-            cd "$COMPOSE_DIR"
+            cd "$COMPOSE_DIR_REAL"
 
-            # detect env file (portainer uses stack.env or .env)
-            ENV_FILE=""
-            if [ -f "stack.env" ]; then ENV_FILE="--env-file stack.env"; fi
+            # build runtime env file from GitHub secrets so compose always has required vars
+            {
+              printf '%s\n' "DB_PASSWORD=$DB_PASSWORD"
+              printf '%s\n' "JWT_SECRET=$JWT_SECRET"
+              printf '%s\n' "BOT_TOKEN=$BOT_TOKEN"
+              printf '%s\n' "BOT_USERNAME=$BOT_USERNAME"
+              printf '%s\n' "TELEGRAM_STORAGE_CHAT_ID=$TELEGRAM_STORAGE_CHAT_ID"
+              printf '%s\n' "TELEGRAM_PROXY_URL=$TELEGRAM_PROXY_URL"
+              printf '%s\n' "TELEGRAM_BOT_API_BASE_URL=$TELEGRAM_BOT_API_BASE_URL"
+              printf '%s\n' "USE_TELEGRAM_STORAGE=$USE_TELEGRAM_STORAGE"
+              printf '%s\n' "TELEGRAM_USERBOT_API_ID=$TELEGRAM_USERBOT_API_ID"
+              printf '%s\n' "TELEGRAM_USERBOT_API_HASH=$TELEGRAM_USERBOT_API_HASH"
+              printf '%s\n' "TELEGRAM_USERBOT_SESSION=$TELEGRAM_USERBOT_SESSION"
+              printf '%s\n' "TELEGRAM_USERBOT_PHONE=$TELEGRAM_USERBOT_PHONE"
+              printf '%s\n' "FRONTEND_URL=$FRONTEND_URL"
+              printf '%s\n' "ADMIN_TG_USERNAME=$ADMIN_TG_USERNAME"
+              printf '%s\n' "GROQ_API_KEY=$GROQ_API_KEY"
+              printf '%s\n' "G4F_API_URL=$G4F_API_URL"
+              printf '%s\n' "G4F_MODEL=$G4F_MODEL"
+              printf '%s\n' "NODE_ENV=production"
+            } > .env
+            chmod 600 .env
+
+            ENV_FILE="--env-file .env"
 
             # pull new images (no rebuild on server)
             docker compose $PROJECT_ARGS $ENV_FILE pull backend bot frontend
