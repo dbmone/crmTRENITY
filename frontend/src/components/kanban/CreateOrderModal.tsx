@@ -146,15 +146,16 @@ export default function CreateOrderModal({ isOpen, onClose }: Props) {
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/ogg" });
+      const preferredMime = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/ogg", "audio/mp4"].find((m) => MediaRecorder.isTypeSupported(m)) ?? "";
+      const recorder = new MediaRecorder(stream, preferredMime ? { mimeType: preferredMime } : {});
       audioChunksRef.current = [];
 
       recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
       recorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
         setVoiceMode(mode === "text" ? "processing-text" : "processing-tz");
-        const mimeType = recorder.mimeType || "audio/webm";
-        const ext = mimeType.includes("ogg") ? "ogg" : "webm";
+        const mimeType = recorder.mimeType || preferredMime || "audio/webm";
+        const ext = mimeType.includes("ogg") ? "ogg" : mimeType.includes("mp4") ? "mp4" : "webm";
         const blob = new Blob(audioChunksRef.current, { type: mimeType });
         try {
           if (mode === "text") {

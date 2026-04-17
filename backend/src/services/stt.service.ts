@@ -32,7 +32,7 @@ export async function transcribeAudio(buffer: Buffer, filename: string): Promise
   form.append("file", buffer, { filename, contentType: mimeType });
   form.append("model", "whisper-large-v3");
   form.append("language", "ru");
-  form.append("response_format", "text");
+  form.append("response_format", "json");
 
   const res = await proxyFetch("https://api.groq.com/openai/v1/audio/transcriptions", {
     method: "POST",
@@ -48,5 +48,6 @@ export async function transcribeAudio(buffer: Buffer, filename: string): Promise
     throw new Error(`Groq API error ${res.status}: ${errText}`);
   }
 
-  return (await res.text()).trim();
+  const data = await res.json() as { text?: string };
+  return (data.text ?? "").trim();
 }

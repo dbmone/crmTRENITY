@@ -905,7 +905,7 @@ bot.callbackQuery("tz_vdraft_ok", async (ctx) => {
       orderId: draft.orderId,
       uploadedById: user.id,
       fileType: "TZ",
-      fileName: draft.text.slice(0, 500),
+      fileName: draft.text.slice(0, 4000),
       fileSize: BigInt(Buffer.byteLength(draft.text, "utf8")),
       mimeType: "text/plain",
       storagePath: "",
@@ -934,8 +934,61 @@ bot.callbackQuery("tz_vdraft_ok", async (ctx) => {
 
 bot.callbackQuery("tz_vdraft_cancel", async (ctx) => {
   waitingForTzVoice.delete(ctx.from!.id);
+  waitingForTzTextAi.delete(ctx.from!.id);
+  waitingForTzDraftEdit.delete(ctx.from!.id);
   tzVoiceDraft.delete(ctx.from!.id);
   await ctx.answerCallbackQuery("Отменено");
+});
+
+bot.callbackQuery("tz_vdraft_edit", async (ctx) => {
+  const draft = tzVoiceDraft.get(ctx.from!.id);
+  if (!draft) { await ctx.answerCallbackQuery("Черновик не найден"); return; }
+  waitingForTzDraftEdit.set(ctx.from!.id, draft.orderId);
+  await ctx.answerCallbackQuery();
+  await replyOrEdit(
+    ctx,
+    `✏️ Отправьте исправленный текст ТЗ (текущий ниже):\n\n_${esc(draft.text)}_`,
+    { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("❌ Отмена", "tz_vdraft_cancel") }
+  );
+});
+
+// Collect draft (collecting-mode preview): ok / edit / cancel
+bot.callbackQuery("tz_cdraft_ok", async (ctx) => {
+  const text = collectTextDraft.get(ctx.from!.id);
+  const state = collectingState.get(ctx.from!.id);
+  if (!text || !state) { await ctx.answerCallbackQuery("Черновик не найден"); return; }
+  collectTextDraft.delete(ctx.from!.id);
+  state.items.push({ fileName: text.slice(0, 4000), fileSize: 0, mimeType: "text/plain" });
+  await ctx.answerCallbackQuery("Добавлено");
+  await replyOrEdit(
+    ctx,
+    `✅ Добавлено (${state.items.length} эл.). Продолжайте или нажмите Готово:`,
+    { reply_markup: collectingKeyboard({ tzVoice: isTzCollectingState(state) }) }
+  );
+});
+
+bot.callbackQuery("tz_cdraft_edit", async (ctx) => {
+  if (!collectTextDraft.has(ctx.from!.id)) { await ctx.answerCallbackQuery("Черновик не найден"); return; }
+  waitingForCollectDraftEdit.add(ctx.from!.id);
+  await ctx.answerCallbackQuery();
+  const current = collectTextDraft.get(ctx.from!.id)!;
+  await replyOrEdit(
+    ctx,
+    `✏️ Отправьте исправленный текст (текущий ниже):\n\n_${esc(current.slice(0, 300))}${current.length > 300 ? "…" : ""}_`,
+    { parse_mode: "Markdown", reply_markup: new InlineKeyboard().text("❌ Пропустить", "tz_cdraft_cancel") }
+  );
+});
+
+bot.callbackQuery("tz_cdraft_cancel", async (ctx) => {
+  collectTextDraft.delete(ctx.from!.id);
+  waitingForCollectDraftEdit.delete(ctx.from!.id);
+  const state = collectingState.get(ctx.from!.id);
+  await ctx.answerCallbackQuery("Пропущено");
+  await replyOrEdit(
+    ctx,
+    state ? `Продолжайте или нажмите Готово (${state.items.length} эл.):` : "Продолжайте или нажмите Готово:",
+    { reply_markup: collectingKeyboard({ tzVoice: isTzCollectingState(state) }) }
+  );
 });
 
 bot.callbackQuery(/^ord_cadd_(.+)$/, async (ctx) => {
@@ -1165,6 +1218,9 @@ const waitingForOrderComment = new Map<number, string>();
 const waitingForTzNote = new Map<number, string>();
 const waitingForTzVoice = new Map<number, string>();
 const waitingForTzTextAi = new Map<number, string>(); // userId → orderId
+const waitingForTzDraftEdit = new Map<number, string>(); // userId → orderId (editing draft)
+const collectTextDraft = new Map<number, string>(); // userId → pending collect item text
+const waitingForCollectDraftEdit = new Set<number>(); // userId (editing collect draft)
 const waitingForCollectVoiceText = new Set<number>();
 const waitingForCollectVoiceAi = new Set<number>();
 const taskVoiceDraft = new Map<number, {
@@ -1349,6 +1405,9 @@ function clearInteractiveState(userId: number) {
   waitingForTzNote.delete(userId);
   waitingForTzVoice.delete(userId);
   waitingForTzTextAi.delete(userId);
+  waitingForTzDraftEdit.delete(userId);
+  collectTextDraft.delete(userId);
+  waitingForCollectDraftEdit.delete(userId);
   waitingForCollectVoiceText.delete(userId);
   waitingForCollectVoiceAi.delete(userId);
   taskVoiceDraft.delete(userId);
@@ -2295,6 +2354,35 @@ async function structureTextToTzBot(rawText: string): Promise<string | null> {
   );
 }
 
+async function showTzDraftPreview(ctx: any, orderId: string, text: string, rawText?: string) {
+  let msg = `📋 *Черновик ТЗ*\n\n${esc(text)}`;
+  if (rawText && rawText !== text) msg += `\n\n*Исходный текст:*\n_${esc(rawText.slice(0, 300))}${rawText.length > 300 ? "…" : ""}_`;
+  tzVoiceDraft.set(ctx.from!.id, { orderId, text, rawText: rawText ?? text });
+  await replyOrEdit(ctx, msg, {
+    parse_mode: "Markdown",
+    reply_markup: new InlineKeyboard()
+      .text("✅ Сохранить", "tz_vdraft_ok").row()
+      .text("✏️ Редактировать", "tz_vdraft_edit")
+      .text("❌ Отмена", "tz_vdraft_cancel"),
+  });
+}
+
+async function showCollectDraftPreview(ctx: any, text: string) {
+  collectTextDraft.set(ctx.from!.id, text);
+  const preview = text.length > 400 ? `${text.slice(0, 400)}…` : text;
+  await replyOrEdit(
+    ctx,
+    `📋 *Черновик для добавления в ТЗ*\n\n${esc(preview)}`,
+    {
+      parse_mode: "Markdown",
+      reply_markup: new InlineKeyboard()
+        .text("✅ Добавить", "tz_cdraft_ok").row()
+        .text("✏️ Изменить", "tz_cdraft_edit")
+        .text("❌ Пропустить", "tz_cdraft_cancel"),
+    }
+  );
+}
+
 // Батч-сбор ТЗ / файлов
 interface CollectedItem {
   fileName: string;
@@ -2754,48 +2842,19 @@ bot.on("message:text", async (ctx, next) => {
 
   if (waitingForTzNote.has(userId)) {
     const text = ctx.message.text.trim();
-    if (!text) {
-      await ctx.reply("❌ Текст не может быть пустым.");
-      return;
-    }
-
+    if (!text) { await ctx.reply("❌ Текст не может быть пустым."); return; }
     const orderId = waitingForTzNote.get(userId)!;
     waitingForTzNote.delete(userId);
-    const user = await prisma.user.findUnique({ where: { telegramId: BigInt(userId) } });
-    if (!user) return;
+    await showTzDraftPreview(ctx, orderId, text);
+    return;
+  }
 
-    await prisma.orderFile.create({
-      data: {
-        orderId,
-        uploadedById: user.id,
-        fileType: "TZ",
-        fileName: text.slice(0, 500),
-        fileSize: BigInt(Buffer.byteLength(text, "utf8")),
-        mimeType: "text/plain",
-        storagePath: "",
-        telegramFileId: null,
-        telegramChatId: null,
-        telegramMsgId: null,
-      },
-    });
-    await mirrorTextToOrderGroup(orderId, `📝 ТЗ от *${esc(user.displayName)}*\n${esc(text.slice(0, 500))}`);
-
-    const order = await fetchOrderForBot(orderId);
-    if (!order) {
-      await ctx.reply("✅ Текст добавлен в ТЗ.");
-      return;
-    }
-    const tzFiles = getTzFiles(order);
-    await replyOrEdit(ctx, buildOrderFilesText(order, tzFiles, "📋 *ТЗ*", "Материалов ТЗ пока нет."), {
-      parse_mode: "Markdown",
-      reply_markup: buildOrderFilesKeyboard(
-        order.id,
-        tzFiles,
-        `ord_tzadd_${order.id}`,
-        `ord_open_${order.id}`,
-        { text: "📨 Отправить всё ТЗ", callback: `ord_tzsend_${order.id}` }
-      ),
-    });
+  if (waitingForTzDraftEdit.has(userId)) {
+    const text = ctx.message.text.trim();
+    if (!text) { await ctx.reply("❌ Текст не может быть пустым."); return; }
+    const orderId = waitingForTzDraftEdit.get(userId)!;
+    waitingForTzDraftEdit.delete(userId);
+    await showTzDraftPreview(ctx, orderId, text);
     return;
   }
 
@@ -2804,40 +2863,11 @@ bot.on("message:text", async (ctx, next) => {
     if (!text) { await ctx.reply("❌ Текст не может быть пустым."); return; }
     const orderId = waitingForTzTextAi.get(userId)!;
     waitingForTzTextAi.delete(userId);
-    const user = await prisma.user.findUnique({ where: { telegramId: BigInt(userId) } });
-    if (!user) return;
     await replyOrEdit(ctx, "⏳ AI структурирует текст в ТЗ...", {
-      reply_markup: new InlineKeyboard().text("🔙 К заказу", `ord_open_${orderId}`),
+      reply_markup: new InlineKeyboard().text("❌ Отмена", "tz_vdraft_cancel"),
     });
     const structured = await structureTextToTzBot(text);
-    const finalText = structured || text;
-    await prisma.orderFile.create({
-      data: {
-        orderId,
-        uploadedById: user.id,
-        fileType: "TZ",
-        fileName: finalText.slice(0, 4000),
-        fileSize: BigInt(Buffer.byteLength(finalText, "utf8")),
-        mimeType: "text/plain",
-        storagePath: "",
-        telegramFileId: null,
-        telegramChatId: null,
-        telegramMsgId: null,
-      },
-    });
-    await mirrorTextToOrderGroup(orderId, `🪄 ТЗ (AI) от *${esc(user.displayName)}*\n${esc(finalText.slice(0, 500))}`);
-    const order = await fetchOrderForBot(orderId);
-    if (!order) { await ctx.reply("✅ AI-ТЗ сохранено."); return; }
-    const tzFiles = getTzFiles(order);
-    await replyOrEdit(ctx, buildOrderFilesText(order, tzFiles, "📋 *ТЗ*", "Материалов ТЗ пока нет."), {
-      parse_mode: "Markdown",
-      reply_markup: buildOrderFilesKeyboard(
-        order.id, tzFiles,
-        `ord_tzadd_${order.id}`,
-        `ord_open_${order.id}`,
-        { text: "📨 Отправить всё ТЗ", callback: `ord_tzsend_${order.id}` }
-      ),
-    });
+    await showTzDraftPreview(ctx, orderId, structured || text, text);
     return;
   }
 
@@ -2873,24 +2903,14 @@ bot.on("message:text", async (ctx, next) => {
     const state = collectingState.get(userId)!;
     const rawText = ctx.message.text.trim();
 
-    // Режим "текст → AI ТЗ"
+    // Режим "текст → AI ТЗ" — показываем черновик с возможностью редактировать
     if ((state as any)._awaitingTextAi) {
       delete (state as any)._awaitingTextAi;
       await replyOrEdit(ctx, "⏳ AI структурирует текст...", {
         reply_markup: collectingKeyboard({ tzVoice: isTzCollectingState(state) }),
       });
       const structured = await structureTextToTzBot(rawText);
-      const finalText = structured || rawText;
-      state.items.push({
-        fileName: finalText.slice(0, 4000),
-        fileSize: 0,
-        mimeType: "text/plain",
-      });
-      await replyOrEdit(
-        ctx,
-        `🪄 AI-ТЗ добавлено (${state.items.length} эл.). Продолжайте или нажмите Готово:`,
-        { reply_markup: collectingKeyboard({ tzVoice: isTzCollectingState(state) }) }
-      );
+      await showCollectDraftPreview(ctx, structured || rawText);
       return;
     }
 
@@ -2915,6 +2935,15 @@ bot.on("message:text", async (ctx, next) => {
     } catch (e: any) {
       await ctx.reply("❌ Ошибка: " + e.message);
     }
+    return;
+  }
+
+  // Редактирование черновика для collecting-режима
+  if (waitingForCollectDraftEdit.has(userId)) {
+    const text = ctx.message.text.trim();
+    if (!text) { await ctx.reply("❌ Текст не может быть пустым."); return; }
+    waitingForCollectDraftEdit.delete(userId);
+    await showCollectDraftPreview(ctx, text);
     return;
   }
 
@@ -3140,8 +3169,6 @@ bot.on("message:voice", async (ctx) => {
         await ctx.reply("❌ Сессия добавления ТЗ не найдена.");
         return;
       }
-
-      await ctx.reply("⏳ Расшифровываю голос в текст...");
       await replyOrEdit(ctx, "⏳ Расшифровываю голос в текст...", {
         reply_markup: collectingKeyboard({ tzVoice: true }),
       });
@@ -3152,17 +3179,7 @@ bot.on("message:voice", async (ctx) => {
         });
         return;
       }
-
-      collectState.items.push({
-        fileName: transcribedText.slice(0, 500),
-        fileSize: 0,
-        mimeType: "text/plain",
-      });
-      await replyOrEdit(
-        ctx,
-        `🎙 Голос расшифрован и добавлен в ТЗ (${collectState.items.length} эл.).\n\n📝 _${esc(transcribedText)}_\n\nПродолжайте или нажмите Готово:`,
-        { parse_mode: "Markdown", reply_markup: collectingKeyboard({ tzVoice: true }) }
-      );
+      await showCollectDraftPreview(ctx, transcribedText);
       return;
     }
   }
@@ -3175,8 +3192,6 @@ bot.on("message:voice", async (ctx) => {
         await ctx.reply("❌ Сессия добавления ТЗ не найдена.");
         return;
       }
-
-      await ctx.reply("⏳ AI собирает ТЗ из вашего голоса...");
       await replyOrEdit(ctx, "⏳ AI собирает ТЗ из вашего голоса...", {
         reply_markup: collectingKeyboard({ tzVoice: true }),
       });
@@ -3187,17 +3202,16 @@ bot.on("message:voice", async (ctx) => {
         });
         return;
       }
-
-      collectState.items.push({
-        fileName: tzDraft.text.slice(0, 500),
-        fileSize: 0,
-        mimeType: "text/plain",
+      // Show draft with rawText hint
+      collectTextDraft.set(ctx.from!.id, tzDraft.text);
+      const preview = tzDraft.text.length > 400 ? `${tzDraft.text.slice(0, 400)}…` : tzDraft.text;
+      await replyOrEdit(ctx, `🪄 *AI-черновик ТЗ*\n\n${esc(preview)}\n\n*Расшифровка:*\n_${esc(tzDraft.rawText.slice(0, 200))}${tzDraft.rawText.length > 200 ? "…" : ""}_`, {
+        parse_mode: "Markdown",
+        reply_markup: new InlineKeyboard()
+          .text("✅ Добавить", "tz_cdraft_ok").row()
+          .text("✏️ Изменить", "tz_cdraft_edit")
+          .text("❌ Пропустить", "tz_cdraft_cancel"),
       });
-      await replyOrEdit(
-        ctx,
-        `🪄 AI добавил структурированное ТЗ (${collectState.items.length} эл.).\n\n${esc(tzDraft.text)}\n\n*Расшифровка:*\n_${esc(tzDraft.rawText)}_\n\nПродолжайте или нажмите Готово:`,
-        { parse_mode: "Markdown", reply_markup: collectingKeyboard({ tzVoice: true }) }
-      );
       return;
     }
   }
@@ -3228,7 +3242,8 @@ bot.on("message:voice", async (ctx) => {
       await replyOrEdit(ctx, preview, {
         parse_mode: "Markdown",
         reply_markup: new InlineKeyboard()
-          .text("✅ Сохранить в ТЗ", "tz_vdraft_ok")
+          .text("✅ Сохранить", "tz_vdraft_ok").row()
+          .text("✏️ Редактировать", "tz_vdraft_edit")
           .text("❌ Отмена", "tz_vdraft_cancel"),
       });
       return;

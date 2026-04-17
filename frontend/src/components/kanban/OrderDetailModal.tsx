@@ -576,16 +576,18 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
   const startTzAiRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream);
+      const preferredMime = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/ogg", "audio/mp4"].find((m) => MediaRecorder.isTypeSupported(m)) ?? "";
+      const mr = new MediaRecorder(stream, preferredMime ? { mimeType: preferredMime } : {});
       tzAiRecorderRef.current = mr;
       tzAiChunksRef.current = [];
       mr.ondataavailable = (e) => { if (e.data.size > 0) tzAiChunksRef.current.push(e.data); };
       mr.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(tzAiChunksRef.current, { type: mr.mimeType });
+        const mimeType = mr.mimeType || preferredMime || "audio/webm";
+        const blob = new Blob(tzAiChunksRef.current, { type: mimeType });
         setTzAiStructuring(true);
         try {
-          const ext = mr.mimeType.includes("webm") ? "webm" : mr.mimeType.includes("ogg") ? "ogg" : "mp4";
+          const ext = mimeType.includes("ogg") ? "ogg" : mimeType.includes("mp4") ? "mp4" : "webm";
           const result = await api.voiceStructureToTz(o.id, blob, ext);
           setTzAiPreview(result);
         } catch (e: any) {
@@ -609,16 +611,18 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream);
+      const preferredMime = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/ogg", "audio/mp4"].find((m) => MediaRecorder.isTypeSupported(m)) ?? "";
+      const mr = new MediaRecorder(stream, preferredMime ? { mimeType: preferredMime } : {});
       mediaRecorderRef.current = mr;
       audioChunksRef.current = [];
       mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
       mr.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(audioChunksRef.current, { type: mr.mimeType });
+        const mimeType = mr.mimeType || preferredMime || "audio/webm";
+        const blob = new Blob(audioChunksRef.current, { type: mimeType });
         setTranscribing(true);
         try {
-          const ext = mr.mimeType.includes("webm") ? "webm" : mr.mimeType.includes("ogg") ? "ogg" : "mp4";
+          const ext = mimeType.includes("ogg") ? "ogg" : mimeType.includes("mp4") ? "mp4" : "webm";
           const { text } = await api.transcribeVoice(o.id, blob, ext);
           setVoicePreview(text);
         } catch (e: any) {
