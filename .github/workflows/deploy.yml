@@ -119,5 +119,8 @@ jobs:
             # pull new images (no rebuild on server)
             docker compose pull backend bot frontend
 
-            # restart only changed containers, keep postgres/g4f running
-            docker compose up -d --no-build --no-deps backend bot frontend
+            # stop old app containers (free ports before starting new ones)
+            docker compose stop backend bot frontend || true
+
+            # start with new images, keep postgres/g4f running
+            docker compose up -d --no-build --no-deps --force-recreate backend bot frontend
