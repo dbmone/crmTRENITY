@@ -70,7 +70,7 @@ function AppShell() {
   return (
     <>
       <GuideGate />
-      <div className="h-full flex flex-col bg-bg-base">
+      <div className="min-h-screen flex flex-col bg-bg-base">
         <Header />
         <div key={location.pathname} className="min-h-0 flex-1 animate-page-in">
           <Outlet />

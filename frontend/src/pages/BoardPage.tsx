@@ -57,14 +57,16 @@ export default function BoardPage() {
   }, [tourStep?.target]);
 
   useEffect(() => {
-    fetchOrders();
+    void fetchOrders();
     (async () => {
       try {
         const settings = await api.getSettings();
         setDragEnabled(settings.kanban_drag_enabled === "true");
-      } catch {}
+      } catch {
+        // noop
+      }
     })();
-  }, []);
+  }, [fetchOrders]);
 
   useEffect(() => {
     if (!tourActive || tourStep?.route !== "/") {
@@ -135,7 +137,7 @@ export default function BoardPage() {
         ...state,
         filter: { ...(state.filter ?? {}), search: value || undefined },
       }));
-      fetchOrders();
+      void fetchOrders();
     }, 400);
 
     setSearchTimer(timer);
@@ -148,22 +150,21 @@ export default function BoardPage() {
       delete nextFilter.search;
       return { ...state, filter: Object.keys(nextFilter).length ? nextFilter : null };
     });
-    fetchOrders();
+    void fetchOrders();
   };
 
   const activeFilter = filter?.marketerId === user?.id || filter?.creatorId === user?.id;
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-bg-base">
-
-      <div className="flex items-center gap-2 px-3 sm:px-6 py-2.5 border-b border-bg-border bg-bg-surface flex-shrink-0">
+    <div className="min-h-0 flex-1 flex flex-col overflow-hidden bg-bg-base">
+      <div className="flex items-center gap-2 border-b border-bg-border bg-bg-surface px-3 py-2.5 flex-shrink-0 sm:px-6">
         <div className="relative flex-1 sm:flex-none sm:w-48">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-tertiary pointer-events-none" />
+          <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-tertiary" />
           <input
             value={search}
             onChange={(e) => handleSearch(e.target.value)}
             placeholder="Поиск..."
-            className="w-full pl-8 pr-7 py-1.5 text-sm bg-bg-raised border border-bg-border rounded-lg text-ink-primary placeholder-ink-tertiary outline-none focus:border-green-500/40 transition-colors"
+            className="w-full rounded-lg border border-bg-border bg-bg-raised py-1.5 pl-8 pr-7 text-sm text-ink-primary outline-none transition-colors placeholder-ink-tertiary focus:border-green-500/40"
           />
           {search && (
             <button
@@ -185,10 +186,10 @@ export default function BoardPage() {
               setFilter({ creatorId: user!.id });
             }
           }}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+          className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
             activeFilter
-              ? "bg-green-500/10 text-green-400 border-green-500/30"
-              : "border-bg-border text-ink-tertiary hover:text-ink-primary hover:border-bg-hover"
+              ? "border-green-500/30 bg-green-500/10 text-green-400"
+              : "border-bg-border text-ink-tertiary hover:border-bg-hover hover:text-ink-primary"
           }`}
         >
           <SlidersHorizontal size={12} />
@@ -196,12 +197,12 @@ export default function BoardPage() {
         </button>
 
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-ink-tertiary hidden sm:block">{orders.length} заказов</span>
+          <span className="hidden text-xs text-ink-tertiary sm:block">{orders.length} заказов</span>
 
           <button
-            onClick={() => fetchOrders()}
+            onClick={() => void fetchOrders()}
             title="Обновить"
-            className="p-1.5 rounded-lg hover:bg-bg-raised border border-bg-border text-ink-tertiary hover:text-ink-primary transition-colors"
+            className="rounded-lg border border-bg-border p-1.5 text-ink-tertiary transition-colors hover:bg-bg-raised hover:text-ink-primary"
           >
             <RefreshCw size={13} className={isLoading ? "animate-spin" : ""} />
           </button>
@@ -210,7 +211,7 @@ export default function BoardPage() {
             <button
               onClick={() => setShowCreate(true)}
               data-tour="create-btn"
-              className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-lg bg-green-500 text-black text-xs font-bold hover:bg-green-400 transition-colors"
+              className="flex items-center gap-1.5 rounded-lg bg-green-500 px-3 py-1.5 text-xs font-bold text-black transition-colors hover:bg-green-400 sm:px-3.5"
             >
               <Plus size={13} />
               <span className="hidden sm:inline">Новый заказ</span>
@@ -219,15 +220,15 @@ export default function BoardPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden relative pt-3" data-tour="board">
+      <div className="relative flex-1 overflow-hidden pt-3" data-tour="board">
         {isLoading && orders.length === 0 && <KanbanSkeleton />}
 
         {!isLoading && orders.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center animate-fade-in">
-            <div className="w-16 h-16 rounded-2xl bg-bg-surface border border-bg-border flex items-center justify-center mb-4">
-              <div className="w-7 h-7 border-2 border-dashed border-bg-hover rounded-lg" />
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-bg-border bg-bg-surface">
+              <div className="h-7 w-7 rounded-lg border-2 border-dashed border-bg-hover" />
             </div>
-            <p className="text-sm text-ink-secondary mb-1 font-medium">Нет заказов</p>
+            <p className="mb-1 text-sm font-medium text-ink-secondary">Нет заказов</p>
             <p className="text-xs text-ink-tertiary">
               {isMarketer ? "Создай первый заказ" : "Ожидай назначения"}
             </p>

@@ -1,7 +1,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { AlertTriangle, Clock, FileText, MessageSquare, Paperclip } from "lucide-react";
 import { Order, STAGE_LABELS, StageName } from "../../types";
-import { Clock, AlertTriangle, MessageSquare, Paperclip, FileText } from "lucide-react";
 import UserProfileCard from "../UserProfileCard";
 
 interface Props {
@@ -16,7 +16,7 @@ const STAGE_ORDER: StageName[] = ["STORYBOARD", "ANIMATION", "EDITING", "REVIEW"
 function shortName(displayName: string): string {
   const parts = displayName.trim().split(" ");
   const first = parts[0] || "";
-  return first.length > 8 ? first.slice(0, 7) + "…" : first;
+  return first.length > 8 ? `${first.slice(0, 7)}...` : first;
 }
 
 export default function OrderCard({ order, onClick, dim, dragEnabled = true }: Props) {
@@ -34,20 +34,19 @@ export default function OrderCard({ order, onClick, dim, dragEnabled = true }: P
     : null;
 
   const isOverdue = daysLeft !== null && daysLeft < 0;
-  const isUrgent  = daysLeft !== null && daysLeft >= 0 && daysLeft <= 2;
+  const isUrgent = daysLeft !== null && daysLeft >= 0 && daysLeft <= 2;
 
-  // Only look at the current (latest) revision round for progress
-  const allStages   = order.stages ?? [];
-  const maxRound    = allStages.length > 0 ? Math.max(...allStages.map((s) => s.revisionRound ?? 0)) : 0;
-  const curStages   = allStages.filter((s) => (s.revisionRound ?? 0) === maxRound);
-  const doneStages  = curStages.filter((s) => s.status === "DONE").length;
+  const allStages = order.stages ?? [];
+  const maxRound = allStages.length > 0 ? Math.max(...allStages.map((s) => s.revisionRound ?? 0)) : 0;
+  const curStages = allStages.filter((s) => (s.revisionRound ?? 0) === maxRound);
+  const doneStages = curStages.filter((s) => s.status === "DONE").length;
   const totalStages = curStages.length || 5;
   const activeStage = curStages.find((s) => s.status === "IN_PROGRESS");
-  const pct         = totalStages > 0 ? Math.round((doneStages / totalStages) * 100) : 0;
+  const pct = totalStages > 0 ? Math.round((doneStages / totalStages) * 100) : 0;
 
   const commentCount = (order._count as any)?.comments ?? 0;
-  const fileCount    = order.files?.length ?? (order._count as any)?.files ?? 0;
-  const reportCount  = (order._count as any)?.reports ?? 0;
+  const fileCount = order.files?.length ?? (order._count as any)?.files ?? 0;
+  const reportCount = (order._count as any)?.reports ?? 0;
 
   return (
     <div
@@ -57,138 +56,144 @@ export default function OrderCard({ order, onClick, dim, dragEnabled = true }: P
       {...(dragEnabled ? listeners : {})}
       data-tour="order-card"
       onClick={() => onClick(order)}
-      className={`group relative bg-bg-raised border rounded-xl p-3 cursor-pointer select-none transition-all duration-200 animate-soft-in-fast ${
+      className={`group relative cursor-pointer select-none rounded-xl border bg-bg-raised p-3 transition-all duration-200 animate-soft-in-fast ${
         isDragging
           ? "border-green-500/40 shadow-glow"
           : isOverdue
-          ? "border-red-500/25 hover:border-red-500/40"
-          : "border-bg-border hover:border-bg-hover hover:bg-[#1E1E1E]"
+            ? "border-red-500/25 hover:border-red-500/40"
+            : "border-bg-border hover:border-bg-hover hover:bg-[#1E1E1E]"
       } ${dim ? "opacity-60 grayscale-[0.4]" : ""}`}
     >
-      {/* Overdue indicator */}
       {isOverdue && (
-        <div className="absolute top-0 left-0 w-0.5 h-full bg-red-500/60 rounded-l-xl" />
+        <div className="absolute left-0 top-0 h-full w-0.5 rounded-l-xl bg-red-500/60" />
       )}
 
-      {/* Title */}
-      <p className="text-sm font-medium text-ink-primary leading-snug line-clamp-2 mb-2.5 pr-1">
+      <p className="mb-2.5 line-clamp-2 pr-1 text-sm font-medium leading-snug text-ink-primary">
         {order.title}
       </p>
 
-      {/* Stage progress bar */}
       {curStages.length > 0 && (
         <div className="mb-2.5">
           {maxRound > 0 && (
-            <div className="text-[9px] font-semibold text-purple-400 uppercase tracking-wider mb-1">
+            <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-purple-400">
               Правка {maxRound}
             </div>
           )}
-          <div className="flex gap-0.5 mb-1">
+          <div className="mb-1 flex gap-0.5">
             {STAGE_ORDER.map((name) => {
-              const st = curStages.find((s) => s.name === name);
-              if (!st) return null;
+              const stage = curStages.find((s) => s.name === name);
+              if (!stage) return null;
+
               return (
                 <div
                   key={name}
                   title={STAGE_LABELS[name]}
-                  className={`flex-1 h-1 rounded-full transition-all ${
+                  className={`h-1 flex-1 rounded-full transition-all ${
                     maxRound > 0
-                      ? st.status === "DONE"
+                      ? stage.status === "DONE"
                         ? "bg-purple-500"
-                        : st.status === "IN_PROGRESS"
-                        ? "bg-orange-400 pulse-green"
-                        : "bg-bg-border"
-                      : st.status === "DONE"
-                      ? "bg-green-500"
-                      : st.status === "IN_PROGRESS"
-                      ? "bg-amber-400 pulse-green"
-                      : "bg-bg-border"
+                        : stage.status === "IN_PROGRESS"
+                          ? "bg-orange-400 pulse-green"
+                          : "bg-bg-border"
+                      : stage.status === "DONE"
+                        ? "bg-green-500"
+                        : stage.status === "IN_PROGRESS"
+                          ? "bg-amber-400 pulse-green"
+                          : "bg-bg-border"
                   }`}
                 />
               );
             })}
           </div>
           <div className="flex items-center justify-between">
-            <span className={`text-[10px] font-medium ${
-              activeStage
-                ? maxRound > 0 ? "text-orange-400" : "text-amber-400"
-                : pct === 100
-                ? maxRound > 0 ? "text-purple-400" : "text-green-400"
-                : "text-ink-tertiary"
-            }`}>
-              {activeStage
-                ? <>
-                    {STAGE_LABELS[activeStage.name]}
-                    {activeStage.awaitingClientApproval && (
-                      <span className="ml-1 text-[9px] text-blue-400 opacity-80">· апрув заказчика</span>
-                    )}
-                  </>
-                : pct === 100 ? "Завершено" : `${pct}%`
-              }
+            <span
+              className={`text-[10px] font-medium ${
+                activeStage
+                  ? maxRound > 0 ? "text-orange-400" : "text-amber-400"
+                  : pct === 100
+                    ? maxRound > 0 ? "text-purple-400" : "text-green-400"
+                    : "text-ink-tertiary"
+              }`}
+            >
+              {activeStage ? (
+                <>
+                  {STAGE_LABELS[activeStage.name]}
+                  {activeStage.awaitingClientApproval && (
+                    <span className="ml-1 text-[9px] text-blue-400 opacity-80">· апрув заказчика</span>
+                  )}
+                </>
+              ) : pct === 100 ? "Завершено" : `${pct}%`}
             </span>
-            <span className="text-[10px] text-ink-tertiary">{doneStages}/{totalStages}</span>
+            <span className="text-[10px] text-ink-tertiary">
+              {doneStages}/{totalStages}
+            </span>
           </div>
         </div>
       )}
 
-      {/* People row */}
-      <div className="flex items-center gap-1.5 mb-2.5 flex-wrap">
-        {/* Marketer */}
+      <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
         {order.marketer && (
           <UserProfileCard
             userId={order.marketer.id}
             trigger={
-              <span
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/20 hover:border-blue-500/40 transition-colors cursor-pointer"
-              >
-                <div className="w-4 h-4 rounded-full bg-blue-500/20 flex items-center justify-center overflow-hidden flex-shrink-0">
-                  {order.marketer.avatarUrl
-                    ? <img src={order.marketer.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
-                    : <span className="text-[8px] font-bold text-blue-400">{order.marketer.displayName?.[0]?.toUpperCase()}</span>
-                  }
+              <span className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-blue-500/20 bg-blue-500/15 px-1.5 py-0.5 transition-colors hover:border-blue-500/40">
+                <div className="flex h-4 w-4 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-blue-500/20">
+                  {order.marketer.avatarUrl ? (
+                    <img src={order.marketer.avatarUrl} alt="" className="h-full w-full rounded-full object-cover" />
+                  ) : (
+                    <span className="text-[8px] font-bold text-blue-400">
+                      {order.marketer.displayName?.[0]?.toUpperCase()}
+                    </span>
+                  )}
                 </div>
-                <span className="text-[10px] text-blue-300 font-medium">{shortName(order.marketer.displayName)}</span>
+                <span className="text-[10px] font-medium text-blue-300">
+                  {shortName(order.marketer.displayName)}
+                </span>
               </span>
             }
           />
         )}
 
-        {/* Creators */}
         {order.creators && order.creators.length > 0 && (
           <>
-            <div className="w-px h-3 bg-bg-border flex-shrink-0" />
+            <div className="h-3 w-px flex-shrink-0 bg-bg-border" />
             <div className="flex flex-wrap gap-1">
-              {order.creators.slice(0, 3).map((c) => (
+              {order.creators.slice(0, 3).map((creator) => (
                 <UserProfileCard
-                  key={c.id}
-                  userId={c.creatorId}
+                  key={creator.id}
+                  userId={creator.creatorId}
                   trigger={
                     <span
-                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border transition-colors cursor-pointer ${
-                        c.isLead
-                          ? "bg-amber-500/15 border-amber-500/20 hover:border-amber-500/40"
-                          : "bg-green-500/10 border-green-500/20 hover:border-green-500/40"
+                      className={`inline-flex cursor-pointer items-center gap-1 rounded-full border px-1.5 py-0.5 transition-colors ${
+                        creator.isLead
+                          ? "border-amber-500/20 bg-amber-500/15 hover:border-amber-500/40"
+                          : "border-green-500/20 bg-green-500/10 hover:border-green-500/40"
                       }`}
                     >
-                      <div className={`w-4 h-4 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0 ${
-                        c.isLead ? "bg-amber-500/20" : "bg-green-500/15"
-                      }`}>
-                        {c.creator.avatarUrl
-                          ? <img src={c.creator.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
-                          : <span className={`text-[8px] font-bold ${c.isLead ? "text-amber-400" : "text-green-400"}`}>
-                              {c.creator.displayName?.[0]?.toUpperCase()}
-                            </span>
-                        }
+                      <div
+                        className={`flex h-4 w-4 flex-shrink-0 items-center justify-center overflow-hidden rounded-full ${
+                          creator.isLead ? "bg-amber-500/20" : "bg-green-500/15"
+                        }`}
+                      >
+                        {creator.creator.avatarUrl ? (
+                          <img src={creator.creator.avatarUrl} alt="" className="h-full w-full rounded-full object-cover" />
+                        ) : (
+                          <span className={`text-[8px] font-bold ${creator.isLead ? "text-amber-400" : "text-green-400"}`}>
+                            {creator.creator.displayName?.[0]?.toUpperCase()}
+                          </span>
+                        )}
                       </div>
-                      <span className={`text-[10px] font-medium ${c.isLead ? "text-amber-300" : "text-green-300"}`}>
-                        {shortName(c.creator.displayName)}{c.isLead ? " ★" : ""}
+                      <span className={`text-[10px] font-medium ${creator.isLead ? "text-amber-300" : "text-green-300"}`}>
+                        {shortName(creator.creator.displayName)}
+                        {creator.isLead ? " *" : ""}
                       </span>
                     </span>
                   }
                 />
               ))}
+
               {order.creators.length > 3 && (
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-bg-border text-[10px] text-ink-tertiary">
+                <span className="inline-flex items-center rounded-full bg-bg-border px-1.5 py-0.5 text-[10px] text-ink-tertiary">
                   +{order.creators.length - 3}
                 </span>
               )}
@@ -197,7 +202,6 @@ export default function OrderCard({ order, onClick, dim, dragEnabled = true }: P
         )}
       </div>
 
-      {/* Footer: deadline + counters */}
       <div className="flex items-center justify-between">
         <div>
           {daysLeft !== null ? (
@@ -207,10 +211,11 @@ export default function OrderCard({ order, onClick, dim, dragEnabled = true }: P
               {isOverdue ? <AlertTriangle size={10} /> : <Clock size={10} />}
               {isOverdue
                 ? `Просрочено ${Math.abs(daysLeft)} дн.`
-                : daysLeft === 0 ? "Сегодня"
-                : daysLeft === 1 ? "Завтра"
-                : `${daysLeft} дн.`
-              }
+                : daysLeft === 0
+                  ? "Сегодня"
+                  : daysLeft === 1
+                    ? "Завтра"
+                    : `${daysLeft} дн.`}
             </span>
           ) : (
             <span className="text-[11px] text-ink-muted">Без дедлайна</span>

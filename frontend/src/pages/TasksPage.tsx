@@ -458,7 +458,7 @@ export default function TasksPage() {
   const totalDone = tasks.filter((t) => t.status === "DONE").length;
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-bg-base">
+    <div className="min-h-0 flex-1 flex flex-col overflow-hidden bg-bg-base">
 
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-4 py-6" data-tour="tasks-page">

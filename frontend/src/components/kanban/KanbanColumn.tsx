@@ -67,7 +67,7 @@ export default function KanbanColumn({ status, label, orders, onCardClick, dragE
 
   return (
     <div
-      className={`flex-shrink-0 w-[260px] flex flex-col rounded-xl border overflow-hidden transition-colors animate-soft-in ${
+      className={`flex flex-shrink-0 flex-col overflow-hidden rounded-xl border transition-colors animate-soft-in w-[260px] ${
         isArchived ? "border-bg-border/50 opacity-75 hover:opacity-90" : "border-bg-border"
       } ${cfg.colBg}`}
       style={{ height: "100%" }}
@@ -75,13 +75,13 @@ export default function KanbanColumn({ status, label, orders, onCardClick, dragE
       {!isArchived && <div className={`h-0.5 w-full flex-shrink-0 ${cfg.accent}`} />}
 
       <div
-        className={`flex items-center gap-2 px-3.5 py-3 border-b flex-shrink-0 ${
+        className={`flex flex-shrink-0 items-center gap-2 border-b px-3.5 py-3 ${
           isArchived ? "border-bg-border/40" : "border-bg-border"
         }`}
       >
-        {isArchived && <Archive size={13} className="text-ink-tertiary flex-shrink-0" />}
-        <h3 className={`font-medium text-sm flex-1 ${cfg.headerText}`}>{label}</h3>
-        <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${cfg.badge}`}>{orders.length}</span>
+        {isArchived && <Archive size={13} className="flex-shrink-0 text-ink-tertiary" />}
+        <h3 className={`flex-1 text-sm font-medium ${cfg.headerText}`}>{label}</h3>
+        <span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${cfg.badge}`}>{orders.length}</span>
       </div>
 
       <div
@@ -106,7 +106,7 @@ export default function KanbanColumn({ status, label, orders, onCardClick, dragE
 
         {orders.length === 0 && (
           <div
-            className={`flex flex-col items-center justify-center h-24 gap-2 select-none ${
+            className={`flex h-24 select-none flex-col items-center justify-center gap-2 ${
               isArchived ? "text-ink-muted/50" : "text-ink-muted"
             }`}
           >
