@@ -218,6 +218,24 @@ function mainReplyKeyboard(status: UserStatus, role?: UserRole) {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function ensureReplyKeyboard(_ctx: any, _status: UserStatus, _role?: UserRole) {}
 
+async function removeLegacyReplyKeyboard(ctx: any) {
+  if (ctx.chat?.type !== "private") return;
+
+  const chatId = Number(ctx.chat.id);
+  if (replyKeyboardChats.has(chatId)) return;
+
+  try {
+    const cleanup = await bot.api.sendMessage(chatId, "ㅤ", {
+      reply_markup: { remove_keyboard: true },
+    });
+    try {
+      await bot.api.deleteMessage(chatId, cleanup.message_id);
+    } catch {}
+  } catch {}
+
+  replyKeyboardChats.add(chatId);
+}
+
 // ==================== /start — РЕГИСТРАЦИЯ / ВХОД ====================
 
 bot.command("start", async (ctx) => {
@@ -1264,6 +1282,8 @@ async function taskDetailKeyboard(taskId: string, userDbId: string): Promise<Inl
 }
 
 async function replyOrEdit(ctx: any, text: string, extra: Record<string, any>) {
+  await removeLegacyReplyKeyboard(ctx);
+
   if (ctx.callbackQuery?.message) {
     try {
       await ctx.editMessageText(text, extra);
@@ -3602,6 +3622,13 @@ bot.command("menu", async (ctx) => {
   await sendHomePanel(ctx, user);
 });
 
+bot.command("profile", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || user.status !== "APPROVED") { await ctx.reply("Нажмите /start чтобы начать"); return; }
+  await ensureReplyKeyboard(ctx, user.status, user.role);
+  await sendProfilePanel(ctx, BigInt(ctx.from!.id));
+});
+
 // ==================== ОТПРАВКА УВЕДОМЛЕНИЙ ИЗ ОЧЕРЕДИ ====================
 
 bot.command("tasks", async (ctx) => {
@@ -3633,6 +3660,40 @@ bot.command("notifs", async (ctx) => {
   if (!user || user.status !== "APPROVED") { await ctx.reply("Нажмите /start чтобы начать"); return; }
   await ensureReplyKeyboard(ctx, user.status, user.role);
   await sendNotificationsPanel(ctx, user);
+});
+
+bot.command("upload", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || user.status !== "APPROVED") { await ctx.reply("Нажмите /start чтобы начать"); return; }
+  await ensureReplyKeyboard(ctx, user.status, user.role);
+  await sendUploadMenuPanel(ctx, user);
+});
+
+bot.command("createorder", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || user.status !== "APPROVED") { await ctx.reply("Нажмите /start чтобы начать"); return; }
+  if (!MARKETER_ROLES.includes(user.role)) {
+    await ctx.reply("❌ У вас нет доступа к созданию заказов.");
+    return;
+  }
+  clearInteractiveState(ctx.from!.id);
+  waitingForOrderTitle.set(ctx.from!.id, true);
+  await replyOrEdit(ctx, "➕ *Создание заказа*\n\nВведите название заказа:", {
+    parse_mode: "Markdown",
+    reply_markup: new InlineKeyboard().text("❌ Отмена", "tz_cancel"),
+  });
+});
+
+bot.command("status", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user) { await ctx.reply("Нажмите /start"); return; }
+  await sendStatusPanel(ctx, user);
+});
+
+bot.command("site", async (ctx) => {
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user) { await ctx.reply("Нажмите /start"); return; }
+  await sendFrontendLinkPanel(ctx, user);
 });
 
 async function processNotifications() {
@@ -3717,13 +3778,19 @@ async function startTelegramBot() {
     console.log("Starting Telegram polling...");
 
     await bot.api.setMyCommands([
-      { command: "start",  description: "Начать / Главное меню" },
-      { command: "menu",   description: "Главное меню" },
-      { command: "orders", description: "Мои заказы" },
-      { command: "tasks",  description: "Мои задачи" },
-      { command: "report", description: "Написать отчёт" },
-      { command: "notifs", description: "Уведомления" },
-      { command: "pin",    description: "Показать PIN для сайта" },
+      { command: "start",       description: "Старт и вход" },
+      { command: "menu",        description: "Главное меню" },
+      { command: "orders",      description: "Мои заказы" },
+      { command: "tasks",       description: "Мои задачи" },
+      { command: "profile",     description: "Мой профиль" },
+      { command: "report",      description: "Отправить отчёт" },
+      { command: "notifs",      description: "Уведомления" },
+      { command: "pin",         description: "Показать PIN для сайта" },
+      { command: "upload",      description: "Загрузить файл в заказ" },
+      { command: "createorder", description: "Создать заказ" },
+      { command: "status",      description: "Статус заявки" },
+      { command: "site",        description: "Открыть сайт" },
+      { command: "admin",       description: "Панель управления" },
     ]);
 
     await bot.start({
