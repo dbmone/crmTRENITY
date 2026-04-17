@@ -197,7 +197,7 @@ export default function AdminPage() {
   );
 
   return (
-    <div className="min-h-screen bg-bg-base">
+    <div className="min-h-screen bg-bg-base animate-soft-in">
       <Header />
 
       <div className="max-w-5xl mx-auto px-6 py-8" data-tour="admin-page">
@@ -288,8 +288,19 @@ export default function AdminPage() {
         </div>
 
         {loading ? (
-          <div className="flex justify-center py-16">
-            <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+          <div className="space-y-2">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="bg-bg-surface border border-bg-border rounded-xl p-4 animate-fade-in" style={{ animationDelay: `${i * 70}ms` }}>
+                <div className="flex items-center gap-3">
+                  <div className="skeleton w-9 h-9 rounded-full flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="skeleton h-3.5 w-36 mb-1.5" />
+                    <div className="skeleton h-3 w-24" />
+                  </div>
+                  <div className="skeleton h-7 w-20 rounded-lg" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : tab === "pending" ? (
           <PendingList rows={pending} onApprove={approve} onReject={reject} working={working} isAdmin={isAdmin} isHeadMark={isHeadMark} />
@@ -586,7 +597,7 @@ function PendingList({ rows, onApprove, onReject, working, isAdmin, isHeadMark }
   );
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 stagger-children">
       {rows.map((u: UserRow) => (
         <div key={u.id} className="bg-bg-surface border border-bg-border rounded-card p-4 flex items-center justify-between gap-4">
           <div>
@@ -715,8 +726,8 @@ function UsersList({ rows, blocked, onChangeRole, onDeactivate, onRestore, worki
     : ["CREATOR"];
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
+    <div className="space-y-6 content-ready">
+      <div className="space-y-2 stagger-children">
         {rows.map((u: UserRow) => (
           <UserRow3 key={u.id} u={u} working={working} currentUser={currentUser} isAdmin={isAdmin}
             assignable={assignable} onChangeRole={onChangeRole} onDeactivate={onDeactivate} />
@@ -728,7 +739,7 @@ function UsersList({ rows, blocked, onChangeRole, onDeactivate, onRestore, worki
           <h3 className="text-xs font-semibold text-red-400/70 uppercase tracking-wide mb-3 flex items-center gap-2">
             <UserX size={13} /> Заблокированные ({blocked.length})
           </h3>
-          <div className="space-y-2">
+          <div className="space-y-2 stagger-children">
             {blocked.map((u: UserRow) => (
               <UserRow3 key={u.id} u={u} working={working} currentUser={currentUser} isAdmin={isAdmin}
                 assignable={assignable} onRestore={onRestore} isBlocked />

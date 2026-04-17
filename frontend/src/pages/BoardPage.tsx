@@ -3,6 +3,7 @@ import { Plus, RefreshCw, Search, SlidersHorizontal, X } from "lucide-react";
 import * as api from "../api/client";
 import CreateOrderModal from "../components/kanban/CreateOrderModal";
 import KanbanBoard from "../components/kanban/KanbanBoard";
+import KanbanSkeleton from "../components/kanban/KanbanSkeleton";
 import OrderDetailModal from "../components/kanban/OrderDetailModal";
 import Header from "../components/layout/Header";
 import { TOUR_STEPS } from "../data/tourSteps";
@@ -221,17 +222,10 @@ export default function BoardPage() {
       </div>
 
       <div className="flex-1 overflow-hidden relative pt-3" data-tour="board">
-        {isLoading && orders.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="flex flex-col items-center gap-3">
-              <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
-              <p className="text-sm text-ink-tertiary">Загрузка...</p>
-            </div>
-          </div>
-        )}
+        {isLoading && orders.length === 0 && <KanbanSkeleton />}
 
         {!isLoading && orders.length === 0 && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <div className="absolute inset-0 flex flex-col items-center justify-center animate-fade-in">
             <div className="w-16 h-16 rounded-2xl bg-bg-surface border border-bg-border flex items-center justify-center mb-4">
               <div className="w-7 h-7 border-2 border-dashed border-bg-hover rounded-lg" />
             </div>
@@ -242,7 +236,7 @@ export default function BoardPage() {
           </div>
         )}
 
-        {(!isLoading || orders.length > 0) && orders.length > 0 && (
+        {orders.length > 0 && (
           <KanbanBoard orders={orders} onCardClick={setSelectedOrder} dragEnabled={dragEnabled} />
         )}
       </div>

@@ -52,7 +52,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="min-h-screen bg-bg-base">
+    <div className="min-h-screen bg-bg-base animate-soft-in">
       <Header />
 
       <div className="max-w-lg mx-auto px-4 py-8">

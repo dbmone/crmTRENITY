@@ -31,7 +31,7 @@ export default function ArchivePage() {
   };
 
   return (
-    <div className="min-h-screen bg-bg-base">
+    <div className="min-h-screen bg-bg-base animate-soft-in">
       <Header />
 
       <div className="max-w-4xl mx-auto px-6 py-8" data-tour="archive-page">
@@ -62,16 +62,26 @@ export default function ArchivePage() {
         </div>
 
         {loading ? (
-          <div className="flex justify-center py-16">
-            <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+          <div className="space-y-2">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="bg-bg-surface border border-bg-border rounded-card p-4 animate-fade-in" style={{ animationDelay: `${i * 60}ms` }}>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="skeleton h-4 w-48 mb-2" />
+                    <div className="skeleton h-3 w-32" />
+                  </div>
+                  <div className="skeleton h-3 w-20 flex-shrink-0" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : orders.length === 0 ? (
-          <div className="text-center py-16 text-ink-tertiary">
+          <div className="text-center py-16 text-ink-tertiary animate-fade-in">
             <Archive size={32} className="mx-auto mb-3 opacity-30" />
             <p>В архиве пусто</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-2 stagger-children">
             {orders.map((o) => (
               <button
                 key={o.id}

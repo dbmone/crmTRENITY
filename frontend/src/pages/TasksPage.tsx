@@ -459,7 +459,7 @@ export default function TasksPage() {
   const totalDone = tasks.filter((t) => t.status === "DONE").length;
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-bg-base">
+    <div className="h-full flex flex-col overflow-hidden bg-bg-base animate-soft-in">
       <Header />
 
       <div className="flex-1 overflow-y-auto">
@@ -543,8 +543,18 @@ export default function TasksPage() {
 
           {/* Loading */}
           {loading && (
-            <div className="text-center py-12 text-ink-tertiary">
-              <Loader2 size={24} className="mx-auto animate-spin mb-2" />
+            <div className="space-y-2">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="bg-bg-raised border border-bg-border rounded-xl p-4 animate-fade-in" style={{ animationDelay: `${i * 60}ms` }}>
+                  <div className="flex items-center gap-3">
+                    <div className="skeleton w-5 h-5 rounded flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="skeleton h-3.5 w-48 mb-1.5" />
+                      <div className="skeleton h-3 w-28" />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
@@ -567,7 +577,7 @@ export default function TasksPage() {
                   <span className={`text-xs font-semibold uppercase tracking-wider ${g.color}`}>{g.label}</span>
                   <span className="text-xs text-ink-tertiary">({g.items.length})</span>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2 stagger-children">
                   {g.items.map((task) => (
                     <TaskRow
                       key={task.id}

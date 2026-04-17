@@ -55,7 +55,7 @@ export default function DashboardPage() {
   const totalNonArchived = o ? o.total - (o.archived || 0) : 0;
 
   return (
-    <div className="min-h-screen bg-bg-base">
+    <div className="min-h-screen bg-bg-base animate-soft-in">
       <Header />
 
       <div className="max-w-5xl mx-auto px-6 py-8" data-tour="dashboard-page">
@@ -68,15 +68,21 @@ export default function DashboardPage() {
         </div>
 
         {loading ? (
-          <div className="flex justify-center py-16">
-            <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="bg-bg-surface border border-bg-border rounded-card p-4 animate-fade-in" style={{ animationDelay: `${i * 60}ms` }}>
+                <div className="skeleton h-4 w-4 mb-3 rounded" />
+                <div className="skeleton h-7 w-16 mb-1" />
+                <div className="skeleton h-3 w-20" />
+              </div>
+            ))}
           </div>
         ) : error || !data ? (
-          <div className="text-center py-16 text-ink-tertiary">Не удалось загрузить данные</div>
+          <div className="text-center py-16 text-ink-tertiary animate-fade-in">Не удалось загрузить данные</div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-6 content-ready">
             {/* KPI cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 stagger-children">
               <KPICard icon={<TrendingUp size={16} className="text-green-400" />}    label="Всего заказов" value={o!.total}      accent="green" />
               <KPICard icon={<Clock size={16} className="text-amber-400" />}         label="В работе"      value={o!.inProgress}  accent="amber" />
               <KPICard icon={<AlertTriangle size={16} className="text-red-400" />}   label="Просрочено"    value={o!.overdue}     accent="red" />
