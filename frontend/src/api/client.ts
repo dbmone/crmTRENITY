@@ -39,6 +39,13 @@ export async function loginByPin(pin: string) {
   return data;
 }
 
+export async function loginByTelegramWebApp(initData: string) {
+  const { data } = await api.post("/auth/telegram-webapp", { initData });
+  localStorage.setItem("token", data.token);
+  localStorage.setItem("user", JSON.stringify(data.user));
+  return data;
+}
+
 export async function getMe() {
   const { data } = await api.get("/auth/me");
   return data;

@@ -196,7 +196,7 @@ function mainMenuKeyboard(status: UserStatus, role?: UserRole): InlineKeyboard {
 }
 
 function withFrontendLink(kb: InlineKeyboard): InlineKeyboard {
-  if (FRONTEND_URL) kb.row().url("🌐 Открыть сайт", FRONTEND_URL);
+  if (FRONTEND_URL) kb.row().webApp("🌐 Открыть сайт", FRONTEND_URL);
   return kb;
 }
 
@@ -215,13 +215,13 @@ function mainReplyKeyboard(status: UserStatus, role?: UserRole) {
       kb.text(MENU_TEXT.admin).row();
     }
     if (FRONTEND_URL) {
-      kb.text(MENU_TEXT.site).row();
+      kb.webApp(MENU_TEXT.site, FRONTEND_URL).row();
     }
     kb.text("/menu").text("/tasks").text("/pin");
     if (role && ADMIN_ROLES.includes(role)) kb.text("/admin");
   } else if (status === "PENDING") {
     kb.text(MENU_TEXT.status);
-    if (FRONTEND_URL) kb.text(MENU_TEXT.site);
+    if (FRONTEND_URL) kb.webApp(MENU_TEXT.site, FRONTEND_URL);
     kb.row().text("/start");
   } else {
     kb.text("/start");

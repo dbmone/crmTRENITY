@@ -13,6 +13,7 @@ import ProfilePage from "./pages/ProfilePage";
 import TasksPage from "./pages/TasksPage";
 import { useAuthStore } from "./store/auth.store";
 import { useTourStore } from "./store/tour.store";
+import * as api from "./api/client";
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token);
@@ -105,6 +106,15 @@ export default function App() {
   const checkAuth = useAuthStore((s) => s.checkAuth);
 
   useEffect(() => {
+    // Telegram Mini App: auto-login via initData if not already logged in
+    const tg = (window as any).Telegram?.WebApp;
+    if (tg?.initData && !localStorage.getItem("token")) {
+      tg.ready?.();
+      api.loginByTelegramWebApp(tg.initData)
+        .then(() => checkAuth())
+        .catch(() => checkAuth()); // on failure fall through to PIN login
+      return;
+    }
     checkAuth();
   }, [checkAuth]);
 
