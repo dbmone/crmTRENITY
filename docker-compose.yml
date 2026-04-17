@@ -17,6 +17,7 @@ services:
       retries: 5
 
   backend:
+    image: ghcr.io/dbmone/crmtrenity-backend:latest
     build: ./backend
     restart: unless-stopped
     environment:
@@ -57,6 +58,7 @@ services:
       start_period: 30s
 
   bot:
+    image: ghcr.io/dbmone/crmtrenity-bot:latest
     build: ./bot
     restart: unless-stopped
     environment:
@@ -80,6 +82,7 @@ services:
       - "1337:1337"
 
   frontend:
+    image: ghcr.io/dbmone/crmtrenity-frontend:latest
     build: ./frontend
     restart: unless-stopped
     environment:

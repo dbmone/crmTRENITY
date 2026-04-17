@@ -1,0 +1,108 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: dbmone
+
+jobs:
+  # ─── Build three images in parallel ───────────────────────────────────────
+  build-backend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: ghcr.io/${{ env.OWNER }}/crmtrenity-backend:latest
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+  build-bot:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./bot
+          push: true
+          tags: ghcr.io/${{ env.OWNER }}/crmtrenity-bot:latest
+          cache-from: type=gha,scope=bot
+          cache-to: type=gha,mode=max,scope=bot
+
+  build-frontend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: ghcr.io/${{ env.OWNER }}/crmtrenity-frontend:latest
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  # ─── Deploy: pull pre-built images on server ──────────────────────────────
+  deploy:
+    needs: [build-backend, build-bot, build-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          script: |
+            # login to ghcr.io (PAT with read:packages)
+            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u dbmone --password-stdin
+
+            # find compose folder regardless of portainer numbering
+            COMPOSE_DIR=$(find /var/lib/docker/volumes/portainer_data/_data/compose \
+              -name "docker-compose.yml" 2>/dev/null | head -1 | xargs dirname)
+
+            if [ -z "$COMPOSE_DIR" ]; then
+              echo "ERROR: compose directory not found"
+              exit 1
+            fi
+
+            echo "Using compose dir: $COMPOSE_DIR"
+            cd "$COMPOSE_DIR"
+
+            # pull new images (no rebuild on server)
+            docker compose pull backend bot frontend
+
+            # restart only changed containers, keep postgres/g4f running
+            docker compose up -d --no-build --no-deps backend bot frontend
