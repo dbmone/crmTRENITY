@@ -16,6 +16,16 @@ type RectLike = {
 const TOOLTIP_WIDTH = 300;
 const TARGET_PADDING = 8;
 const VIEWPORT_PADDING = 16;
+const COMPACT_TOUR_TARGETS = new Set([
+  "nav-board",
+  "nav-tasks",
+  "nav-guide",
+  "nav-archive",
+  "nav-dashboard",
+  "nav-admin",
+  "nav-ai",
+  "profile-btn",
+]);
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -33,16 +43,32 @@ function getTargetElement(target?: string) {
   return nodes.find(isVisible) ?? null;
 }
 
+function getPaddingForElement(element: HTMLElement) {
+  const explicitPadding = Number(element.dataset.tourPadding);
+  if (Number.isFinite(explicitPadding) && explicitPadding >= 0) return explicitPadding;
+
+  const targetName = element.dataset.tour;
+  if (targetName && COMPACT_TOUR_TARGETS.has(targetName)) return 3;
+
+  return TARGET_PADDING;
+}
+
 function getRect(element: HTMLElement | null): RectLike | null {
   if (!element) return null;
   const rect = element.getBoundingClientRect();
+  const padding = getPaddingForElement(element);
+  const top = Math.max(VIEWPORT_PADDING, rect.top - padding);
+  const left = Math.max(VIEWPORT_PADDING, rect.left - padding);
+  const right = Math.min(window.innerWidth - VIEWPORT_PADDING, rect.right + padding);
+  const bottom = Math.min(window.innerHeight - VIEWPORT_PADDING, rect.bottom + padding);
+
   return {
-    top: Math.max(VIEWPORT_PADDING, rect.top - TARGET_PADDING),
-    left: Math.max(VIEWPORT_PADDING, rect.left - TARGET_PADDING),
-    width: rect.width + TARGET_PADDING * 2,
-    height: rect.height + TARGET_PADDING * 2,
-    right: Math.min(window.innerWidth - VIEWPORT_PADDING, rect.right + TARGET_PADDING),
-    bottom: Math.min(window.innerHeight - VIEWPORT_PADDING, rect.bottom + TARGET_PADDING),
+    top,
+    left,
+    width: Math.max(0, right - left),
+    height: Math.max(0, bottom - top),
+    right,
+    bottom,
   };
 }
 

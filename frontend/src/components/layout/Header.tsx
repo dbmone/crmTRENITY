@@ -186,6 +186,7 @@ export default function Header() {
         type="button"
         onClick={() => navigate(item.path)}
         data-tour={item.tour}
+        data-tour-padding={mobile ? 6 : 2}
         data-nav-path={item.path}
         className={mobile
           ? `flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors ${
@@ -212,9 +213,9 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-bg-border bg-bg-surface">
-      <div className="relative flex w-full items-center px-4 py-3 sm:px-6 md:px-8">
+      <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-4 py-3 sm:px-6 md:px-8">
         {/* Left — logo (always visible) */}
-        <div className="flex flex-1 justify-start">
+        <div className="flex min-w-0 justify-start">
           <button type="button" onClick={() => navigate("/")} className="relative z-10 flex flex-shrink-0 items-center">
             <span className="font-bold tracking-tight text-ink-primary">
               TRENITY <span className="text-green-500">CRM</span>
@@ -223,7 +224,7 @@ export default function Header() {
         </div>
 
         {/* Center — nav strictly centered */}
-        <div className="hidden flex-shrink-0 justify-center xl:flex">
+        <div className="hidden justify-self-center xl:flex">
           <nav
             ref={navRef}
             className="pointer-events-auto relative flex items-center gap-1 rounded-xl border border-bg-border/80 bg-bg-surface/95 px-2 py-1 backdrop-blur-sm"
@@ -242,9 +243,9 @@ export default function Header() {
         </div>
 
         {/* Right - Profile, Notifications, Role, Logout */}
-        <div className="flex flex-1 justify-end">
+        <div className="flex min-w-0 justify-end">
           {user && (
-            <div className="relative z-10 flex flex-shrink-0 items-center justify-end gap-1 sm:gap-2">
+            <div className="relative z-10 flex min-w-0 flex-shrink-0 items-center justify-end gap-1 sm:gap-2">
               <span className={`rounded-full px-2 py-1 text-[10px] sm:text-xs font-medium ${ROLE_COLORS[user.role] || "bg-bg-hover text-ink-secondary"}`}>
                 {ROLE_LABELS[user.role] || user.role}
               </span>
@@ -321,6 +322,7 @@ export default function Header() {
               <button
                 type="button"
                 data-tour="profile-btn"
+                data-tour-padding={3}
                 onClick={() => navigate("/profile")}
                 className="flex items-center gap-2 rounded-lg p-1.5 sm:px-2 sm:py-1.5 transition-colors hover:bg-bg-hover"
               >
