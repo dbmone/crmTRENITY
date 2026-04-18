@@ -210,6 +210,49 @@ jobs:
             # pull new images (no rebuild on server)
             docker compose $PROJECT_ARGS $ENV_FILE pull backend bot frontend
 
+            # ensure postgres is up and healthy before app containers start
+            docker compose $PROJECT_ARGS $ENV_FILE up -d postgres
+
+            POSTGRES_ID="$(docker compose $PROJECT_ARGS $ENV_FILE ps -q postgres)"
+            if [ -z "$POSTGRES_ID" ]; then
+              echo "ERROR: postgres container id not found"
+              exit 1
+            fi
+
+            wait_for_postgres() {
+              ATTEMPT=1
+              MAX_ATTEMPTS=24
+              while [ "$ATTEMPT" -le "$MAX_ATTEMPTS" ]; do
+                STATUS="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$POSTGRES_ID" 2>/dev/null || true)"
+                echo "Postgres health attempt $ATTEMPT/$MAX_ATTEMPTS: ${STATUS:-unknown}"
+
+                if [ "$STATUS" = "healthy" ]; then
+                  return 0
+                fi
+
+                if [ "$STATUS" = "unhealthy" ]; then
+                  return 1
+                fi
+
+                sleep 5
+                ATTEMPT=$((ATTEMPT + 1))
+              done
+
+              return 1
+            }
+
+            if ! wait_for_postgres; then
+              echo "Postgres is unhealthy, trying one restart..."
+              docker compose $PROJECT_ARGS $ENV_FILE restart postgres || true
+              sleep 5
+              POSTGRES_ID="$(docker compose $PROJECT_ARGS $ENV_FILE ps -q postgres)"
+              if ! wait_for_postgres; then
+                echo "ERROR: postgres did not become healthy"
+                docker compose $PROJECT_ARGS $ENV_FILE logs --tail=120 postgres || true
+                exit 1
+              fi
+            fi
+
             # stop old app containers (free ports before starting new ones)
             docker compose $PROJECT_ARGS $ENV_FILE stop backend bot frontend || true
 
@@ -222,5 +265,5 @@ jobs:
               fi
             done
 
-            # start with new images (compose handles dependency order: backend healthy → bot)
+            # start with new images after database is confirmed healthy
             docker compose $PROJECT_ARGS $ENV_FILE up -d --no-build --force-recreate backend bot frontend
