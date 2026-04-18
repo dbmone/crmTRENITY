@@ -348,7 +348,7 @@ function AssignSelect({ value, options, disabled, placeholder, onChange }: {
       value={value}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value || null)}
-      className="ml-auto text-xs px-2 py-1 rounded-lg bg-bg-raised border border-bg-border text-ink-tertiary outline-none hover:border-green-500/40 transition-colors cursor-pointer"
+      className="w-full text-xs px-2 py-1.5 rounded-lg bg-bg-raised border border-bg-border text-ink-tertiary outline-none hover:border-green-500/40 transition-colors cursor-pointer truncate"
     >
       <option value="">{placeholder}</option>
       {options.map((o) => <option key={o.id} value={o.id}>{o.displayName}</option>)}
@@ -405,32 +405,21 @@ function PersonFlowCard({
   };
 
   return (
-    <div className="rounded-2xl border border-bg-border bg-bg-surface p-3 shadow-card">
-      <div className="flex items-start gap-3">
-        <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border text-xs font-bold ${toneStyles[tone]}`}>
+    <div className="relative rounded-lg border border-bg-border bg-bg-surface p-2 shadow-sm w-full transition-colors hover:border-bg-border/80">
+      <div className="flex items-center gap-2">
+        <div className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border text-[10px] font-bold ${toneStyles[tone]}`}>
           {initials}
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-semibold text-ink-primary">{user.displayName}</p>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${ROLE_COLORS[user.role] || ""}`}>
+        <div className="min-w-0 flex-1 flex flex-col justify-center">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <p className="text-[13px] font-medium text-ink-primary truncate">{user.displayName}</p>
+            <span className={`flex-shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${ROLE_COLORS[user.role] || ""}`}>
               {badge}
             </span>
           </div>
-          {user.telegramUsername && (
-            <a
-              href={`https://t.me/${user.telegramUsername}`}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-1 inline-block text-xs text-ink-tertiary transition-colors hover:text-green-400"
-            >
-              @{user.telegramUsername}
-            </a>
-          )}
-          {meta && <p className="mt-1 text-[11px] text-ink-tertiary">{meta}</p>}
         </div>
       </div>
-      {assign && <div className="mt-3">{assign}</div>}
+      {assign && <div className="mt-2 pt-2 border-t border-bg-border/50">{assign}</div>}
     </div>
   );
 }
