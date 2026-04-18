@@ -5,18 +5,18 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("🌱 Seeding TRENITY CRM...");
 
-  // ==================== ADMIN (@Dbm0ne) ====================
+  // ==================== ADMIN (System) ====================
   const admin = await prisma.user.upsert({
-    where: { telegramId: BigInt(1) },
+    where: { telegramId: BigInt(999999) },
     update: { role: UserRole.ADMIN, status: UserStatus.APPROVED },
     create: {
-      telegramId: BigInt(1), // Заменить на реальный telegram ID
-      telegramUsername: "Dbm0ne",
-      displayName: "Admin",
+      telegramId: BigInt(999999), // Системный ID
+      telegramUsername: "system_admin",
+      displayName: "System Admin",
       role: UserRole.ADMIN,
       status: UserStatus.APPROVED,
       pinCode: "adm1",
-      chatId: BigInt(1),
+      chatId: BigInt(999999),
     },
   });
 
