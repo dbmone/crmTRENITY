@@ -13,6 +13,40 @@ export type TourStep = {
   nextLabel?: string;
 };
 
+const INTRO_STEPS: TourStep[] = [
+  {
+    route: "/guide",
+    title: "Как сайт связан с Telegram",
+    content:
+      "Эта CRM и Telegram-бот работают как одна система. Всё важное по заказам хранится в одном месте и синхронизируется между сайтом и Telegram.",
+    details: [
+      "То, что ты отправляешь через Telegram-бота по заказу, потом видно и на сайте в карточке заказа.",
+      "То, что добавляется на сайте, тоже доступно в Telegram: ТЗ, файлы, сообщения, отчёты и голосовые сценарии.",
+      "В Telegram можно просто пересылать сообщения боту, и они сохранятся в CRM, чтобы команда потом видела их и на сайте.",
+      "В заказе есть кнопка, которая одной отправкой собирает все данные по заказу в Telegram, чтобы быстро забрать всё на телефон.",
+      "Голосовой ввод и AI-сценарии тоже работают в обе стороны: и на сайте, и в Telegram.",
+    ],
+    emoji: "",
+    placement: "center",
+    nextLabel: "Понял",
+  },
+  {
+    route: "/guide",
+    title: "Что важно знать про файлы",
+    content:
+      "Файлы можно отправлять и через сайт, и через Telegram. Но у веб-интерфейса есть важная граница, которую лучше понимать заранее.",
+    details: [
+      "На сайте всё, что весит до 50 МБ, нормально загружается и может отображаться прямо в интерфейсе.",
+      "Если файл больше 50 МБ, он всё равно может храниться в Telegram и оставаться частью заказа, но смотреть и забирать его удобнее уже из Telegram.",
+      "То есть большие файлы тоже можно использовать в работе, просто веб-превью для них не гарантируется.",
+      "Если тебе нужно быстро получить материалы заказа в Telegram, это делается из карточки заказа одной кнопкой.",
+    ],
+    emoji: "",
+    placement: "center",
+    nextLabel: "Дальше",
+  },
+];
+
 const PROFILE_STEPS: TourStep[] = [
   {
     route: "/",
@@ -392,10 +426,11 @@ const ADMIN_STEPS: TourStep[] = [
   },
 ];
 
-const CREATOR_STEPS: TourStep[] = [...PROFILE_STEPS, ...ORDER_FLOW_STEPS, ...TASKS_STEPS, ...ARCHIVE_STEPS];
-const LEAD_CREATOR_STEPS: TourStep[] = [...PROFILE_STEPS, ...ORDER_FLOW_STEPS, ...TASKS_STEPS, ...ARCHIVE_STEPS];
-const HEAD_CREATOR_STEPS: TourStep[] = [...PROFILE_STEPS, ...ORDER_FLOW_STEPS, ...TASKS_STEPS, ...ARCHIVE_STEPS, ...DASHBOARD_STEPS, ...AI_STEPS];
+const CREATOR_STEPS: TourStep[] = [...INTRO_STEPS, ...PROFILE_STEPS, ...ORDER_FLOW_STEPS, ...TASKS_STEPS, ...ARCHIVE_STEPS];
+const LEAD_CREATOR_STEPS: TourStep[] = [...INTRO_STEPS, ...PROFILE_STEPS, ...ORDER_FLOW_STEPS, ...TASKS_STEPS, ...ARCHIVE_STEPS];
+const HEAD_CREATOR_STEPS: TourStep[] = [...INTRO_STEPS, ...PROFILE_STEPS, ...ORDER_FLOW_STEPS, ...TASKS_STEPS, ...ARCHIVE_STEPS, ...DASHBOARD_STEPS, ...AI_STEPS];
 const MARKETER_STEPS: TourStep[] = [
+  ...INTRO_STEPS,
   {
     route: "/",
     target: "create-btn",

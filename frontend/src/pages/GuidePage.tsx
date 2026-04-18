@@ -48,7 +48,7 @@ export default function GuidePage() {
       onFinish: finishGuide,
       onSkip: finishGuide,
     });
-    navigate("/", { replace: true });
+    navigate(steps[0]?.route || "/", { replace: true });
   };
 
   const handleSkip = async () => {
@@ -80,7 +80,7 @@ export default function GuidePage() {
               <p className="mt-3 max-w-3xl text-sm leading-6 text-ink-secondary">
                 Гайд сам проведёт тебя по CRM: откроет нужные экраны, карточки заказа, вкладки и разделы.
                 Тебе остаётся только нажимать «Далее», читать пояснения и смотреть, что именно происходит на сайте,
-                что дублируется в Telegram и куда потом попадает результат.
+                что дублируется в Telegram, как работает голос, куда попадают сообщения из бота и что происходит с файлами до и после лимита 50 МБ.
               </p>
 
               <div className="mt-4 grid gap-2 sm:grid-cols-3">
