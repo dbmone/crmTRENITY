@@ -208,7 +208,7 @@ export default function AdminPage() {
   return (
     <div className="min-h-full bg-bg-base">
 
-      <div className="max-w-5xl mx-auto px-6 py-8" data-tour="admin-page">
+      <div className={`${tab === "team" ? "max-w-[1500px]" : "max-w-5xl"} mx-auto px-6 py-8`} data-tour="admin-page">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-xl font-bold text-ink-primary flex items-center gap-2">
@@ -348,7 +348,7 @@ function AssignSelect({ value, options, disabled, placeholder, onChange }: {
       value={value}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value || null)}
-      className="w-full text-xs px-2 py-1.5 rounded-lg bg-bg-raised border border-bg-border text-ink-tertiary outline-none hover:border-green-500/40 transition-colors cursor-pointer truncate"
+      className="w-[220px] max-w-full flex-none text-xs px-2 py-1.5 rounded-lg bg-bg-raised border border-bg-border text-ink-tertiary outline-none hover:border-green-500/40 transition-colors cursor-pointer truncate"
     >
       <option value="">{placeholder}</option>
       {options.map((o) => <option key={o.id} value={o.id}>{o.displayName}</option>)}
@@ -362,22 +362,28 @@ function UserRow2({ user, indent = 0, badge, assign }: {
 }) {
   const initials = user.displayName.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
   return (
-    <div className="flex items-center gap-2 py-1.5" style={{ paddingLeft: indent * 20 }}>
-      {indent > 0 && <ChevronRight size={12} className="text-ink-tertiary flex-shrink-0 -ml-2" />}
-      <div className="w-7 h-7 rounded-full bg-bg-raised border border-bg-border flex items-center justify-center flex-shrink-0">
-        <span className="text-[10px] font-bold text-ink-tertiary">{initials}</span>
+    <div className="flex items-start gap-3 py-1.5" style={{ paddingLeft: indent * 20 }}>
+      <div className="flex min-w-0 flex-1 items-start gap-2">
+        {indent > 0 && <ChevronRight size={12} className="mt-2 text-ink-tertiary flex-shrink-0 -ml-2" />}
+        <div className="w-7 h-7 rounded-full bg-bg-raised border border-bg-border flex items-center justify-center flex-shrink-0">
+          <span className="text-[10px] font-bold text-ink-tertiary">{initials}</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="truncate text-sm text-ink-primary">{user.displayName}</span>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${ROLE_COLORS[user.role] || ""}`}>
+              {badge || ROLE_LABELS[user.role] || user.role}
+            </span>
+          </div>
+          {user.telegramUsername && (
+            <a href={`https://t.me/${user.telegramUsername}`} target="_blank" rel="noreferrer"
+              className="mt-1 inline-block text-xs text-ink-tertiary hover:text-green-400 transition-colors">
+              @{user.telegramUsername}
+            </a>
+          )}
+        </div>
       </div>
-      <span className="text-sm text-ink-primary">{user.displayName}</span>
-      {user.telegramUsername && (
-        <a href={`https://t.me/${user.telegramUsername}`} target="_blank" rel="noreferrer"
-          className="text-xs text-ink-tertiary hover:text-green-400 transition-colors">
-          @{user.telegramUsername}
-        </a>
-      )}
-      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${ROLE_COLORS[user.role] || ""}`}>
-        {badge || ROLE_LABELS[user.role] || user.role}
-      </span>
-      {assign}
+      {assign && <div className="ml-auto flex-none">{assign}</div>}
     </div>
   );
 }
