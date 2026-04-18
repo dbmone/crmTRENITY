@@ -149,6 +149,8 @@ export const TOUR_DEMO_ORDER: Order = {
   status: "IN_PROGRESS",
   deadline: "2026-04-19T18:00:00.000Z",
   reminderDays: 2,
+  price: null,
+  hasTax: false,
   marketerId: DEMO_MARKETER.id,
   createdAt: "2026-04-15T09:00:00.000Z",
   updatedAt: "2026-04-16T18:10:00.000Z",

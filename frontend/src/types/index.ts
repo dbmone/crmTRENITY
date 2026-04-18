@@ -1,4 +1,4 @@
-export type UserRole = "MARKETER" | "HEAD_MARKETER" | "CREATOR" | "LEAD_CREATOR" | "HEAD_CREATOR" | "ADMIN";
+export type UserRole = "MARKETER" | "HEAD_MARKETER" | "CREATOR" | "LEAD_CREATOR" | "HEAD_LEAD_CREATOR" | "HEAD_CREATOR" | "ADMIN";
 
 export type PermissionKey =
   | "create_order" | "approve_review" | "approve_order" | "access_admin"
@@ -65,6 +65,28 @@ export interface DailyReport {
   creator: User;
 }
 
+export interface OrderCreatorResult {
+  id: string;
+  orderId: string;
+  creatorId: string;
+  didStoryboard: boolean;
+  didAnimation: boolean;
+  didEditing: boolean;
+  didScenario: boolean;
+  helperStoryboardId: string | null;
+  helperAnimationId: string | null;
+  helperEditingId: string | null;
+  helperScenarioId: string | null;
+  setByUserId: string | null;
+  setAt: string | null;
+  creator?: User;
+  setBy?: User | null;
+  helperStoryboard?: User | null;
+  helperAnimation?: User | null;
+  helperEditing?: User | null;
+  helperScenario?: User | null;
+}
+
 export interface Order {
   id: string;
   title: string;
@@ -73,6 +95,8 @@ export interface Order {
   deadline: string | null;
   reminderDays: number;
   marketerId: string;
+  price: number | null;
+  hasTax: boolean;
   createdAt: string;
   updatedAt: string;
   marketer: User;
@@ -81,6 +105,39 @@ export interface Order {
   files: OrderFile[];
   reports?: DailyReport[];
   _count?: { reports: number };
+}
+
+export interface PercentageSettings {
+  CREATOR: number;
+  LEAD_CREATOR: number;
+  HEAD_LEAD_CREATOR: number;
+  HEAD_CREATOR: number;
+  MARKETER: number;
+  HEAD_MARKETER: number;
+  checkboxStoryboard: number;
+  checkboxAnimation: number;
+  checkboxEditing: number;
+  checkboxScenario: number;
+}
+
+export interface ActionPermissions {
+  set_order_price: UserRole[];
+  set_order_tax: UserRole[];
+  set_creator_results: UserRole[];
+}
+
+export interface EarningEntry {
+  orderId: string;
+  orderTitle: string;
+  orderPrice: number;
+  hasTax: boolean;
+  effectivePrice: number;
+  role: string;
+  basePct: number;
+  adjustedPct: number;
+  amount: number;
+  orderStatus: string;
+  createdAt: string;
 }
 
 export const KANBAN_COLUMNS: { status: OrderStatus; label: string; color: string }[] = [

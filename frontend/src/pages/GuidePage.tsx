@@ -9,7 +9,8 @@ import type { UserRole } from "../types";
 
 const ROLE_LABELS: Record<UserRole, string> = {
   CREATOR: "Креатор",
-  LEAD_CREATOR: "Лид креаторов",
+  LEAD_CREATOR: "Тим лид",
+  HEAD_LEAD_CREATOR: "Гл. тим лид",
   HEAD_CREATOR: "Главный креатор",
   MARKETER: "Маркетолог",
   HEAD_MARKETER: "Главный маркетолог",

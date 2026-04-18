@@ -1162,6 +1162,257 @@ bot.callbackQuery(/^ord_rev_(.+)$/, async (ctx) => {
   });
 });
 
+// ==================== ГАЛОЧКИ (CHECKBOXES) ====================
+
+type CheckboxEditState = {
+  didStoryboard: boolean;
+  didAnimation: boolean;
+  didEditing: boolean;
+  didScenario: boolean;
+  helperStoryboardId: string | null;
+  helperAnimationId: string | null;
+  helperEditingId: string | null;
+  helperScenarioId: string | null;
+};
+const checkboxEditState = new Map<string, CheckboxEditState>();
+
+function chkKey(userId: string, orderId: string, creatorId: string) {
+  return `${userId}_${orderId}_${creatorId}`;
+}
+
+function checkboxKeyboard(orderId: string, creatorId: string, state: CheckboxEditState) {
+  const kb = new InlineKeyboard();
+  const fields: Array<{ key: keyof CheckboxEditState; label: string; helperKey: keyof CheckboxEditState }> = [
+    { key: "didStoryboard", label: "Раскадровка", helperKey: "helperStoryboardId" },
+    { key: "didAnimation", label: "Анимация", helperKey: "helperAnimationId" },
+    { key: "didEditing", label: "Монтаж", helperKey: "helperEditingId" },
+    { key: "didScenario", label: "Сценарий", helperKey: "helperScenarioId" },
+  ];
+  for (const f of fields) {
+    const done = state[f.key] as boolean;
+    kb.text(`${done ? "✅" : "☐"} ${f.label}`, `chk_tog_${orderId}_${creatorId}_${f.key}`).row();
+    if (!done) {
+      const helperId = state[f.helperKey] as string | null;
+      kb.text(
+        helperId ? `👤 Помощник выбран` : `👤 Выбрать помощника`,
+        `chk_helper_${orderId}_${creatorId}_${f.helperKey}`
+      ).row();
+    }
+  }
+  kb.text("💾 Сохранить", `chk_save_${orderId}_${creatorId}`).text("🔙 К списку", `chk_open_${orderId}`);
+  return kb;
+}
+
+bot.callbackQuery(/^chk_open_(.+)$/, async (ctx) => {
+  const orderId = ctx.match![1];
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || !["LEAD_CREATOR", "HEAD_LEAD_CREATOR", "HEAD_CREATOR", "ADMIN"].includes(user.role)) {
+    await ctx.answerCallbackQuery("Нет доступа"); return;
+  }
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { creators: { include: { creator: { select: { id: true, displayName: true } } } } },
+  });
+  if (!order) { await ctx.answerCallbackQuery("Заказ не найден"); return; }
+  await ctx.answerCallbackQuery();
+
+  const kb = new InlineKeyboard();
+  for (const oc of order.creators) {
+    kb.text(`👤 ${oc.creator.displayName}`, `chk_creator_${orderId}_${oc.creator.id}`).row();
+  }
+  kb.text("🔙 В меню", "back_menu");
+
+  await replyOrEdit(ctx,
+    `✅ *Галочки по заказу*\n\n«${esc(order.title)}»\n\nВыберите креатора для выставления итогов:`,
+    { parse_mode: "Markdown", reply_markup: kb }
+  );
+});
+
+bot.callbackQuery(/^chk_creator_([^_]+)_(.+)$/, async (ctx) => {
+  const orderId = ctx.match![1];
+  const creatorId = ctx.match![2];
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || !["LEAD_CREATOR", "HEAD_LEAD_CREATOR", "HEAD_CREATOR", "ADMIN"].includes(user.role)) {
+    await ctx.answerCallbackQuery("Нет доступа"); return;
+  }
+  const creator = await prisma.user.findUnique({ where: { id: creatorId }, select: { displayName: true } });
+  const existing = await prisma.orderCreatorResult.findUnique({ where: { orderId_creatorId: { orderId, creatorId } } });
+
+  const key = chkKey(user.id, orderId, creatorId);
+  if (!checkboxEditState.has(key)) {
+    checkboxEditState.set(key, {
+      didStoryboard: existing?.didStoryboard ?? false,
+      didAnimation: existing?.didAnimation ?? false,
+      didEditing: existing?.didEditing ?? false,
+      didScenario: existing?.didScenario ?? false,
+      helperStoryboardId: existing?.helperStoryboardId ?? null,
+      helperAnimationId: existing?.helperAnimationId ?? null,
+      helperEditingId: existing?.helperEditingId ?? null,
+      helperScenarioId: existing?.helperScenarioId ?? null,
+    });
+  }
+
+  await ctx.answerCallbackQuery();
+  const state = checkboxEditState.get(key)!;
+  await replyOrEdit(ctx,
+    `✅ *Итоги по ${esc(creator?.displayName ?? creatorId)}*\n\nОтметьте, что сделал сам. Для несделанных укажите помощника:`,
+    { parse_mode: "Markdown", reply_markup: checkboxKeyboard(orderId, creatorId, state) }
+  );
+});
+
+bot.callbackQuery(/^chk_tog_([^_]+)_([^_]+)_(.+)$/, async (ctx) => {
+  const orderId = ctx.match![1];
+  const creatorId = ctx.match![2];
+  const field = ctx.match![3] as keyof CheckboxEditState;
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+
+  const key = chkKey(user.id, orderId, creatorId);
+  const state = checkboxEditState.get(key);
+  if (!state) { await ctx.answerCallbackQuery("Сначала откройте галочки заново"); return; }
+
+  (state[field] as boolean) = !(state[field] as boolean);
+  // Если поставили галочку — убираем помощника
+  const helperMap: Partial<Record<keyof CheckboxEditState, keyof CheckboxEditState>> = {
+    didStoryboard: "helperStoryboardId",
+    didAnimation: "helperAnimationId",
+    didEditing: "helperEditingId",
+    didScenario: "helperScenarioId",
+  };
+  if ((state[field] as boolean) && helperMap[field]) {
+    (state[helperMap[field]!] as string | null) = null;
+  }
+
+  await ctx.answerCallbackQuery();
+  const creator = await prisma.user.findUnique({ where: { id: creatorId }, select: { displayName: true } });
+  await replyOrEdit(ctx,
+    `✅ *Итоги по ${esc(creator?.displayName ?? creatorId)}*\n\nОтметьте, что сделал сам. Для несделанных укажите помощника:`,
+    { parse_mode: "Markdown", reply_markup: checkboxKeyboard(orderId, creatorId, state) }
+  );
+});
+
+bot.callbackQuery(/^chk_helper_([^_]+)_([^_]+)_(.+)$/, async (ctx) => {
+  const orderId = ctx.match![1];
+  const creatorId = ctx.match![2];
+  const helperField = ctx.match![3] as keyof CheckboxEditState;
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+
+  // Загружаем всех возможных помощников (одобренные пользователи кроме самого креатора)
+  const allUsers = await prisma.user.findMany({
+    where: { status: "APPROVED", id: { not: creatorId } },
+    select: { id: true, displayName: true },
+    orderBy: { displayName: "asc" },
+    take: 20,
+  });
+
+  await ctx.answerCallbackQuery();
+  const kb = new InlineKeyboard();
+  for (const u of allUsers) {
+    kb.text(u.displayName, `chk_sethlp_${orderId}_${creatorId}_${helperField}_${u.id}`).row();
+  }
+  kb.text("🚫 Убрать помощника", `chk_sethlp_${orderId}_${creatorId}_${helperField}_none`).row();
+  kb.text("🔙 Назад", `chk_creator_${orderId}_${creatorId}`);
+
+  await replyOrEdit(ctx, `👤 Выберите помощника:`, { reply_markup: kb });
+});
+
+bot.callbackQuery(/^chk_sethlp_([^_]+)_([^_]+)_([^_]+)_(.+)$/, async (ctx) => {
+  const orderId = ctx.match![1];
+  const creatorId = ctx.match![2];
+  const helperField = ctx.match![3] as keyof CheckboxEditState;
+  const helperId = ctx.match![4];
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user) { await ctx.answerCallbackQuery("Нет доступа"); return; }
+
+  const key = chkKey(user.id, orderId, creatorId);
+  const state = checkboxEditState.get(key);
+  if (!state) { await ctx.answerCallbackQuery("Сессия истекла, откройте галочки заново"); return; }
+
+  (state[helperField] as string | null) = helperId === "none" ? null : helperId;
+  await ctx.answerCallbackQuery("Помощник выбран");
+
+  const creator = await prisma.user.findUnique({ where: { id: creatorId }, select: { displayName: true } });
+  await replyOrEdit(ctx,
+    `✅ *Итоги по ${esc(creator?.displayName ?? creatorId)}*\n\nОтметьте, что сделал сам. Для несделанных укажите помощника:`,
+    { parse_mode: "Markdown", reply_markup: checkboxKeyboard(orderId, creatorId, state) }
+  );
+});
+
+bot.callbackQuery(/^chk_save_([^_]+)_(.+)$/, async (ctx) => {
+  const orderId = ctx.match![1];
+  const creatorId = ctx.match![2];
+  const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
+  if (!user || !["LEAD_CREATOR", "HEAD_LEAD_CREATOR", "HEAD_CREATOR", "ADMIN"].includes(user.role)) {
+    await ctx.answerCallbackQuery("Нет доступа"); return;
+  }
+
+  const key = chkKey(user.id, orderId, creatorId);
+  const state = checkboxEditState.get(key);
+  if (!state) { await ctx.answerCallbackQuery("Сессия истекла, откройте галочки заново"); return; }
+
+  await prisma.orderCreatorResult.upsert({
+    where: { orderId_creatorId: { orderId, creatorId } },
+    create: {
+      orderId,
+      creatorId,
+      didStoryboard: state.didStoryboard,
+      didAnimation: state.didAnimation,
+      didEditing: state.didEditing,
+      didScenario: state.didScenario,
+      helperStoryboardId: state.helperStoryboardId,
+      helperAnimationId: state.helperAnimationId,
+      helperEditingId: state.helperEditingId,
+      helperScenarioId: state.helperScenarioId,
+      setByUserId: user.id,
+      setAt: new Date(),
+    },
+    update: {
+      didStoryboard: state.didStoryboard,
+      didAnimation: state.didAnimation,
+      didEditing: state.didEditing,
+      didScenario: state.didScenario,
+      helperStoryboardId: state.helperStoryboardId,
+      helperAnimationId: state.helperAnimationId,
+      helperEditingId: state.helperEditingId,
+      helperScenarioId: state.helperScenarioId,
+      setByUserId: user.id,
+      setAt: new Date(),
+    },
+  });
+
+  checkboxEditState.delete(key);
+
+  await prisma.notification.create({
+    data: {
+      userId: user.id,
+      orderId,
+      type: "CHECKBOXES_SET",
+      message: `Галочки по креатору выставлены.`,
+    },
+  });
+
+  await ctx.answerCallbackQuery("✅ Сохранено");
+
+  // Возвращаемся к списку креаторов
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { creators: { include: { creator: { select: { id: true, displayName: true } } } } },
+  });
+  if (!order) return;
+
+  const kb = new InlineKeyboard();
+  for (const oc of order.creators) {
+    kb.text(`👤 ${oc.creator.displayName}`, `chk_creator_${orderId}_${oc.creator.id}`).row();
+  }
+  kb.text("🔙 В меню", "back_menu");
+
+  await replyOrEdit(ctx,
+    `✅ *Галочки по заказу*\n\n«${esc(order.title)}»\n\nВыберите креатора для выставления итогов:`,
+    { parse_mode: "Markdown", reply_markup: kb }
+  );
+});
+
 bot.callbackQuery("back_menu", async (ctx) => {
   const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from!.id) } });
   await ctx.answerCallbackQuery();
@@ -2084,7 +2335,77 @@ async function syncOrderStatusBot(orderId: string) {
   else if (allPending) newStatus = "NEW";
   else if (reviewStage?.status === "IN_PROGRESS") newStatus = "ON_REVIEW";
 
+  const order = await prisma.order.findUnique({ where: { id: orderId }, select: { status: true } });
   await prisma.order.update({ where: { id: orderId }, data: { status: newStatus } });
+
+  // Если только что перешли в DONE — уведомляем тим лидов о галочках
+  if (newStatus === "DONE" && order?.status !== "DONE") {
+    void notifyCheckboxesRequired(orderId).catch(() => {});
+  }
+}
+
+async function notifyCheckboxesRequired(orderId: string) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: {
+      creators: {
+        include: {
+          creator: { select: { id: true, teamLeadId: true, displayName: true } },
+        },
+      },
+    },
+  });
+  if (!order) return;
+
+  // Собираем тим лидов и вышестоящих
+  const notifyUserIds = new Set<string>();
+  for (const oc of order.creators) {
+    const creator = oc.creator;
+    // Ищем цепочку: teamLead → teamLead.teamLead
+    let current = creator;
+    for (let i = 0; i < 3; i++) {
+      if (!current.teamLeadId) break;
+      const lead = await prisma.user.findUnique({
+        where: { id: current.teamLeadId },
+        select: { id: true, role: true, teamLeadId: true, chatId: true, displayName: true },
+      });
+      if (!lead) break;
+      if (["LEAD_CREATOR", "HEAD_LEAD_CREATOR", "HEAD_CREATOR", "ADMIN"].includes(lead.role)) {
+        notifyUserIds.add(lead.id);
+      }
+      current = lead;
+    }
+  }
+
+  for (const userId of notifyUserIds) {
+    const lead = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { chatId: true, displayName: true },
+    });
+    if (!lead?.chatId) continue;
+
+    await prisma.notification.create({
+      data: {
+        userId,
+        orderId,
+        type: "CHECKBOXES_REQUIRED",
+        message: `Заказ «${order.title}» выполнен. Выставьте итоговые галочки по креаторам.`,
+      },
+    });
+
+    const kb = new InlineKeyboard()
+      .text("✅ Выставить галочки", `chk_open_${orderId}`)
+      .row()
+      .text("🔙 Позже", "back_menu");
+
+    try {
+      await bot.api.sendMessage(
+        Number(lead.chatId),
+        `✅ *Заказ выполнен!*\n\n«${esc(order.title)}»\n\nВыставьте итоговые галочки по каждому креатору — это влияет на расчёт их процентов.`,
+        { parse_mode: "Markdown", reply_markup: kb }
+      );
+    } catch {}
+  }
 }
 
 // ==================== STT (Groq Whisper) ====================

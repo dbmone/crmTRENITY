@@ -10,12 +10,13 @@ datasource db {
 // ==================== ПОЛЬЗОВАТЕЛИ ====================
 
 enum UserRole {
-  ADMIN           // Полный доступ, может всё
-  HEAD_MARKETER   // Главный маркетолог — может назначать маркетологов
-  MARKETER        // Маркетолог — создаёт заказы
-  HEAD_CREATOR    // Главный креатор — выше тимлида, управляет всеми командами
-  LEAD_CREATOR    // Тимлид креаторов — управляет своей командой
-  CREATOR         // Креатор — выполняет заказы
+  ADMIN              // Полный доступ, может всё
+  HEAD_MARKETER      // Главный маркетолог — может назначать маркетологов
+  MARKETER           // Маркетолог — создаёт заказы
+  HEAD_CREATOR       // Главный креатор — выше тимлида, управляет всеми командами
+  HEAD_LEAD_CREATOR  // Главный тим лид — между HEAD_CREATOR и LEAD_CREATOR
+  LEAD_CREATOR       // Тимлид креаторов — управляет своей командой
+  CREATOR            // Креатор — выполняет заказы
 }
 
 enum UserStatus {
@@ -55,6 +56,12 @@ model User {
   userPermissions  UserPermission[]
   approvedById     String?          @map("approved_by_id")
   tasks            Task[]
+  creatorResults   OrderCreatorResult[] @relation("CreatorResults")
+  resultsSetBy     OrderCreatorResult[] @relation("ResultsSetBy")
+  helpedStoryboard OrderCreatorResult[] @relation("HelperStoryboard")
+  helpedAnimation  OrderCreatorResult[] @relation("HelperAnimation")
+  helpedEditing    OrderCreatorResult[] @relation("HelperEditing")
+  helpedScenario   OrderCreatorResult[] @relation("HelperScenario")
 
   @@map("users")
 }
@@ -81,6 +88,8 @@ model Order {
   telegramGroupTitle     String?   @map("telegram_group_title")
   telegramGroupInviteLink String?  @map("telegram_group_invite_link")
   telegramGroupCreatedAt DateTime? @map("telegram_group_created_at")
+  price         Float?      // стоимость заказа
+  hasTax        Boolean     @default(false) @map("has_tax") // НДС +6%
   createdAt     DateTime    @default(now()) @map("created_at")
   updatedAt     DateTime    @updatedAt @map("updated_at")
 
@@ -91,6 +100,7 @@ model Order {
   reports       DailyReport[]
   notifications Notification[]
   comments      OrderComment[]
+  creatorResults OrderCreatorResult[]
 
   @@map("orders")
 }
@@ -111,6 +121,37 @@ model OrderCreator {
 
   @@unique([orderId, creatorId])
   @@map("order_creators")
+}
+
+// ==================== РЕЗУЛЬТАТЫ КРЕАТОРОВ (галочки) ====================
+
+model OrderCreatorResult {
+  id                   String    @id @default(uuid())
+  orderId              String    @map("order_id")
+  creatorId            String    @map("creator_id")
+  // Что сделал сам
+  didStoryboard        Boolean   @default(false) @map("did_storyboard")
+  didAnimation         Boolean   @default(false) @map("did_animation")
+  didEditing           Boolean   @default(false) @map("did_editing")
+  didScenario          Boolean   @default(false) @map("did_scenario")
+  // Кто помог (если галочка не стоит)
+  helperStoryboardId   String?   @map("helper_storyboard_id")
+  helperAnimationId    String?   @map("helper_animation_id")
+  helperEditingId      String?   @map("helper_editing_id")
+  helperScenarioId     String?   @map("helper_scenario_id")
+  setByUserId          String?   @map("set_by_id")
+  setAt                DateTime? @map("set_at")
+
+  order               Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  creator             User  @relation("CreatorResults", fields: [creatorId], references: [id])
+  setBy               User? @relation("ResultsSetBy", fields: [setByUserId], references: [id])
+  helperStoryboard    User? @relation("HelperStoryboard", fields: [helperStoryboardId], references: [id])
+  helperAnimation     User? @relation("HelperAnimation", fields: [helperAnimationId], references: [id])
+  helperEditing       User? @relation("HelperEditing", fields: [helperEditingId], references: [id])
+  helperScenario      User? @relation("HelperScenario", fields: [helperScenarioId], references: [id])
+
+  @@unique([orderId, creatorId])
+  @@map("order_creator_results")
 }
 
 // ==================== ЭТАПЫ ЗАКАЗА ====================
@@ -228,6 +269,8 @@ enum NotificationType {
   REGISTRATION_REQUEST
   REGISTRATION_APPROVED
   REGISTRATION_REJECTED
+  CHECKBOXES_REQUIRED    // запрос на проставление галочек по итогу заказа
+  CHECKBOXES_SET         // галочки выставлены
 }
 
 model Notification {

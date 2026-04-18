@@ -9,11 +9,13 @@ import { useTourStore } from "../store/tour.store";
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: "Админ", HEAD_MARKETER: "Гл. маркетолог",
   MARKETER: "Маркетолог", HEAD_CREATOR: "Гл. креатор",
-  LEAD_CREATOR: "Лид-креатор", CREATOR: "Креатор",
+  HEAD_LEAD_CREATOR: "Гл. тим лид",
+  LEAD_CREATOR: "Тим лид", CREATOR: "Креатор",
 };
 const ROLE_COLORS: Record<string, string> = {
-  ADMIN: "text-red-400 bg-red-400/10",       HEAD_MARKETER: "text-purple-400 bg-purple-400/10",
-  MARKETER: "text-blue-400 bg-blue-400/10",  HEAD_CREATOR: "text-orange-400 bg-orange-400/10",
+  ADMIN: "text-red-400 bg-red-400/10",           HEAD_MARKETER: "text-purple-400 bg-purple-400/10",
+  MARKETER: "text-blue-400 bg-blue-400/10",      HEAD_CREATOR: "text-orange-400 bg-orange-400/10",
+  HEAD_LEAD_CREATOR: "text-yellow-400 bg-yellow-400/10",
   LEAD_CREATOR: "text-amber-400 bg-amber-400/10", CREATOR: "text-green-400 bg-green-400/10",
 };
 
@@ -34,7 +36,7 @@ export default function AdminPage() {
   const [pending,  setPending]  = useState<UserRow[]>([]);
   const [blocked,  setBlocked]  = useState<UserRow[]>([]);
   const [loading,  setLoading]  = useState(true);
-  const [tab,      setTab]      = useState<"users" | "pending" | "team" | "access" | "rights">(
+  const [tab,      setTab]      = useState<"users" | "pending" | "team" | "access" | "rights" | "finance">(
     searchParams.get("tab") === "pending" ? "pending" : "users"
   );
   const [working,  setWorking]  = useState<string | null>(null);
@@ -194,7 +196,7 @@ export default function AdminPage() {
 
   if (!canAccess) return null;
 
-  type TabId = "users" | "pending" | "team" | "access" | "rights";
+  type TabId = "users" | "pending" | "team" | "access" | "rights" | "finance";
   const TABS: { id: TabId; label: string }[] = (
     [
       { id: "users"   as TabId, label: "Пользователи" },
@@ -202,6 +204,7 @@ export default function AdminPage() {
       { id: "team"    as TabId, label: "Иерархия" },
       { id: "access"  as TabId, label: "Доступ" },
       ...(isAdmin ? [{ id: "rights" as TabId, label: "Права" }] : []),
+      ...(isAdmin ? [{ id: "finance" as TabId, label: "Финансы" }] : []),
     ]
   );
 
@@ -327,6 +330,8 @@ export default function AdminPage() {
           <PreApproveTab isAdmin={isAdmin} isHeadMark={isHeadMark} isHeadCreator={isHeadCreator} />
         ) : tab === "rights" ? (
           <PermissionsTab users={[...users, ...blocked]} />
+        ) : tab === "finance" ? (
+          <FinanceSettingsTab />
         ) : (
           <UsersList rows={users} blocked={blocked} onChangeRole={changeRole} onDeactivate={deactivate} onRestore={restore} working={working} currentUser={user} isAdmin={isAdmin} />
         )}
@@ -1680,3 +1685,156 @@ function PermissionsTab({ users }: { users: UserRow[] }) {
 }
 
 // AI Settings moved to /ai page — see AiPage.tsx
+
+// ==================== ФИНАНСОВЫЕ НАСТРОЙКИ ====================
+
+const ALL_ROLES: string[] = ["ADMIN", "HEAD_MARKETER", "MARKETER", "HEAD_CREATOR", "HEAD_LEAD_CREATOR", "LEAD_CREATOR", "CREATOR"];
+
+function FinanceSettingsTab() {
+  const [pct, setPct] = useState<Record<string, number>>({});
+  const [actionPerms, setActionPerms] = useState<Record<string, string[]>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const PCT_FIELDS: { key: string; label: string }[] = [
+    { key: "CREATOR",           label: "Креатор" },
+    { key: "LEAD_CREATOR",      label: "Тим лид" },
+    { key: "HEAD_LEAD_CREATOR", label: "Гл. тим лид" },
+    { key: "HEAD_CREATOR",      label: "Гл. креатор" },
+    { key: "MARKETER",          label: "Маркетолог" },
+    { key: "HEAD_MARKETER",     label: "Гл. маркетолог" },
+    { key: "checkboxStoryboard", label: "Вычет: Раскадровка" },
+    { key: "checkboxAnimation",  label: "Вычет: Анимация" },
+    { key: "checkboxEditing",    label: "Вычет: Монтаж" },
+    { key: "checkboxScenario",   label: "Вычет: Сценарий" },
+  ];
+
+  const ACTION_PERM_FIELDS: { key: string; label: string; desc: string }[] = [
+    { key: "set_order_price",    label: "Устанавливать стоимость заказа", desc: "Кто может вводить цену заказа" },
+    { key: "set_order_tax",      label: "Устанавливать НДС",              desc: "Кто может ставить галочку НДС" },
+    { key: "set_creator_results", label: "Выставлять галочки итогов",     desc: "Кто может ставить галочки по завершению заказа" },
+  ];
+
+  useEffect(() => {
+    Promise.all([
+      api.getPercentageSettings(),
+      api.getActionPermissions(),
+    ]).then(([p, a]) => {
+      setPct(p);
+      setActionPerms(a);
+    }).finally(() => setLoading(false));
+  }, []);
+
+  const savePct = async () => {
+    setSaving(true);
+    try {
+      await api.updatePercentageSettings(pct);
+      setMsg("Проценты сохранены");
+    } catch { setMsg("Ошибка сохранения"); }
+    setSaving(false);
+    setTimeout(() => setMsg(""), 2500);
+  };
+
+  const savePerms = async () => {
+    setSaving(true);
+    try {
+      await api.updateActionPermissions(actionPerms);
+      setMsg("Права сохранены");
+    } catch { setMsg("Ошибка сохранения"); }
+    setSaving(false);
+    setTimeout(() => setMsg(""), 2500);
+  };
+
+  const toggleRole = (key: string, role: string) => {
+    setActionPerms((prev) => {
+      const current = prev[key] ?? [];
+      return {
+        ...prev,
+        [key]: current.includes(role) ? current.filter((r) => r !== role) : [...current, role],
+      };
+    });
+  };
+
+  if (loading) return <div className="py-16 text-center text-ink-tertiary">Загрузка...</div>;
+
+  return (
+    <div className="space-y-8">
+      {/* Процентовка */}
+      <div className="rounded-2xl border border-bg-border bg-bg-surface p-6">
+        <h2 className="mb-1 text-sm font-bold text-ink-primary">Процентовка за заказ</h2>
+        <p className="mb-5 text-xs text-ink-tertiary">Сколько % от стоимости заказа получает каждый участник. Вычеты за галочки — сколько снимается с креатора если галочка не стоит.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {PCT_FIELDS.map(({ key, label }) => (
+            <label key={key} className="flex items-center justify-between gap-3 rounded-xl border border-bg-border bg-bg-raised/50 px-4 py-3">
+              <span className="text-sm text-ink-secondary">{label}</span>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.01}
+                  value={pct[key] ?? 0}
+                  onChange={(e) => setPct((prev) => ({ ...prev, [key]: parseFloat(e.target.value) || 0 }))}
+                  className="w-20 rounded-lg border border-bg-border bg-bg-base px-2 py-1 text-right text-sm text-ink-primary focus:outline-none focus:ring-1 focus:ring-green-500/40"
+                />
+                <span className="text-xs text-ink-tertiary">%</span>
+              </div>
+            </label>
+          ))}
+        </div>
+        <div className="mt-4 flex items-center gap-3">
+          <button
+            onClick={savePct}
+            disabled={saving}
+            className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-green-400 disabled:opacity-40"
+          >
+            {saving ? "Сохранение..." : "Сохранить"}
+          </button>
+          {msg && <span className="text-xs text-green-400">{msg}</span>}
+        </div>
+      </div>
+
+      {/* Права на действия */}
+      <div className="rounded-2xl border border-bg-border bg-bg-surface p-6">
+        <h2 className="mb-1 text-sm font-bold text-ink-primary">Права на финансовые действия</h2>
+        <p className="mb-5 text-xs text-ink-tertiary">Кто из ролей может выполнять следующие действия. Отметьте нужные роли.</p>
+        <div className="space-y-5">
+          {ACTION_PERM_FIELDS.map(({ key, label, desc }) => (
+            <div key={key} className="rounded-xl border border-bg-border bg-bg-raised/30 p-4">
+              <div className="mb-1 font-medium text-sm text-ink-primary">{label}</div>
+              <div className="mb-3 text-xs text-ink-tertiary">{desc}</div>
+              <div className="flex flex-wrap gap-2">
+                {ALL_ROLES.map((role) => {
+                  const active = (actionPerms[key] ?? []).includes(role);
+                  return (
+                    <button
+                      key={role}
+                      onClick={() => toggleRole(key, role)}
+                      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                        active
+                          ? "bg-green-500/20 text-green-400 ring-1 ring-green-500/30"
+                          : "bg-bg-raised text-ink-tertiary hover:text-ink-secondary"
+                      }`}
+                    >
+                      {ROLE_LABELS[role] ?? role}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 flex items-center gap-3">
+          <button
+            onClick={savePerms}
+            disabled={saving}
+            className="rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-green-400 disabled:opacity-40"
+          >
+            {saving ? "Сохранение..." : "Сохранить права"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

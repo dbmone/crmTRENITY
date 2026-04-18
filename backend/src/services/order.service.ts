@@ -157,6 +157,8 @@ interface UpdateOrderInput {
   description?: string;
   deadline?: string;
   reminderDays?: number;
+  price?: number | null;
+  hasTax?: boolean;
 }
 
 export async function updateOrder(
@@ -171,6 +173,7 @@ export async function updateOrder(
   if (
     userRole !== UserRole.ADMIN &&
     userRole !== UserRole.HEAD_MARKETER &&
+    userRole !== UserRole.HEAD_CREATOR &&
     order.marketerId !== userId
   ) {
     throw { statusCode: 403, message: "Нет доступа к редактированию" };
@@ -183,6 +186,8 @@ export async function updateOrder(
       description: input.description,
       deadline: input.deadline ? new Date(input.deadline) : undefined,
       reminderDays: input.reminderDays,
+      ...(input.price !== undefined ? { price: input.price } : {}),
+      ...(input.hasTax !== undefined ? { hasTax: input.hasTax } : {}),
     },
     include: orderInclude,
   });

@@ -22,6 +22,8 @@ import { dashboardRoutes } from "./routes/dashboard.routes";
 import { permissionsRoutes } from "./routes/permissions.routes";
 import { tasksRoutes } from "./routes/tasks.routes";
 import { settingsRoutes } from "./routes/settings.routes";
+import { earningsRoutes } from "./routes/earnings.routes";
+import { creatorResultsRoutes } from "./routes/creator-results.routes";
 import { loadPermissions } from "./services/permissions.service";
 import { PrismaClient } from "@prisma/client";
 import { startOrderGroupSyncLoop } from "./services/order-group.service";
@@ -206,6 +208,107 @@ async function ensureSchema() {
     ON CONFLICT ("key") DO NOTHING
   `);
 
+  // 10. Новая роль HEAD_LEAD_CREATOR — добавляем в enum если ещё нет
+  await runSql("add HEAD_LEAD_CREATOR to UserRole enum", `
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_enum
+        WHERE enumlabel = 'HEAD_LEAD_CREATOR'
+          AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'UserRole')
+      ) THEN
+        ALTER TYPE "UserRole" ADD VALUE 'HEAD_LEAD_CREATOR' AFTER 'HEAD_CREATOR';
+      END IF;
+    END $$
+  `);
+
+  // 11. Новые типы уведомлений
+  await runSql("add CHECKBOXES_REQUIRED to NotificationType enum", `
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_enum
+        WHERE enumlabel = 'CHECKBOXES_REQUIRED'
+          AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'NotificationType')
+      ) THEN
+        ALTER TYPE "NotificationType" ADD VALUE 'CHECKBOXES_REQUIRED';
+      END IF;
+    END $$
+  `);
+  await runSql("add CHECKBOXES_SET to NotificationType enum", `
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_enum
+        WHERE enumlabel = 'CHECKBOXES_SET'
+          AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'NotificationType')
+      ) THEN
+        ALTER TYPE "NotificationType" ADD VALUE 'CHECKBOXES_SET';
+      END IF;
+    END $$
+  `);
+
+  // 12. Колонки price и has_tax в orders
+  await runSql("orders price and has_tax columns", `
+    ALTER TABLE "orders"
+      ADD COLUMN IF NOT EXISTS "price"   DOUBLE PRECISION,
+      ADD COLUMN IF NOT EXISTS "has_tax" BOOLEAN NOT NULL DEFAULT false
+  `);
+
+  // 13. Таблица результатов креаторов (галочки)
+  await runSql("create order_creator_results table", `
+    CREATE TABLE IF NOT EXISTS "order_creator_results" (
+      "id"                    TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+      "order_id"              TEXT NOT NULL,
+      "creator_id"            TEXT NOT NULL,
+      "did_storyboard"        BOOLEAN NOT NULL DEFAULT false,
+      "did_animation"         BOOLEAN NOT NULL DEFAULT false,
+      "did_editing"           BOOLEAN NOT NULL DEFAULT false,
+      "did_scenario"          BOOLEAN NOT NULL DEFAULT false,
+      "helper_storyboard_id"  TEXT,
+      "helper_animation_id"   TEXT,
+      "helper_editing_id"     TEXT,
+      "helper_scenario_id"    TEXT,
+      "set_by_id"             TEXT,
+      "set_at"                TIMESTAMP(3),
+      CONSTRAINT "order_creator_results_pkey" PRIMARY KEY ("id"),
+      CONSTRAINT "order_creator_results_order_id_creator_id_key" UNIQUE ("order_id", "creator_id"),
+      CONSTRAINT "order_creator_results_order_id_fkey" FOREIGN KEY ("order_id")
+        REFERENCES "orders"("id") ON DELETE CASCADE,
+      CONSTRAINT "order_creator_results_creator_id_fkey" FOREIGN KEY ("creator_id")
+        REFERENCES "users"("id"),
+      CONSTRAINT "order_creator_results_set_by_id_fkey" FOREIGN KEY ("set_by_id")
+        REFERENCES "users"("id"),
+      CONSTRAINT "order_creator_results_helper_storyboard_id_fkey" FOREIGN KEY ("helper_storyboard_id")
+        REFERENCES "users"("id"),
+      CONSTRAINT "order_creator_results_helper_animation_id_fkey" FOREIGN KEY ("helper_animation_id")
+        REFERENCES "users"("id"),
+      CONSTRAINT "order_creator_results_helper_editing_id_fkey" FOREIGN KEY ("helper_editing_id")
+        REFERENCES "users"("id"),
+      CONSTRAINT "order_creator_results_helper_scenario_id_fkey" FOREIGN KEY ("helper_scenario_id")
+        REFERENCES "users"("id")
+    )
+  `);
+
+  // 14. Сид дефолтных настроек процентовки
+  await runSql("seed default percentage_settings", `
+    INSERT INTO "app_settings" ("key", "value", "updated_at")
+    VALUES (
+      'percentage_settings',
+      '{"CREATOR":35,"LEAD_CREATOR":5,"HEAD_LEAD_CREATOR":5,"HEAD_CREATOR":5,"MARKETER":20,"HEAD_MARKETER":5,"checkboxStoryboard":8.75,"checkboxAnimation":8.75,"checkboxEditing":8.75,"checkboxScenario":8.75}',
+      NOW()
+    )
+    ON CONFLICT ("key") DO NOTHING
+  `);
+
+  // 15. Сид дефолтных прав на операции
+  await runSql("seed default action_permissions", `
+    INSERT INTO "app_settings" ("key", "value", "updated_at")
+    VALUES (
+      'action_permissions',
+      '{"set_order_price":["ADMIN","HEAD_CREATOR","HEAD_MARKETER","MARKETER"],"set_order_tax":["ADMIN","HEAD_CREATOR","HEAD_MARKETER","MARKETER"],"set_creator_results":["ADMIN","HEAD_CREATOR","HEAD_LEAD_CREATOR","LEAD_CREATOR"]}',
+      NOW()
+    )
+    ON CONFLICT ("key") DO NOTHING
+  `);
+
   console.log("✅ Schema migrations done");
   await runSql("seed default kanban_drag_enabled", `
     INSERT INTO "app_settings" ("key", "value", "updated_at")
@@ -256,13 +359,15 @@ app.register(permissionsRoutes, { prefix: "/api/permissions" });
 app.register(filesGlobalRoutes, { prefix: "/api/files" });
 app.register(tasksRoutes,      { prefix: "/api/tasks" });
 app.register(settingsRoutes,   { prefix: "/api/settings" });
+app.register(earningsRoutes,   { prefix: "/api/earnings" });
 
 // Вложенные под /api/orders/:orderId/
 app.register(async (instance) => {
-  instance.register(stagesRoutes, { prefix: "/:orderId/stages" });
-  instance.register(filesRoutes, { prefix: "/:orderId/files" });
-  instance.register(reportsRoutes, { prefix: "/:orderId/reports" });
-  instance.register(commentsRoutes, { prefix: "/:orderId/comments" });
+  instance.register(stagesRoutes,         { prefix: "/:orderId/stages" });
+  instance.register(filesRoutes,          { prefix: "/:orderId/files" });
+  instance.register(reportsRoutes,        { prefix: "/:orderId/reports" });
+  instance.register(commentsRoutes,       { prefix: "/:orderId/comments" });
+  instance.register(creatorResultsRoutes, { prefix: "/:orderId/creator-results" });
 }, { prefix: "/api/orders" });
 
 // Health check

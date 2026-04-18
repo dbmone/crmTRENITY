@@ -78,7 +78,7 @@ function buildUploadLimitMessage(files: File[]) {
   return `На сайте сейчас можно загружать в Telegram-хранилище только файлы до 50 МБ. Не загружены: ${names}${suffix}.`;
 }
 
-type Tab = "stages" | "tz" | "files" | "reports" | "comments";
+type Tab = "stages" | "tz" | "files" | "reports" | "comments" | "results";
 
 const inputCls = "w-full px-3.5 py-2.5 rounded-lg border border-bg-border bg-bg-raised text-sm text-ink-primary placeholder-ink-tertiary outline-none focus:border-green-500/50 transition-colors";
 
@@ -177,11 +177,16 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null, onO
   const [tab,       setTab]       = useState<Tab>("stages");
 
   // Edit mode
-  const [editing,   setEditing]   = useState(false);
-  const [editTitle, setEditTitle] = useState("");
-  const [editDesc,  setEditDesc]  = useState("");
-  const [editDL,    setEditDL]    = useState("");
-  const [saving,    setSaving]    = useState(false);
+  const [editing,    setEditing]   = useState(false);
+  const [editTitle,  setEditTitle] = useState("");
+  const [editDesc,   setEditDesc]  = useState("");
+  const [editDL,     setEditDL]    = useState("");
+  const [editPrice,  setEditPrice] = useState<string>("");
+  const [editHasTax, setEditHasTax] = useState(false);
+  const [saving,     setSaving]    = useState(false);
+
+  // Creator results (checkboxes)
+  const [creatorResults, setCreatorResults] = useState<import("../../types").OrderCreatorResult[]>([]);
 
   // Comments
   const [comments,      setComments]      = useState<OrderComment[]>([]);
@@ -268,6 +273,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null, onO
       void loadOrder();
       void loadUsers();
       void loadComments();
+      void api.getCreatorResults(order.id).then(setCreatorResults).catch(() => {});
     }
     setTab("stages"); setEditing(false);
   }, [isDemoOrder, order, user]);
@@ -387,8 +393,9 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null, onO
   const o = fullOrder || order;
 
   const isMarketer    = user?.permissions?.create_order ?? ["MARKETER","HEAD_MARKETER","ADMIN","HEAD_CREATOR"].includes(user?.role ?? "");
-  const isLeadCreator = user?.role === "LEAD_CREATOR";
+  const isLeadCreator = user?.role === "LEAD_CREATOR" || user?.role === "HEAD_LEAD_CREATOR" || user?.role === "HEAD_CREATOR" || user?.role === "ADMIN";
   const canApprove    = user?.permissions?.approve_review ?? (isMarketer || isLeadCreator);
+  const canSetResults = ["ADMIN","HEAD_CREATOR","HEAD_LEAD_CREATOR","LEAD_CREATOR"].includes(user?.role ?? "");
   const canSubmitReport = user?.permissions?.submit_report ?? ["CREATOR","LEAD_CREATOR","HEAD_CREATOR","ADMIN"].includes(user?.role ?? "");
   const isParticipant = isMarketer || o.creators?.some((c) => c.creatorId === user?.id);
   const canEdit       = isMarketer && o.marketerId === user?.id;
@@ -545,7 +552,14 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null, onO
     if (isDemoOrder) return;
     setSaving(true);
     try {
-      await api.updateOrder(o.id, { title: editTitle, description: editDesc || undefined, deadline: editDL || undefined });
+      const priceVal = editPrice.trim() ? parseFloat(editPrice) : null;
+      await api.updateOrder(o.id, {
+        title: editTitle,
+        description: editDesc || undefined,
+        deadline: editDL || undefined,
+        price: priceVal,
+        hasTax: editHasTax,
+      });
       await loadOrder();
       await fetchOrders();
       onOrderChanged?.({
@@ -553,6 +567,8 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null, onO
         title: editTitle,
         description: editDesc || null,
         deadline: editDL || null,
+        price: priceVal,
+        hasTax: editHasTax,
       }, "updated");
       setEditing(false);
     } catch (err: any) { alert(err.response?.data?.error || "Ошибка"); }
@@ -672,6 +688,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null, onO
     { id: "files",    label: "Файлы",   count: nonTzFiles.length || undefined },
     { id: "reports",  label: "Отчёты",  count: o.reports?.length || o._count?.reports },
     { id: "comments", label: "Чат",     count: comments.length || undefined },
+    ...(o.status === "DONE" && canSetResults ? [{ id: "results" as Tab, label: "Итоги" }] : []),
   ];
 
   const commentsTab = tabs.find((item) => item.id === "comments");
@@ -706,6 +723,12 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null, onO
                     {daysLeft < 0 ? `—${Math.abs(daysLeft)} дн.` : daysLeft === 0 ? "Сегодня!" : `${daysLeft} дн.`}
                   </span>
                 )}
+                {o.price != null && (
+                  <span className="flex items-center gap-1 text-xs font-medium text-green-400">
+                    {o.price.toLocaleString("ru-RU")} ₽
+                    {o.hasTax && <span className="text-amber-300 text-[10px]">НДС</span>}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -717,7 +740,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null, onO
                 </button>
               )}
               {canEdit && o.status !== "ARCHIVED" && !editing && (
-                <button onClick={() => { setEditing(true); setEditTitle(o.title); setEditDesc(o.description ?? ""); setEditDL(o.deadline ? o.deadline.split("T")[0] : ""); }}
+                <button onClick={() => { setEditing(true); setEditTitle(o.title); setEditDesc(o.description ?? ""); setEditDL(o.deadline ? o.deadline.split("T")[0] : ""); setEditPrice(o.price != null ? String(o.price) : ""); setEditHasTax(o.hasTax ?? false); }}
                   className="p-1.5 rounded-lg hover:bg-bg-raised text-ink-tertiary hover:text-ink-primary transition-colors">
                   <Edit2 size={15} />
                 </button>
@@ -785,6 +808,26 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null, onO
               <div className="flex flex-wrap items-center gap-2">
                 <input type="date" value={editDL} onChange={(e) => setEditDL(e.target.value)}
                   className={`${inputCls} min-w-[180px] flex-1`} style={{ colorScheme: "dark" }} />
+                <div className="flex w-full items-center gap-2 sm:w-auto">
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    placeholder="Стоимость ₽"
+                    value={editPrice}
+                    onChange={(e) => setEditPrice(e.target.value)}
+                    className={`${inputCls} flex-1 sm:w-36`}
+                  />
+                  <label className="flex flex-shrink-0 cursor-pointer items-center gap-1.5 text-xs text-ink-secondary">
+                    <input
+                      type="checkbox"
+                      checked={editHasTax}
+                      onChange={(e) => setEditHasTax(e.target.checked)}
+                      className="accent-green-500"
+                    />
+                    НДС +6%
+                  </label>
+                </div>
                 <button onClick={handleSaveEdit} disabled={saving}
                   className="w-full justify-center sm:w-auto sm:justify-start px-4 py-2 rounded-lg bg-green-500 text-black text-sm font-bold hover:bg-green-400 disabled:opacity-50 transition-colors flex items-center gap-1.5">
                   <Check size={14} /> {saving ? "Сохраняю..." : "Сохранить"}
@@ -1329,6 +1372,16 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null, onO
               </div>
             </div>
           )}
+
+          {/* RESULTS (checkboxes) */}
+          {tab === "results" && (
+            <CreatorResultsTab
+              order={o}
+              results={creatorResults}
+              currentUser={user}
+              onUpdated={(r) => setCreatorResults(r)}
+            />
+          )}
             </>
           )}
         </div>
@@ -1404,6 +1457,143 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null, onO
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── CreatorResultsTab ────────────────────────────────────────────────────────
+
+const CHECKBOX_ITEMS = [
+  { key: "didStoryboard" as const, helperKey: "helperStoryboardId" as const, label: "Раскадровка" },
+  { key: "didAnimation"  as const, helperKey: "helperAnimationId"  as const, label: "Анимация" },
+  { key: "didEditing"    as const, helperKey: "helperEditingId"    as const, label: "Монтаж" },
+  { key: "didScenario"   as const, helperKey: "helperScenarioId"   as const, label: "Сценарий" },
+];
+
+function CreatorResultsTab({
+  order,
+  results,
+  currentUser,
+  onUpdated,
+}: {
+  order: Order;
+  results: import("../../types").OrderCreatorResult[];
+  currentUser: import("../../types").User | null;
+  onUpdated: (r: import("../../types").OrderCreatorResult[]) => void;
+}) {
+  const [localResults, setLocalResults] = useState<Record<string, import("../../types").OrderCreatorResult>>(
+    () => Object.fromEntries(results.map((r) => [r.creatorId, r]))
+  );
+  const [saving, setSaving] = useState<string | null>(null);
+  const allUsers = order.creators?.map((c) => c.creator) ?? [];
+
+  useEffect(() => {
+    setLocalResults(Object.fromEntries(results.map((r) => [r.creatorId, r])));
+  }, [results]);
+
+  const getResult = (creatorId: string): import("../../types").OrderCreatorResult => {
+    return localResults[creatorId] ?? {
+      id: "", orderId: order.id, creatorId,
+      didStoryboard: false, didAnimation: false, didEditing: false, didScenario: false,
+      helperStoryboardId: null, helperAnimationId: null, helperEditingId: null, helperScenarioId: null,
+      setByUserId: null, setAt: null,
+    };
+  };
+
+  const handleToggle = (creatorId: string, key: typeof CHECKBOX_ITEMS[number]["key"]) => {
+    setLocalResults((prev) => ({
+      ...prev,
+      [creatorId]: { ...getResult(creatorId), [key]: !getResult(creatorId)[key] },
+    }));
+  };
+
+  const handleHelper = (creatorId: string, helperKey: typeof CHECKBOX_ITEMS[number]["helperKey"], value: string) => {
+    setLocalResults((prev) => ({
+      ...prev,
+      [creatorId]: { ...getResult(creatorId), [helperKey]: value || null },
+    }));
+  };
+
+  const handleSave = async (creatorId: string) => {
+    setSaving(creatorId);
+    try {
+      const r = getResult(creatorId);
+      const updated = await api.setCreatorResult(order.id, creatorId, {
+        didStoryboard: r.didStoryboard,
+        didAnimation:  r.didAnimation,
+        didEditing:    r.didEditing,
+        didScenario:   r.didScenario,
+        helperStoryboardId: r.helperStoryboardId,
+        helperAnimationId:  r.helperAnimationId,
+        helperEditingId:    r.helperEditingId,
+        helperScenarioId:   r.helperScenarioId,
+      });
+      setLocalResults((prev) => ({ ...prev, [creatorId]: updated }));
+      onUpdated(Object.values({ ...localResults, [creatorId]: updated }));
+    } catch (e: any) { alert(e.response?.data?.error || "Ошибка"); }
+    setSaving(null);
+  };
+
+  if (!order.creators?.length) {
+    return <p className="text-center py-8 text-ink-tertiary text-sm">На заказе нет назначенных креаторов</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {order.creators.map(({ creator }) => {
+        const r = getResult(creator.id);
+        return (
+          <div key={creator.id} className="rounded-2xl border border-bg-border bg-bg-raised/30 p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-green-500/20 text-[10px] font-bold text-green-400">
+                {creator.displayName[0]}
+              </div>
+              <span className="font-semibold text-sm text-ink-primary">{creator.displayName}</span>
+            </div>
+
+            <div className="space-y-3">
+              {CHECKBOX_ITEMS.map(({ key, helperKey, label }) => (
+                <div key={key} className="flex flex-wrap items-center gap-2">
+                  <label className="flex flex-shrink-0 cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={r[key]}
+                      onChange={() => handleToggle(creator.id, key)}
+                      className="h-4 w-4 accent-green-500"
+                    />
+                    <span className={`text-sm ${r[key] ? "text-ink-primary" : "text-ink-tertiary"}`}>
+                      {label}
+                    </span>
+                  </label>
+                  {!r[key] && (
+                    <select
+                      value={r[helperKey] ?? ""}
+                      onChange={(e) => handleHelper(creator.id, helperKey, e.target.value)}
+                      className="flex-1 min-w-[140px] rounded-lg border border-bg-border bg-bg-base px-2 py-1 text-xs text-ink-secondary outline-none"
+                    >
+                      <option value="">Помогал...</option>
+                      {allUsers.filter((u) => u.id !== creator.id).map((u) => (
+                        <option key={u.id} value={u.id}>{u.displayName}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => handleSave(creator.id)}
+              disabled={saving === creator.id}
+              className="mt-4 flex items-center gap-1.5 rounded-xl bg-green-500 px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-green-400 disabled:opacity-40"
+            >
+              {saving === creator.id
+                ? <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black/20 border-t-black" />
+                : <Check size={13} />}
+              Сохранить
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }

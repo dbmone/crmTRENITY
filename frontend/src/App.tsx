@@ -11,6 +11,7 @@ import GuidePage from "./pages/GuidePage";
 import LoginPage from "./pages/LoginPage";
 import ProfilePage from "./pages/ProfilePage";
 import TasksPage from "./pages/TasksPage";
+import EarningsPage from "./pages/EarningsPage";
 import { useAuthStore } from "./store/auth.store";
 import { useTourStore } from "./store/tour.store";
 import * as api from "./api/client";
@@ -95,6 +96,7 @@ function AppRoutes() {
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/ai" element={<AiPage />} />
         <Route path="/guide" element={<GuidePage />} />
+        <Route path="/earnings" element={<EarningsPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

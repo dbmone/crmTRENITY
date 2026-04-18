@@ -9,6 +9,7 @@ import {
   ListTodo,
   LogOut,
   Menu,
+  TrendingUp,
   UserCircle,
   Users,
   X,
@@ -57,6 +58,7 @@ const NAV: NavItem[] = [
   { path: "/dashboard", label: "Аналитика", icon: LayoutDashboard, tour: "nav-dashboard" },
   { path: "/admin", label: "Команда", icon: Users, tour: "nav-admin", adminOnly: true },
   { path: "/ai", label: "AI", icon: Bot, tour: "nav-ai", aiOnly: true },
+  { path: "/earnings", label: "Заработки", icon: TrendingUp, tour: "nav-earnings" },
 ];
 
 export default function Header() {

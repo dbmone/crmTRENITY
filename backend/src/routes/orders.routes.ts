@@ -3,6 +3,16 @@ import { OrderStatus, UserRole } from "@prisma/client";
 import * as svc from "../services/order.service";
 import { notifyNewOrder, notifyAssigned } from "../services/notification.service";
 import { requirePermission } from "../middleware/role.middleware";
+import { getSetting } from "../services/settings.service";
+
+async function checkActionPermission(key: string, role: string): Promise<boolean> {
+  try {
+    const raw = await getSetting("action_permissions");
+    if (!raw) return true;
+    const cfg = JSON.parse(raw) as Record<string, string[]>;
+    return (cfg[key] ?? []).includes(role);
+  } catch { return true; }
+}
 
 export async function ordersRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
@@ -49,11 +59,18 @@ export async function ordersRoutes(app: FastifyInstance) {
   );
 
   // PUT /api/orders/:id
-  app.put<{ Params: { id: string }; Body: { title?: string; description?: string; deadline?: string; reminderDays?: number } }>(
+  app.put<{ Params: { id: string }; Body: { title?: string; description?: string; deadline?: string; reminderDays?: number; price?: number | null; hasTax?: boolean } }>(
     "/:id",
     async (request, reply) => {
       try {
-        return await svc.updateOrder(request.params.id, request.body, request.currentUser.id, request.currentUser.role as UserRole);
+        // Проверяем право на изменение цены/НДС
+        const { price, hasTax, ...rest } = request.body;
+        const canSetPrice = await checkActionPermission("set_order_price", request.currentUser.role);
+        const canSetTax   = await checkActionPermission("set_order_tax", request.currentUser.role);
+        const updateData: any = { ...rest };
+        if (price !== undefined && canSetPrice) updateData.price = price;
+        if (hasTax !== undefined && canSetTax)  updateData.hasTax = hasTax;
+        return await svc.updateOrder(request.params.id, updateData, request.currentUser.id, request.currentUser.role as UserRole);
       } catch (err: any) { return reply.status(err.statusCode || 500).send({ error: err.message }); }
     }
   );

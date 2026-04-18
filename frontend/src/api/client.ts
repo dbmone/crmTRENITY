@@ -479,4 +479,73 @@ export async function resetSetting(key: string): Promise<{ value: string }> {
   return data;
 }
 
+// ==================== EARNINGS & PERCENTAGES ====================
+
+export async function getMyEarnings() {
+  const { data } = await api.get("/earnings");
+  return data;
+}
+
+export async function getUserEarnings(userId: string) {
+  const { data } = await api.get(`/earnings/user/${userId}`);
+  return data;
+}
+
+export async function getAllEarnings() {
+  const { data } = await api.get("/earnings/all");
+  return data;
+}
+
+export async function getPercentageSettings() {
+  const { data } = await api.get("/earnings/percentage-settings");
+  return data;
+}
+
+export async function updatePercentageSettings(settings: Record<string, number>) {
+  const { data } = await api.put("/earnings/percentage-settings", settings);
+  return data;
+}
+
+export async function getActionPermissions() {
+  const { data } = await api.get("/earnings/action-permissions");
+  return data;
+}
+
+export async function updateActionPermissions(permissions: Record<string, string[]>) {
+  const { data } = await api.put("/earnings/action-permissions", permissions);
+  return data;
+}
+
+// ==================== CREATOR RESULTS (CHECKBOXES) ====================
+
+export async function getCreatorResults(orderId: string) {
+  const { data } = await api.get(`/orders/${orderId}/creator-results`);
+  return data;
+}
+
+export async function setCreatorResult(
+  orderId: string,
+  creatorId: string,
+  result: {
+    didStoryboard: boolean;
+    didAnimation: boolean;
+    didEditing: boolean;
+    didScenario: boolean;
+    helperStoryboardId?: string | null;
+    helperAnimationId?: string | null;
+    helperEditingId?: string | null;
+    helperScenarioId?: string | null;
+  }
+) {
+  const { data } = await api.put(`/orders/${orderId}/creator-results/${creatorId}`, result);
+  return data;
+}
+
+// ==================== ORDER PRICE ====================
+
+export async function updateOrderPrice(orderId: string, price: number | null, hasTax: boolean) {
+  const { data } = await api.put(`/orders/${orderId}`, { price, hasTax });
+  return data;
+}
+
 export default api;
