@@ -158,9 +158,14 @@ function UploadProgressList({
   );
 }
 
-interface Props { order: Order | null; onClose: () => void; forcedTab?: Tab | null; }
+interface Props {
+  order: Order | null;
+  onClose: () => void;
+  forcedTab?: Tab | null;
+  onOrderChanged?: (nextOrder: Order | null, action: "updated" | "archived" | "unarchived" | "deleted") => void;
+}
 
-export default function OrderDetailModal({ order, onClose, forcedTab = null }: Props) {
+export default function OrderDetailModal({ order, onClose, forcedTab = null, onOrderChanged }: Props) {
   const user        = useAuthStore((s) => s.user);
   const fetchOrders = useOrdersStore((s) => s.fetchOrders);
   const isDemoOrder = isTourDemoOrder(order);
@@ -508,6 +513,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
     try {
       await api.updateOrderStatus(o.id, "ARCHIVED");
       await fetchOrders();
+      onOrderChanged?.({ ...o, status: "ARCHIVED" }, "archived");
       onClose();
     } catch (err: any) { alert(err.response?.data?.error || "Ошибка"); }
   };
@@ -518,6 +524,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
     try {
       await api.deleteOrder(o.id);
       await fetchOrders();
+      onOrderChanged?.(null, "deleted");
       onClose();
     } catch (err: any) {
       alert(err.response?.data?.error || "Не удалось удалить заказ");
@@ -529,6 +536,7 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
     try {
       await api.updateOrderStatus(o.id, "DONE");
       await fetchOrders();
+      onOrderChanged?.({ ...o, status: "DONE" }, "unarchived");
       onClose();
     } catch (err: any) { alert(err.response?.data?.error || "Ошибка"); }
   };
@@ -538,7 +546,15 @@ export default function OrderDetailModal({ order, onClose, forcedTab = null }: P
     setSaving(true);
     try {
       await api.updateOrder(o.id, { title: editTitle, description: editDesc || undefined, deadline: editDL || undefined });
-      await loadOrder(); await fetchOrders(); setEditing(false);
+      await loadOrder();
+      await fetchOrders();
+      onOrderChanged?.({
+        ...o,
+        title: editTitle,
+        description: editDesc || null,
+        deadline: editDL || null,
+      }, "updated");
+      setEditing(false);
     } catch (err: any) { alert(err.response?.data?.error || "Ошибка"); }
     setSaving(false);
   };

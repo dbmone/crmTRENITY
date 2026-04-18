@@ -19,12 +19,14 @@ import { useAuthStore } from "../../store/auth.store";
 import { useTourStore } from "../../store/tour.store";
 import type { Notification } from "../../types";
 
+const DESKTOP_NAV_BREAKPOINT = 1024;
+
 const ROLE_LABELS: Record<string, string> = {
   MARKETER: "Маркетолог",
   HEAD_MARKETER: "Главный маркетолог",
   CREATOR: "Креатор",
   HEAD_CREATOR: "Главный креатор",
-  LEAD_CREATOR: "Лид креаторов",
+  LEAD_CREATOR: "Тимлид креаторов",
   ADMIN: "Администратор",
 };
 
@@ -37,7 +39,17 @@ const ROLE_COLORS: Record<string, string> = {
   ADMIN: "text-red-400 bg-red-400/10",
 };
 
-const NAV = [
+type NavItem = {
+  path: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  tour: string;
+  showGuideDot?: boolean;
+  adminOnly?: boolean;
+  aiOnly?: boolean;
+};
+
+const NAV: NavItem[] = [
   { path: "/", label: "Доска", icon: LayoutDashboard, tour: "nav-board" },
   { path: "/tasks", label: "Задачи", icon: ListTodo, tour: "nav-tasks" },
   { path: "/guide", label: "Гайд", icon: BookOpen, tour: "nav-guide", showGuideDot: true },
@@ -76,8 +88,8 @@ export default function Header() {
   const canSeeAi = isAdmin || isHeadCreator || isHeadMarketer;
 
   const navItems = NAV.filter((item) => {
-    if ((item as { adminOnly?: boolean }).adminOnly) return canSeeAdmin;
-    if ((item as { aiOnly?: boolean }).aiOnly) return canSeeAi;
+    if (item.adminOnly) return canSeeAdmin;
+    if (item.aiOnly) return canSeeAi;
     return true;
   });
 
@@ -86,10 +98,21 @@ export default function Header() {
   }, [location.pathname]);
 
   useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= DESKTOP_NAV_BREAKPOINT) {
+        setMobileOpen(false);
+      }
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
     const steps = tourRole ? TOUR_STEPS[tourRole] ?? [] : [];
     const step = tourActive ? steps[tourStepIndex] : null;
     const target = step?.target ?? "";
-    if (!tourActive || window.innerWidth >= 768) return;
+    if (!tourActive || window.innerWidth >= DESKTOP_NAV_BREAKPOINT) return;
     setMobileOpen(target.startsWith("nav-"));
   }, [tourActive, tourRole, tourStepIndex]);
 
@@ -123,7 +146,7 @@ export default function Header() {
   }, [showNotifs]);
 
   const updateDesktopIndicator = () => {
-    if (!navRef.current || window.innerWidth < 768) {
+    if (!navRef.current || window.innerWidth < DESKTOP_NAV_BREAKPOINT) {
       setDesktopIndicator((prev) => ({ ...prev, opacity: 0 }));
       return;
     }
@@ -176,9 +199,9 @@ export default function Header() {
     }
   };
 
-  const renderNavButton = (item: (typeof NAV)[number], mobile = false) => {
+  const renderNavButton = (item: NavItem, mobile = false) => {
     const active = location.pathname === item.path;
-    const showDot = Boolean((item as { showGuideDot?: boolean }).showGuideDot && guideNeedsAttention);
+    const showDot = Boolean(item.showGuideDot && guideNeedsAttention);
 
     return (
       <button
@@ -214,7 +237,6 @@ export default function Header() {
   return (
     <header className="sticky top-0 z-50 border-b border-bg-border bg-bg-surface">
       <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-4 py-3 sm:px-6 md:px-8">
-        {/* Left — logo (always visible) */}
         <div className="flex min-w-0 justify-start">
           <button type="button" onClick={() => navigate("/")} className="relative z-10 flex flex-shrink-0 items-center">
             <span className="font-bold tracking-tight text-ink-primary">
@@ -223,8 +245,7 @@ export default function Header() {
           </button>
         </div>
 
-        {/* Center — nav strictly centered */}
-        <div className="hidden justify-self-center xl:flex">
+        <div className="hidden min-w-0 justify-self-center lg:flex">
           <nav
             ref={navRef}
             className="pointer-events-auto relative flex items-center gap-1 rounded-xl border border-bg-border/80 bg-bg-surface/95 px-2 py-1 backdrop-blur-sm"
@@ -242,11 +263,10 @@ export default function Header() {
           </nav>
         </div>
 
-        {/* Right - Profile, Notifications, Role, Logout */}
         <div className="flex min-w-0 justify-end">
           {user && (
-            <div className="relative z-10 flex min-w-0 flex-shrink-0 items-center justify-end gap-1 sm:gap-2">
-              <span className={`rounded-full px-2 py-1 text-[10px] sm:text-xs font-medium ${ROLE_COLORS[user.role] || "bg-bg-hover text-ink-secondary"}`}>
+            <div className="relative z-10 flex min-w-0 items-center justify-end gap-1 sm:gap-2">
+              <span className={`rounded-full px-2 py-1 text-[10px] font-medium sm:text-xs ${ROLE_COLORS[user.role] || "bg-bg-hover text-ink-secondary"}`}>
                 {ROLE_LABELS[user.role] || user.role}
               </span>
 
@@ -254,7 +274,7 @@ export default function Header() {
                 <button
                   type="button"
                   onClick={() => setShowNotifs((prev) => !prev)}
-                  className="relative rounded-lg p-1.5 sm:p-2 text-ink-secondary transition-colors hover:bg-bg-hover hover:text-ink-primary"
+                  className="relative rounded-lg p-1.5 text-ink-secondary transition-colors hover:bg-bg-hover hover:text-ink-primary sm:p-2"
                 >
                   <Bell size={16} />
                   {unread > 0 && (
@@ -324,7 +344,7 @@ export default function Header() {
                 data-tour="profile-btn"
                 data-tour-padding={3}
                 onClick={() => navigate("/profile")}
-                className="flex items-center gap-2 rounded-lg p-1.5 sm:px-2 sm:py-1.5 transition-colors hover:bg-bg-hover"
+                className="flex items-center gap-2 rounded-lg p-1.5 transition-colors hover:bg-bg-hover sm:px-2 sm:py-1.5"
               >
                 <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-green-500/30 bg-green-500/20">
                   {user.avatarUrl ? (
@@ -342,7 +362,7 @@ export default function Header() {
                   logout();
                   navigate("/login");
                 }}
-                className="rounded-lg p-1.5 sm:p-2 text-ink-tertiary transition-colors hover:bg-bg-hover hover:text-red-400"
+                className="rounded-lg p-1.5 text-ink-tertiary transition-colors hover:bg-bg-hover hover:text-red-400 sm:p-2"
                 title="Выйти"
               >
                 <LogOut size={16} />
@@ -351,7 +371,7 @@ export default function Header() {
               <button
                 type="button"
                 onClick={() => setMobileOpen((prev) => !prev)}
-                className="rounded-lg p-1.5 sm:p-2 text-ink-secondary transition-colors hover:bg-bg-hover xl:hidden"
+                className="rounded-lg p-1.5 text-ink-secondary transition-colors hover:bg-bg-hover lg:hidden sm:p-2"
                 aria-label="Меню"
               >
                 {mobileOpen ? <X size={18} /> : <Menu size={18} />}
@@ -362,7 +382,7 @@ export default function Header() {
       </div>
 
       {mobileOpen && user && (
-        <div className="border-t border-bg-border bg-bg-surface md:hidden">
+        <div className="border-t border-bg-border bg-bg-surface lg:hidden">
           <div className="flex items-center gap-3 border-b border-bg-border px-5 py-4">
             <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-green-500/30 bg-green-500/20">
               {user.avatarUrl ? (

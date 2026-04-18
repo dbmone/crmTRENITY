@@ -68,21 +68,31 @@ export default function AdminPage() {
     setLoading(false);
   };
 
+  const loadDragSetting = async () => {
+    if (!isAdmin) return;
+    setDragSettingLoading(true);
+    try {
+      const settings = await Promise.race<Record<string, string>>([
+        api.getSettings(),
+        new Promise<Record<string, string>>((_, reject) => {
+          window.setTimeout(() => reject(new Error("settings timeout")), 4000);
+        }),
+      ]);
+      setDragEnabled(settings.kanban_drag_enabled === "true");
+    } catch {
+      setDragEnabled(false);
+    } finally {
+      setDragSettingLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!canAccess) { navigate("/"); return; }
     load();
   }, [canAccess]);
 
   useEffect(() => {
-    if (!isAdmin) return;
-    (async () => {
-      setDragSettingLoading(true);
-      try {
-        const settings = await api.getSettings();
-        setDragEnabled(settings.kanban_drag_enabled === "true");
-      } catch {}
-      setDragSettingLoading(false);
-    })();
+    void loadDragSetting();
   }, [isAdmin]);
 
   useEffect(() => {
@@ -372,6 +382,59 @@ function UserRow2({ user, indent = 0, badge, assign }: {
   );
 }
 
+function PersonFlowCard({
+  user,
+  badge,
+  tone,
+  meta,
+  assign,
+}: {
+  user: UserRow;
+  badge: string;
+  tone: "orange" | "amber" | "green" | "purple" | "blue";
+  meta?: string;
+  assign?: React.ReactNode;
+}) {
+  const initials = user.displayName.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+  const toneStyles: Record<string, string> = {
+    orange: "border-orange-400/30 bg-orange-400/10 text-orange-300",
+    amber: "border-amber-400/30 bg-amber-400/10 text-amber-300",
+    green: "border-green-400/30 bg-green-400/10 text-green-300",
+    purple: "border-purple-400/30 bg-purple-400/10 text-purple-300",
+    blue: "border-blue-400/30 bg-blue-400/10 text-blue-300",
+  };
+
+  return (
+    <div className="rounded-2xl border border-bg-border bg-bg-surface p-3 shadow-card">
+      <div className="flex items-start gap-3">
+        <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border text-xs font-bold ${toneStyles[tone]}`}>
+          {initials}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-ink-primary">{user.displayName}</p>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${ROLE_COLORS[user.role] || ""}`}>
+              {badge}
+            </span>
+          </div>
+          {user.telegramUsername && (
+            <a
+              href={`https://t.me/${user.telegramUsername}`}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 inline-block text-xs text-ink-tertiary transition-colors hover:text-green-400"
+            >
+              @{user.telegramUsername}
+            </a>
+          )}
+          {meta && <p className="mt-1 text-[11px] text-ink-tertiary">{meta}</p>}
+        </div>
+      </div>
+      {assign && <div className="mt-3">{assign}</div>}
+    </div>
+  );
+}
+
 function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, isLeadCreator, currentUserId, working, onAssignTeamLead }: {
   users: UserRow[];
   isAdmin: boolean;
@@ -395,9 +458,14 @@ function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, isLeadCreato
   const leadCreators  = byRole("LEAD_CREATOR");
   const marketers     = byRole("MARKETER");
   const creators      = byRole("CREATOR");
+  const creatorParentOptions = [...headCreators, ...leadCreators];
+  const creatorParentIds = new Set(creatorParentOptions.map((user) => user.id));
 
   const canMgCreators  = isAdmin || isHeadCreator;
   const canMgMarketers = isAdmin || isHeadMark;
+  const leadsOfHead = (headCreatorId: string) => childrenOf(headCreatorId).filter((u) => u.role === "LEAD_CREATOR");
+  const directCreatorsOfHead = (headCreatorId: string) => childrenOf(headCreatorId).filter((u) => u.role === "CREATOR");
+  const creatorsOfLead = (leadCreatorId: string) => childrenOf(leadCreatorId).filter((u) => u.role === "CREATOR");
 
   const toggleCollapse = (id: string) =>
     setCollapsed((prev) => {
@@ -407,11 +475,260 @@ function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, isLeadCreato
     });
 
   // Orphans
-  const orphanCreators = creators.filter((c) => !c.teamLeadId || !leadCreators.some((l) => l.id === c.teamLeadId));
+  const orphanCreators = creators.filter((c) => !c.teamLeadId || !creatorParentIds.has(c.teamLeadId));
   const orphanLeads    = leadCreators.filter((l) => !l.teamLeadId || !headCreators.some((h) => h.id === l.teamLeadId));
   const orphanMkts     = marketers.filter((m) => !m.teamLeadId || !headMarketers.some((h) => h.id === m.teamLeadId));
 
   // ── TREE VIEW ────────────────────────────────────────────────────────────────
+
+  const DiagramView = () => (
+    <div className="grid gap-4 xl:grid-cols-2">
+      <div className="rounded-card border border-bg-border bg-bg-surface p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <GitBranch size={14} className="text-orange-400" />
+          <div>
+            <h3 className="text-sm font-semibold text-ink-primary">Блок-схема команды креаторов</h3>
+            <p className="text-xs text-ink-tertiary">Главный креатор находится наверху. Ниже идут тимлиды и креаторы, которых можно вешать либо на тимлида, либо сразу на главного.</p>
+          </div>
+        </div>
+
+        {headCreators.length === 0 && leadCreators.length === 0 && creators.length === 0 ? (
+          <p className="py-6 text-xs text-ink-tertiary">Нет пользователей</p>
+        ) : (
+          <div className="space-y-5">
+            {headCreators.map((hc) => {
+              const myLeads = leadsOfHead(hc.id);
+              const myDirectCreators = directCreatorsOfHead(hc.id);
+              return (
+                <div key={hc.id} className="rounded-2xl border border-bg-border/80 bg-bg-raised/20 p-4">
+                  <div className="mx-auto max-w-md">
+                    <PersonFlowCard
+                      user={hc}
+                      badge="Главный креатор"
+                      tone="orange"
+                      meta={`${myLeads.length} тимлидов · ${myDirectCreators.length} прямых креаторов`}
+                    />
+                  </div>
+
+                  {(myLeads.length > 0 || myDirectCreators.length > 0) && (
+                    <>
+                      <div className="mx-auto my-3 h-6 w-px bg-bg-border" />
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        <div className="space-y-3">
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-tertiary">Через тимлидов</p>
+                          {myLeads.length === 0 ? (
+                            <p className="rounded-xl border border-dashed border-bg-border px-3 py-4 text-xs text-ink-tertiary">Пока без тимлидов</p>
+                          ) : myLeads.map((lc) => {
+                            const myCreators = creatorsOfLead(lc.id);
+                            const canEditCreatorsHere = canMgCreators || (isLeadCreator && lc.id === currentUserId);
+                            return (
+                              <div key={lc.id} className="space-y-3">
+                                <PersonFlowCard
+                                  user={lc}
+                                  badge="Тимлид"
+                                  tone="amber"
+                                  meta={`${myCreators.length} креаторов`}
+                                  assign={canMgCreators ? (
+                                    <AssignSelect
+                                      value={lc.teamLeadId || ""}
+                                      options={headCreators}
+                                      disabled={working === lc.id}
+                                      placeholder="Без главного креатора"
+                                      onChange={(v) => onAssignTeamLead(lc.id, v)}
+                                    />
+                                  ) : undefined}
+                                />
+                                {myCreators.length > 0 && (
+                                  <div className="space-y-2 pl-4">
+                                    {myCreators.map((cr) => (
+                                      <PersonFlowCard
+                                        key={cr.id}
+                                        user={cr}
+                                        badge="Креатор"
+                                        tone="green"
+                                        assign={canEditCreatorsHere ? (
+                                          <AssignSelect
+                                            value={cr.teamLeadId || ""}
+                                            options={creatorParentOptions}
+                                            disabled={working === cr.id}
+                                            placeholder="Назначить руководителя..."
+                                            onChange={(v) => onAssignTeamLead(cr.id, v)}
+                                          />
+                                        ) : undefined}
+                                      />
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div className="space-y-3">
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-tertiary">Прямое подчинение</p>
+                          {myDirectCreators.length === 0 ? (
+                            <p className="rounded-xl border border-dashed border-bg-border px-3 py-4 text-xs text-ink-tertiary">Нет креаторов без тимлида в этой ветке</p>
+                          ) : myDirectCreators.map((cr) => (
+                            <PersonFlowCard
+                              key={cr.id}
+                              user={cr}
+                              badge="Креатор"
+                              tone="green"
+                              assign={canMgCreators ? (
+                                <AssignSelect
+                                  value={cr.teamLeadId || ""}
+                                  options={creatorParentOptions}
+                                  disabled={working === cr.id}
+                                  placeholder="Назначить руководителя..."
+                                  onChange={(v) => onAssignTeamLead(cr.id, v)}
+                                />
+                              ) : undefined}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+
+            {orphanLeads.length > 0 && (
+              <div className="rounded-2xl border border-dashed border-amber-400/20 bg-amber-400/5 p-4">
+                <p className="mb-3 text-[11px] font-medium uppercase tracking-wide text-amber-300">Тимлиды без главного креатора</p>
+                <div className="space-y-3">
+                  {orphanLeads.map((lc) => (
+                    <PersonFlowCard
+                      key={lc.id}
+                      user={lc}
+                      badge="Тимлид"
+                      tone="amber"
+                      assign={canMgCreators && headCreators.length > 0 ? (
+                        <AssignSelect
+                          value={lc.teamLeadId || ""}
+                          options={headCreators}
+                          disabled={working === lc.id}
+                          placeholder="Назначить главного креатора..."
+                          onChange={(v) => onAssignTeamLead(lc.id, v)}
+                        />
+                      ) : undefined}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {orphanCreators.length > 0 && (
+              <div className="rounded-2xl border border-dashed border-green-400/20 bg-green-400/5 p-4">
+                <p className="mb-3 text-[11px] font-medium uppercase tracking-wide text-green-300">Креаторы без связки</p>
+                <div className="space-y-3">
+                  {orphanCreators.map((cr) => (
+                    <PersonFlowCard
+                      key={cr.id}
+                      user={cr}
+                      badge="Креатор"
+                      tone="green"
+                      assign={canMgCreators && creatorParentOptions.length > 0 ? (
+                        <AssignSelect
+                          value={cr.teamLeadId || ""}
+                          options={creatorParentOptions}
+                          disabled={working === cr.id}
+                          placeholder="Назначить тимлида или главного..."
+                          onChange={(v) => onAssignTeamLead(cr.id, v)}
+                        />
+                      ) : undefined}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-card border border-bg-border bg-bg-surface p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <GitBranch size={14} className="text-blue-400" />
+          <div>
+            <h3 className="text-sm font-semibold text-ink-primary">Блок-схема маркетологов</h3>
+            <p className="text-xs text-ink-tertiary">У маркетологов схема проще: главный маркетолог наверху, его маркетологи — ниже.</p>
+          </div>
+        </div>
+
+        {headMarketers.length === 0 && marketers.length === 0 ? (
+          <p className="py-6 text-xs text-ink-tertiary">Нет пользователей</p>
+        ) : (
+          <div className="space-y-5">
+            {headMarketers.map((hm) => {
+              const myMkts = childrenOf(hm.id).filter((u) => u.role === "MARKETER");
+              return (
+                <div key={hm.id} className="rounded-2xl border border-bg-border/80 bg-bg-raised/20 p-4">
+                  <div className="mx-auto max-w-md">
+                    <PersonFlowCard
+                      user={hm}
+                      badge="Главный маркетолог"
+                      tone="purple"
+                      meta={`${myMkts.length} маркетологов`}
+                    />
+                  </div>
+
+                  {myMkts.length > 0 && (
+                    <>
+                      <div className="mx-auto my-3 h-6 w-px bg-bg-border" />
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {myMkts.map((m) => (
+                          <PersonFlowCard
+                            key={m.id}
+                            user={m}
+                            badge="Маркетолог"
+                            tone="blue"
+                            assign={canMgMarketers ? (
+                              <AssignSelect
+                                value={m.teamLeadId || ""}
+                                options={headMarketers}
+                                disabled={working === m.id}
+                                placeholder="Без главного маркетолога"
+                                onChange={(v) => onAssignTeamLead(m.id, v)}
+                              />
+                            ) : undefined}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+
+            {orphanMkts.length > 0 && (
+              <div className="rounded-2xl border border-dashed border-blue-400/20 bg-blue-400/5 p-4">
+                <p className="mb-3 text-[11px] font-medium uppercase tracking-wide text-blue-300">Маркетологи без группы</p>
+                <div className="space-y-3">
+                  {orphanMkts.map((m) => (
+                    <PersonFlowCard
+                      key={m.id}
+                      user={m}
+                      badge="Маркетолог"
+                      tone="blue"
+                      assign={canMgMarketers && headMarketers.length > 0 ? (
+                        <AssignSelect
+                          value={m.teamLeadId || ""}
+                          options={headMarketers}
+                          disabled={working === m.id}
+                          placeholder="Назначить главного маркетолога..."
+                          onChange={(v) => onAssignTeamLead(m.id, v)}
+                        />
+                      ) : undefined}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   const TreeView = () => (
     <div className="space-y-5">
@@ -427,6 +744,7 @@ function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, isLeadCreato
 
         {headCreators.map((hc) => {
           const myLeads = childrenOf(hc.id).filter((u) => u.role === "LEAD_CREATOR");
+          const myDirectCreators = directCreatorsOfHead(hc.id);
           const isOpen = !collapsed.has(hc.id);
           return (
             <div key={hc.id} className="mb-3 last:mb-0">
@@ -462,7 +780,7 @@ function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, isLeadCreato
               {isOpen && (
                 <div className="ml-5 border-l border-bg-border/60 pl-3 mt-1">
                   {myLeads.map((lc) => {
-                    const myCreators = childrenOf(lc.id).filter((u) => u.role === "CREATOR");
+                    const myCreators = creatorsOfLead(lc.id);
                     const isMyTeam = lc.id === currentUserId;
                     const canEditThisLead = canMgCreators;
                     // LEAD_CREATOR can manage creators in their own team
@@ -517,7 +835,7 @@ function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, isLeadCreato
                                 assign={canEditCreatorsHere ? (
                                   <AssignSelect
                                     value={cr.teamLeadId || ""}
-                                    options={leadCreators}
+                                    options={creatorParentOptions}
                                     disabled={working === cr.id}
                                     placeholder="Без тимлида"
                                     onChange={(v) => onAssignTeamLead(cr.id, v)}
@@ -530,6 +848,29 @@ function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, isLeadCreato
                       </div>
                     );
                   })}
+
+                  {myDirectCreators.length > 0 && (
+                    <div className="mt-3 border-t border-bg-border/50 pt-3">
+                      <p className="mb-2 text-[10px] uppercase tracking-wide text-ink-tertiary">Прямое подчинение</p>
+                      <div className="space-y-1">
+                        {myDirectCreators.map((cr) => (
+                          <UserRow2
+                            key={cr.id}
+                            user={cr}
+                            assign={canMgCreators ? (
+                              <AssignSelect
+                                value={cr.teamLeadId || ""}
+                                options={creatorParentOptions}
+                                disabled={working === cr.id}
+                                placeholder="Без тимлида"
+                                onChange={(v) => onAssignTeamLead(cr.id, v)}
+                              />
+                            ) : undefined}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -541,7 +882,7 @@ function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, isLeadCreato
           <div className="mt-3 pt-3 border-t border-bg-border/60">
             <p className="text-[10px] text-ink-tertiary uppercase tracking-wide mb-2">Тимлиды без главного</p>
             {orphanLeads.map((lc) => {
-              const myCreators = childrenOf(lc.id).filter((u) => u.role === "CREATOR");
+              const myCreators = creatorsOfLead(lc.id);
               const canEditCreatorsHere = canMgCreators || (isLeadCreator && lc.id === currentUserId);
               return (
                 <div key={lc.id}>
@@ -566,7 +907,7 @@ function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, isLeadCreato
                       assign={canEditCreatorsHere ? (
                         <AssignSelect
                           value={cr.teamLeadId || ""}
-                          options={leadCreators}
+                          options={creatorParentOptions}
                           disabled={working === cr.id}
                           placeholder="Без тимлида"
                           onChange={(v) => onAssignTeamLead(cr.id, v)}
@@ -589,10 +930,10 @@ function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, isLeadCreato
                 key={cr.id}
                 user={cr}
                 indent={1}
-                assign={canMgCreators && leadCreators.length > 0 ? (
+                assign={canMgCreators && creatorParentOptions.length > 0 ? (
                   <AssignSelect
                     value={cr.teamLeadId || ""}
-                    options={leadCreators}
+                    options={creatorParentOptions}
                     disabled={working === cr.id}
                     placeholder="Назначить тимлида..."
                     onChange={(v) => onAssignTeamLead(cr.id, v)}
@@ -733,7 +1074,7 @@ function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, isLeadCreato
             (isMktRole && canMgMarketers);
 
           const assignOptions =
-            isCreatorRole ? leadCreators :
+            isCreatorRole ? creatorParentOptions :
             isLeadRole ? headCreators :
             isMktRole ? headMarketers : [];
 
@@ -778,6 +1119,8 @@ function TeamHierarchy({ users, isAdmin, isHeadCreator, isHeadMark, isLeadCreato
 
   return (
     <div className="space-y-4">
+      <DiagramView />
+
       {/* View toggle */}
       <div className="flex items-center justify-end gap-2">
         <button

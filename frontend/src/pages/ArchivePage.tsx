@@ -29,6 +29,20 @@ export default function ArchivePage() {
     setTimer(setTimeout(() => load(v), 400));
   };
 
+  const handleOrderChanged = (nextOrder: Order | null, action: "updated" | "archived" | "unarchived" | "deleted") => {
+    if (action === "unarchived" || action === "deleted" || (nextOrder && nextOrder.status !== "ARCHIVED")) {
+      setOrders((prev) => prev.filter((item) => item.id !== selected?.id));
+      setSelected(null);
+      void load(search.trim() || undefined);
+      return;
+    }
+
+    if (nextOrder) {
+      setOrders((prev) => prev.map((item) => (item.id === nextOrder.id ? { ...item, ...nextOrder } : item)));
+      setSelected(nextOrder);
+    }
+  };
+
   return (
     <div className="min-h-full bg-bg-base">
 
@@ -107,7 +121,11 @@ export default function ArchivePage() {
         )}
       </div>
 
-      <OrderDetailModal order={selected} onClose={() => setSelected(null)} />
+      <OrderDetailModal
+        order={selected}
+        onClose={() => setSelected(null)}
+        onOrderChanged={handleOrderChanged}
+      />
     </div>
   );
 }
